@@ -142,6 +142,25 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
     </div>
     {{end}}
   </section>
+
+  {{if .IsAdmin}}
+  <section class="hn-card">
+    <h2>Settings</h2>
+    <form method="POST" action="/dashboard/settings" class="hn-settings-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="hn-settings-grid">
+        {{range .SettingsMeta}}
+        <label>
+          <span>{{.Label}}{{if .IsStartup}} <em>(restart to apply)</em>{{end}}</span>
+          <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off">
+          <span class="hn-muted">{{.Description}}</span>
+        </label>
+        {{end}}
+      </div>
+      <button type="submit">Save settings</button>
+    </form>
+  </section>
+  {{end}}
 </main>
 <script>
 function hnToggle(el){var f=document.getElementById('hn-file-input'),p=document.getElementById('hn-paste-input');if(el.value==='file'){f.hidden=false;p.hidden=true;}else{f.hidden=true;p.hidden=false;}}
@@ -223,6 +242,9 @@ type statsVisit struct {
 type dashData struct {
 	CSRF                 string
 	User                 string
+	IsAdmin              bool
+	Settings             map[string]string
+	SettingsMeta         []settingsRow
 	Uploads              []dashUpload
 	UploadError          string
 	UploadSuccess        bool
@@ -301,8 +323,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	csrf := s.newCSRF(w)
+	allSettings := s.dashboardSettingsMap()
+	sortedMeta := dashboardSettingsRows(allSettings)
 	dashData_ := dashData{
-		CSRF: csrf, User: owner.Name, Uploads: uploads,
+		CSRF:         csrf,
+		User:         owner.Name,
+		IsAdmin:      owner.IsAdmin,
+		Settings:     allSettings,
+		SettingsMeta: sortedMeta,
+		Uploads:      uploads,
 	}
 	// carry over flash messages from query params
 	if e := r.URL.Query().Get("err"); e != "" {
@@ -324,8 +353,10 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, s.maxUpload+1024)
-	if err := r.ParseMultipartForm(s.maxUpload); err != nil {
+	maxUpload := s.settingInt64("max_upload", 2<<20)
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1024)
+	if err := r.ParseMultipartForm(maxUpload); err != nil {
 		http.Redirect(w, r, "/dashboard?err=file+too+large+or+invalid+form", http.StatusSeeOther)
 		return
 	}
@@ -356,8 +387,8 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer file.Close()
-		data, err = io.ReadAll(io.LimitReader(file, s.maxUpload+1))
-		if err != nil || int64(len(data)) > s.maxUpload {
+		data, err = io.ReadAll(io.LimitReader(file, maxUpload+1))
+		if err != nil || int64(len(data)) > maxUpload {
 			http.Redirect(w, r, "/dashboard?err=file+too+large", http.StatusSeeOther)
 			return
 		}
@@ -375,12 +406,25 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxTotalSize := s.settingInt64("max_total_size", 0)
+	if maxTotalSize > 0 {
+		currentTotal, err := s.store.SumUploadSizes()
+		if err != nil {
+			http.Redirect(w, r, "/dashboard?err=db+error", http.StatusSeeOther)
+			return
+		}
+		if currentTotal+int64(len(data)) > maxTotalSize {
+			http.Redirect(w, r, "/dashboard?err=total+storage+quota+exceeded", http.StatusSeeOther)
+			return
+		}
+	}
+
 	slug, err := randID(10)
 	if err != nil {
 		http.Redirect(w, r, "/dashboard?err=internal+error", http.StatusSeeOther)
 		return
 	}
-	if err := writeAtomic(s.uploadPath(slug), data); err != nil {
+	if err := s.storage.Save(r.Context(), slug, data); err != nil {
 		http.Redirect(w, r, "/dashboard?err=storage+failed", http.StatusSeeOther)
 		return
 	}
@@ -394,7 +438,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		pwHash = string(h)
 	}
 	if err := s.store.CreateUpload(slug, owner.ID, filename, int64(len(data)), pwHash); err != nil {
-		_ = removeFile(s.uploadPath(slug))
+		_ = s.storage.Delete(r.Context(), slug)
 		http.Redirect(w, r, "/dashboard?err=db+failed", http.StatusSeeOther)
 		return
 	}
@@ -424,7 +468,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.store.DeleteUpload(u.ID)
-	_ = removeFile(s.uploadPath(slug))
+	_ = s.storage.Delete(r.Context(), slug)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 

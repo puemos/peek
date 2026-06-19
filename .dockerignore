@@ -1,0 +1,15 @@
+.git
+.gitignore
+data
+data-s3
+bin
+README.md
+LICENSE
+docker-compose.yml
+Dockerfile
+.dockerignore
+*.mp4
+*.gif
+*.png
+skills
+scripts

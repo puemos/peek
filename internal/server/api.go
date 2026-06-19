@@ -21,7 +21,9 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	tok := bearerToken(r)
 	owner, _ := s.store.GetToken(tok)
 
-	r.Body = http.MaxBytesReader(w, r.Body, s.maxUpload+1024)
+	maxUpload := s.settingInt64("max_upload", 2<<20)
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1024)
 
 	var (
 		data     []byte
@@ -30,7 +32,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if ct := r.Header.Get("Content-Type"); strings.HasPrefix(ct, "multipart/form-data") {
-		if err := r.ParseMultipartForm(s.maxUpload); err != nil {
+		if err := r.ParseMultipartForm(maxUpload); err != nil {
 			jsonError(w, http.StatusBadRequest, "file too large or invalid form")
 			return
 		}
@@ -41,22 +43,21 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer file.Close()
-		data, err = io.ReadAll(io.LimitReader(file, s.maxUpload+1))
-		if err != nil || int64(len(data)) > s.maxUpload {
+		data, err = io.ReadAll(io.LimitReader(file, maxUpload+1))
+		if err != nil || int64(len(data)) > maxUpload {
 			jsonError(w, http.StatusRequestEntityTooLarge, "file too large")
 			return
 		}
 		filename = header.Filename
 	} else {
-		// Raw body upload.
 		password = strings.TrimSpace(r.URL.Query().Get("password"))
 		filename = r.URL.Query().Get("filename")
 		if filename == "" {
 			filename = "page.html"
 		}
 		var err error
-		data, err = io.ReadAll(io.LimitReader(r.Body, s.maxUpload+1))
-		if err != nil || int64(len(data)) > s.maxUpload {
+		data, err = io.ReadAll(io.LimitReader(r.Body, maxUpload+1))
+		if err != nil || int64(len(data)) > maxUpload {
 			jsonError(w, http.StatusRequestEntityTooLarge, "file too large")
 			return
 		}
@@ -71,12 +72,25 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxTotalSize := s.settingInt64("max_total_size", 0)
+	if maxTotalSize > 0 {
+		currentTotal, err := s.store.SumUploadSizes()
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "db error")
+			return
+		}
+		if currentTotal+int64(len(data)) > maxTotalSize {
+			jsonError(w, http.StatusRequestEntityTooLarge, "total storage quota exceeded")
+			return
+		}
+	}
+
 	slug, err := randID(10)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "slug generation failed")
 		return
 	}
-	if err := writeAtomic(s.uploadPath(slug), data); err != nil {
+	if err := s.storage.Save(r.Context(), slug, data); err != nil {
 		jsonError(w, http.StatusInternalServerError, "storage failed")
 		return
 	}
@@ -91,7 +105,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		pwHash = string(h)
 	}
 	if err := s.store.CreateUpload(slug, owner.ID, filename, int64(len(data)), pwHash); err != nil {
-		_ = removeFile(s.uploadPath(slug))
+		_ = s.storage.Delete(r.Context(), slug)
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
@@ -152,7 +166,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
-	_ = removeFile(s.uploadPath(slug))
+	_ = s.storage.Delete(r.Context(), slug)
 	jsonOK(w, map[string]any{"deleted": slug})
 }
 

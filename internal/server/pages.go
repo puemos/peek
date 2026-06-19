@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"html/template"
+	"io"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -205,7 +206,13 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	data, err := s.readUploadFile(slug)
+	rc, err := s.storage.Open(r.Context(), slug)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
 	if err != nil {
 		http.NotFound(w, r)
 		return
