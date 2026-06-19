@@ -75,6 +75,26 @@ go build -o bin/peekd ./cmd/peekd
 go build -o bin/peek  ./cmd/peek
 ```
 
+### Run with Docker
+
+A slim image (`scratch`-based, multi-arch `amd64`/`arm64`) is published to GitHub
+Container Registry on every release:
+
+```sh
+docker run -d --name peek -p 7700:7700 \
+  -v peek-data:/data \
+  -e PEEK_BASE_URL=https://peek.example.com \
+  -e PEEK_ADMIN_TOKEN=change-me \
+  ghcr.io/puemos/peek:latest
+```
+
+The `/data` volume holds the SQLite database, uploads, and the signing key — keep
+it to persist state across restarts. Configure via env vars: `PEEK_ADDR` (default
+`:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`, `PEEK_ADMIN_TOKEN` (only
+used on first run), `PEEK_MAX_UPLOAD`. The container runs as a nonroot user
+(uid `65532`); if you bind-mount a host directory instead of a named volume, make
+sure that path is writable by uid `65532`.
+
 ## Quick start
 
 ```sh

@@ -1,0 +1,27 @@
+# VCS
+.git
+.github
+
+# Build artifacts & runtime data
+bin/
+dist/
+data/
+*.test
+*.out
+
+# Docs & media (not needed for the build; embedded assets live in internal/server/assets/)
+assets/
+README.md
+AGENTS.md
+LICENSE
+skills/
+scripts/
+install.sh
+
+# Editor
+.DS_Store
+*.swp
+
+# Docker
+Dockerfile
+.dockerignore
