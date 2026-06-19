@@ -12,6 +12,10 @@ jobs:
     name: ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
+      # Serialize so the matrix jobs don't race to create the same release
+      # (parallel create-or-update hits "already_exists" and fails).
+      max-parallel: 1
       matrix:
         include:
           - { goos: linux, goarch: amd64 }
