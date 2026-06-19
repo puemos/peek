@@ -1,0 +1,12 @@
+# Go
+/bin/
+*.test
+*.out
+dist/
+
+# Runtime data (uploads + sqlite db) — never commit
+/data/
+
+# Editor
+.DS_Store
+*.swp

@@ -1,0 +1,40 @@
+[tools]
+go = "latest"
+
+[tasks.build]
+description = "Build both binaries (hn server + peek CLI) into bin/"
+run = "go build -o bin/peekd ./cmd/peekd && go build -o bin/peek ./cmd/peek"
+
+[tasks.vet]
+description = "Run go vet on all packages"
+run = "go vet ./..."
+
+[tasks.run]
+description = "Start the dev server on :7700 with a fresh data dir"
+run = "rm -rf data && PEEK_ADMIN_TOKEN=dev-admin ./bin/peekd --addr :7700 --data ./data --base-url http://localhost:7700"
+depends = ["build"]
+
+[tasks.setup-cli]
+description = "Configure the CLI to point at the local dev server"
+run = "echo dev-admin | ./bin/peek config set --host http://localhost:7700 --token-stdin"
+depends = ["build"]
+
+[tasks.test]
+description = "Build, vet, then run a smoke test (upload + list + stats)"
+depends = ["build", "vet"]
+run = """
+echo dev-admin | ./bin/peek config set --host http://localhost:7700 --token-stdin
+SLUG=$(./bin/peek upload /tmp/test.html 2>/dev/null | grep '^slug:' | awk '{print $2}')
+if [ -z "$SLUG" ]; then
+  printf '<html><body><h1>Smoke test</h1><p id=t>Hello</p></body></html>' > /tmp/test.html
+  SLUG=$(./bin/peek upload /tmp/test.html | grep '^slug:' | awk '{print $2}')
+fi
+echo "Uploaded slug: $SLUG"
+./bin/peek list
+./bin/peek stats "$SLUG"
+echo "Smoke test passed."
+"""
+
+[tasks.clean]
+description = "Remove build artifacts and data dir"
+run = "rm -rf bin data"
