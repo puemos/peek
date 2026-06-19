@@ -84,6 +84,12 @@ CREATE TABLE IF NOT EXISTS visitors (
 	created_at INTEGER NOT NULL,
 	last_seen INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
 `
 
 type Store struct {
@@ -354,6 +360,67 @@ func scanUploads(rows *sql.Rows) ([]models.Upload, error) {
 		}
 		u.CreatedAt = time.Unix(ts, 0)
 		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CountUploads() (int, error) {
+	var n int
+	err := s.QueryRow(`SELECT COUNT(*) FROM uploads`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) SumUploadSizes() (int64, error) {
+	var total int64
+	err := s.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads`).Scan(&total)
+	return total, err
+}
+
+func (s *Store) CountUploadsByOwner(ownerID int64) (int, error) {
+	var n int
+	err := s.QueryRow(`SELECT COUNT(*) FROM uploads WHERE owner_token_id=?`, ownerID).Scan(&n)
+	return n, err
+}
+
+func (s *Store) ListUploadsOlderThan(cutoff time.Time) ([]models.Upload, error) {
+	rows, err := s.Query(`SELECT u.id,u.slug,u.owner_token_id,t.name,u.filename,u.size,u.password_hash,u.created_at
+		FROM uploads u JOIN tokens t ON t.id=u.owner_token_id WHERE u.created_at < ? ORDER BY u.created_at ASC`,
+		cutoff.Unix())
+	if err != nil {
+		return nil, err
+	}
+	return scanUploads(rows)
+}
+
+func (s *Store) GetSetting(key string) (string, error) {
+	var value string
+	err := s.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&value)
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.Exec(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		key, value, time.Now().Unix())
+	return err
+}
+
+func (s *Store) GetAllSettings() (map[string]string, error) {
+	rows, err := s.Query(`SELECT key,value FROM settings ORDER BY key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
 	}
 	return out, rows.Err()
 }

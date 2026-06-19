@@ -1,14 +1,15 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +21,6 @@ const (
 	sessionTTL    = 7 * 24 * time.Hour
 	visitorCookie = "hn_vid"
 	nameCookie    = "hn_name"
-	defaultMax    = 2 << 20 // 2 MiB
 )
 
 type Config struct {
@@ -30,24 +30,38 @@ type Config struct {
 	AdminToken string
 	Secret     string
 	MaxUpload  int64
+
+	Storage     string
+	S3Endpoint  string
+	S3Bucket    string
+	S3Region    string
+	S3AccessKey string
+	S3SecretKey string
+
+	MaxTotalSize  int64
+	RetentionDays int
 }
 
 type Server struct {
-	store      *db.Store
-	secret     string
-	baseURL    string
-	uploadsDir string
-	maxUpload  int64
-	secure     bool // serve cookies with the Secure flag (https base URL)
+	store    *db.Store
+	secret   string
+	baseURL  string
+	storage  Storage
+	secure   bool
 
 	loginLimiter   *limiter
 	commentLimiter *limiter
 }
 
 func New(cfg Config) (*Server, error) {
-	if err := os.MkdirAll(filepath.Join(cfg.DataDir, "uploads"), 0o755); err != nil {
-		return nil, err
+	if cfg.Storage == "s3" {
+		if cfg.S3Bucket == "" || cfg.S3Endpoint == "" {
+			return nil, errors.New("s3 storage requires --s3-bucket and --s3-endpoint (or set via dashboard after first run)")
+		}
+	} else {
+		cfg.Storage = "file"
 	}
+
 	secret := cfg.Secret
 	if secret == "" {
 		secret = loadOrCreateSecret(filepath.Join(cfg.DataDir, "secret.key"))
@@ -59,25 +73,61 @@ func New(cfg Config) (*Server, error) {
 	if err := bootstrapTokens(store, cfg.AdminToken); err != nil {
 		return nil, err
 	}
-	baseURL := strings.TrimRight(cfg.BaseURL, "/")
-	max := cfg.MaxUpload
-	if max <= 0 {
-		max = defaultMax
+	s3Defaults := map[string]string{
+		"storage":       cfg.Storage,
+		"s3_endpoint":   cfg.S3Endpoint,
+		"s3_bucket":     cfg.S3Bucket,
+		"s3_region":     cfg.S3Region,
+		"s3_access_key": cfg.S3AccessKey,
+		"s3_secret_key": cfg.S3SecretKey,
 	}
+	if err := initDefaultSettings(store, cfg.MaxUpload, cfg.MaxTotalSize, cfg.RetentionDays, s3Defaults); err != nil {
+		return nil, err
+	}
+
+	storageBackend, _ := store.GetSetting("storage")
+	if storageBackend == "" {
+		storageBackend = cfg.Storage
+	}
+
+	var st Storage
+	if storageBackend == "s3" {
+		st = NewS3Storage(func(key string) string {
+			v, err := store.GetSetting(key)
+			if err != nil {
+				return ""
+			}
+			return v
+		})
+		log.Printf("storage: s3 backend (config managed via settings API / dashboard)")
+	} else {
+		uploadsDir := filepath.Join(cfg.DataDir, "uploads")
+		if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
+			return nil, err
+		}
+		st = &FileStorage{Dir: uploadsDir}
+		log.Printf("storage: file backend (dir=%s)", uploadsDir)
+	}
+
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	secure := strings.HasPrefix(baseURL, "https://")
 	if !secure && !isLocalBaseURL(baseURL) {
 		log.Printf("WARNING: base URL %q is not https. Bearer tokens and session cookies will be sent in clear — put peek behind a TLS reverse proxy (e.g. Caddy/nginx) for any non-local deployment.", baseURL)
 	}
-	return &Server{
+
+	srv := &Server{
 		store:          store,
 		secret:         secret,
 		baseURL:        baseURL,
-		uploadsDir:     filepath.Join(cfg.DataDir, "uploads"),
-		maxUpload:      max,
+		storage:        st,
 		secure:         secure,
 		loginLimiter:   newLimiter(10, time.Minute),
 		commentLimiter: newLimiter(30, time.Minute),
-	}, nil
+	}
+
+	go srv.startRetentionCleanup()
+
+	return srv, nil
 }
 
 func isLocalBaseURL(u string) bool {
@@ -142,6 +192,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tokens", s.authAdmin(s.handleCreateToken))
 	mux.HandleFunc("GET /api/tokens", s.authAdmin(s.handleListTokens))
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.authAdmin(s.handleDeleteToken))
+	mux.HandleFunc("GET /api/settings", s.authAdmin(s.handleGetSettings))
+	mux.HandleFunc("PUT /api/settings", s.authAdmin(s.handleUpdateSettings))
 
 	// Page-side API (callable by the trusted parent page JS).
 	mux.HandleFunc("GET /api/uploads/{slug}/comments", s.handleListComments)
@@ -164,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	mux.HandleFunc("POST /dashboard/upload", s.handleDashboardUpload)
 	mux.HandleFunc("POST /dashboard/delete/{slug}", s.handleDashboardDelete)
+	mux.HandleFunc("POST /dashboard/settings", s.handleDashboardSettings)
 	mux.HandleFunc("GET /dashboard/stats/{slug}", s.handleDashboardStats)
 
 	return s.withMiddleware(mux)
@@ -223,24 +276,81 @@ func bearerToken(r *http.Request) string {
 	return ""
 }
 
-// uploadPath returns the on-disk path for a slug.
-func (s *Server) uploadPath(slug string) string {
-	return filepath.Join(s.uploadsDir, slug+".html")
+func initDefaultSettings(store *db.Store, maxUpload, maxTotalSize int64, retentionDays int, s3Defaults map[string]string) error {
+	upsert := func(key, val string) error {
+		_, err := store.GetSetting(key)
+		if err == nil {
+			return nil
+		}
+		return store.SetSetting(key, val)
+	}
+	_ = upsert("max_upload", strconv.FormatInt(maxUpload, 10))
+	_ = upsert("max_total_size", strconv.FormatInt(maxTotalSize, 10))
+	_ = upsert("retention_days", strconv.Itoa(retentionDays))
+	for k, v := range s3Defaults {
+		if v != "" {
+			_ = upsert(k, v)
+		}
+	}
+	return nil
 }
 
-var errMissing = errors.New("not found")
+func (s *Server) settingInt64(key string, def int64) int64 {
+	v, err := s.store.GetSetting(key)
+	if err != nil || v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return def
+	}
+	return n
+}
 
-// readUploadFile reads & sanity-checks size of an uploaded file.
-func (s *Server) readUploadFile(slug string) ([]byte, error) {
-	p := s.uploadPath(slug)
-	f, err := os.Open(p)
-	if err != nil {
-		return nil, errMissing
+func (s *Server) settingInt(key string, def int) int {
+	v, err := s.store.GetSetting(key)
+	if err != nil || v == "" {
+		return def
 	}
-	defer f.Close()
-	b, err := io.ReadAll(f)
+	n, err := strconv.Atoi(v)
 	if err != nil {
-		return nil, err
+		return def
 	}
-	return b, nil
+	return n
+}
+
+func (s *Server) startRetentionCleanup() {
+	retentionDays := s.settingInt("retention_days", 0)
+	if retentionDays <= 0 {
+		return
+	}
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.cleanupExpired()
+	}
+}
+
+func (s *Server) cleanupExpired() {
+	retentionDays := s.settingInt("retention_days", 0)
+	if retentionDays <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+	uploads, err := s.store.ListUploadsOlderThan(cutoff)
+	if err != nil {
+		log.Printf("retention cleanup: list: %v", err)
+		return
+	}
+	for _, u := range uploads {
+		if err := s.storage.Delete(context.Background(), u.Slug); err != nil {
+			log.Printf("retention cleanup: storage delete %s: %v", u.Slug, err)
+		}
+		if err := s.store.DeleteUpload(u.ID); err != nil {
+			log.Printf("retention cleanup: db delete %s: %v", u.Slug, err)
+		}
+	}
+	if len(uploads) > 0 {
+		log.Printf("retention cleanup: removed %d expired uploads (cutoff %s)", len(uploads), cutoff.Format(time.DateOnly))
+	}
 }

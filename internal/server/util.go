@@ -2,8 +2,6 @@ package server
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 )
@@ -33,25 +31,9 @@ func looksLikeHTML(b []byte) bool {
 	return strings.Contains(head, "<") && strings.Contains(head, ">")
 }
 
-func writeAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func removeFile(path string) error {
-	return os.Remove(path)
-}
-
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
-}
-
-func safeBase(s string) string {
-	return filepath.Base(s)
 }
