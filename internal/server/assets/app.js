@@ -9,6 +9,7 @@
   var MODE_ON = false;
   var pendingPick = null;
   var loaded = false;
+  var lastComments = [];
 
   var $ = function (id) { return document.getElementById(id); };
   var frame = $("hn-frame");
@@ -17,6 +18,7 @@
   var panelBtn = $("hn-panel-btn");
   var panel = $("hn-panel");
   var panelClose = $("hn-panel-close");
+  var exportBtn = $("hn-export-md");
   var list = $("hn-comment-list");
   var count = $("hn-count");
   var composer = $("hn-composer");
@@ -143,7 +145,9 @@
   }
 
   function render(comments) {
+    lastComments = comments;
     updateCount(comments.length);
+    if (exportBtn) exportBtn.hidden = comments.length === 0;
     var nmap = numberMap(comments);
 
     // sync on-page pins/highlights (one per unique anchored target)
@@ -213,6 +217,59 @@
     var d = document.createElement("div");
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  // Render the loaded comments — each with the on-page anchor it points at —
+  // as a Markdown document for pasting into an issue, doc, or agent prompt.
+  function commentsToMarkdown(comments) {
+    var lines = ["# Comments", "", "Page: " + location.href, ""];
+    comments.forEach(function (c, i) {
+      var when = new Date(c.created_at * 1000).toLocaleString();
+      lines.push("## " + (i + 1) + ". " + (c.author || "anonymous") + " · " + when);
+      if (c.element_text) {
+        lines.push("**On:** > " + c.element_text.replace(/\s+/g, " ").trim());
+      } else if (c.selector) {
+        lines.push("**On:** `" + c.selector + "`");
+      } else {
+        lines.push("**On:** whole page");
+      }
+      lines.push("");
+      lines.push(c.body);
+      lines.push("");
+    });
+    return lines.join("\n");
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error("copy failed"));
+    });
+  }
+
+  function exportMarkdown() {
+    if (!lastComments.length) return;
+    copyText(commentsToMarkdown(lastComments)).then(function () {
+      var prev = exportBtn.textContent;
+      exportBtn.textContent = "Copied!";
+      setTimeout(function () { exportBtn.textContent = prev; }, 1500);
+    }).catch(function () {
+      var prev = exportBtn.textContent;
+      exportBtn.textContent = "Copy failed";
+      setTimeout(function () { exportBtn.textContent = prev; }, 1500);
+    });
   }
 
   function loadComments() {
@@ -299,6 +356,7 @@
     else { openPanel(); setMode(false); }
   });
   panelClose.addEventListener("click", closePanel);
+  if (exportBtn) exportBtn.addEventListener("click", exportMarkdown);
   cancelBtn.addEventListener("click", function () { hideComposer(); setMode(false); });
   if (commentingAs) commentingAs.addEventListener("click", openNameModal);
   if (hintGeneral) hintGeneral.addEventListener("click", function () {

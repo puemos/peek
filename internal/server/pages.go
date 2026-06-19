@@ -43,7 +43,10 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <aside id="hn-panel" class="hn-panel">
   <header>
     <h3>Comments</h3>
-    <button id="hn-panel-close" type="button">&times;</button>
+    <div class="hn-panel-actions">
+      <button id="hn-export-md" type="button" title="Copy all comments as Markdown" hidden>Copy MD</button>
+      <button id="hn-panel-close" type="button">&times;</button>
+    </div>
   </header>
   <ul id="hn-comment-list"></ul>
 </aside>

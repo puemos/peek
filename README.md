@@ -39,6 +39,15 @@ HTML. Single static Go binary, pure-Go SQLite, no CGO.
 
 ## Install
 
+### Install the CLI (one-liner)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/puemos/peek/main/install.sh | sh
+```
+
+Installs just the `peek` CLI for your OS/arch (override with `PEEK_VERSION` /
+`PEEK_INSTALL_DIR`). To run a server too, use one of the options below.
+
 ### Download a release (recommended)
 
 Grab a prebuilt archive for your OS/arch from the
@@ -187,16 +196,21 @@ upload files or paste HTML, list/delete uploads, set passwords, and view stats.
 Sessions are signed, revocable, `HttpOnly`, `SameSite=Strict` cookies with CSRF
 protection on every form. Non-admins only see their own uploads.
 
-## Agent skill
+## Agent skills
 
-Coding agents (Claude Code, opencode, …) can install a skill so they can share
+Coding agents (Claude Code, opencode, …) can install skills so they can share
 HTML and return a link automatically:
 
 ```sh
 npx skills add puemos/peek@peek -g -y
 ```
 
-The skill source lives at `skills/peek/SKILL.md`.
+Two skills ship in this repo:
+
+- **`peek`** (`skills/peek/SKILL.md`) — consumer side: install the CLI, upload
+  HTML, get a link, read comments.
+- **`peek-server`** (`skills/peek-server/SKILL.md`) — run and administer a peek
+  server: tokens, passwords, deployment.
 
 ## Project layout
 
@@ -207,7 +221,8 @@ internal/db/        SQLite store + schema
 internal/models/    data types
 internal/server/    HTTP server, handlers, security, embedded assets
 internal/cli/       CLI client + commands
-skills/peek/        installable agent skill
+skills/peek/        consumer agent skill (upload + read comments)
+skills/peek-server/ server/admin agent skill
 assets/             README / launch media
 scripts/            tooling
 ```

@@ -92,6 +92,14 @@ html, body {
   border-radius: var(--radius-sm); transition: background .12s ease, color .12s ease;
 }
 #hn-panel-close:hover { color: var(--fg); background: var(--elevated); }
+.hn-panel-actions { display: flex; align-items: center; gap: 6px; }
+#hn-export-md {
+  background: none; border: 1px solid var(--border); color: var(--fg-muted);
+  font-size: 12px; font-weight: 500; cursor: pointer; padding: 4px 10px; line-height: 1;
+  border-radius: var(--radius-sm); transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+#hn-export-md:hover { color: var(--fg); background: var(--elevated); border-color: var(--fg-muted); }
+#hn-export-md[hidden] { display: none; }
 #hn-comment-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 #hn-comment-list li { padding: 14px 16px; border-bottom: 1px solid var(--border); transition: background .12s ease; }
 #hn-comment-list li:hover { background: rgba(255,255,255,.02); }

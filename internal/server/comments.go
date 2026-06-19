@@ -32,7 +32,20 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if !s.pageAuthorized(r, u) {
+	// API callers (the CLI) authenticate with a bearer token and may only read
+	// comments for uploads they own. Browser viewers send no token and go
+	// through the public / password-cookie gate instead.
+	if tok := bearerToken(r); tok != "" {
+		owner, err := s.store.GetToken(tok)
+		if err != nil {
+			jsonError(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+			jsonError(w, http.StatusForbidden, "not owner")
+			return
+		}
+	} else if !s.pageAuthorized(r, u) {
 		jsonError(w, http.StatusUnauthorized, "password required")
 		return
 	}

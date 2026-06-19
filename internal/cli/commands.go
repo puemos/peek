@@ -39,13 +39,15 @@ func Run(args []string) int {
 		err = cmdPassword(rest)
 	case "stats":
 		err = cmdStats(rest)
+	case "comments":
+		err = cmdComments(rest)
 	case "token":
 		err = cmdToken(rest)
 	case "help", "-h", "--help":
 		usage()
 		return 0
 	case "version", "-v", "--version":
-		fmt.Println("peek 0.1.0")
+		fmt.Println("peek 0.2.0")
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
@@ -72,6 +74,7 @@ Usage:
   peek password <slug> --set <pw>      protect a page
   peek password <slug> --clear         remove protection
   peek stats <slug>
+  peek comments <slug>                 list comments on one of your uploads
   peek token create --name <name>      create a new user token (admin only)
   peek token list                      list tokens (admin only)
   peek token revoke <id>               revoke a token by id (admin only)
@@ -484,6 +487,61 @@ func cmdStats(args []string) error {
 			}
 			fmt.Printf("  %-20s  %-16s  %-20s  %s\n", t, name, truncate(v.IP, 20), truncate(v.UA, 40))
 		}
+	}
+	return nil
+}
+
+// --- comments ---
+
+func cmdComments(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: peek comments <slug>")
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	c, err := newClient(cfg)
+	if err != nil {
+		return err
+	}
+	var list []struct {
+		ID        int64  `json:"id"`
+		Selector  string `json:"selector"`
+		Text      string `json:"element_text"`
+		Author    string `json:"author"`
+		Body      string `json:"body"`
+		CreatedAt int64  `json:"created_at"`
+	}
+	if err := c.getJSON("/api/uploads/"+args[0]+"/comments", &list); err != nil {
+		return err
+	}
+	if len(list) == 0 {
+		fmt.Println("no comments yet.")
+		return nil
+	}
+	for i, cm := range list {
+		when := time.Unix(cm.CreatedAt, 0).Format("2006-01-02 15:04")
+		author := cm.Author
+		if author == "" {
+			author = "anonymous"
+		}
+		// Context: the on-page anchor a comment points at.
+		var ctx string
+		switch {
+		case cm.Text != "":
+			ctx = "“" + truncate(cm.Text, 60) + "”"
+		case cm.Selector != "":
+			ctx = cm.Selector
+		default:
+			ctx = "whole page"
+		}
+		if i > 0 {
+			fmt.Println()
+		}
+		fmt.Printf("%s · %s\n", author, when)
+		fmt.Printf("  on: %s\n", ctx)
+		fmt.Printf("  %s\n", cm.Body)
 	}
 	return nil
 }
