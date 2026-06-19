@@ -1,15 +1,27 @@
+# VCS
 .git
-.gitignore
-data
-data-s3
-bin
+.github
+
+# Build artifacts & runtime data
+bin/
+dist/
+data/
+*.test
+*.out
+
+# Docs & media (not needed for the build; embedded assets live in internal/server/assets/)
+assets/
 README.md
+AGENTS.md
 LICENSE
-docker-compose.yml
+skills/
+scripts/
+install.sh
+
+# Editor
+.DS_Store
+*.swp
+
+# Docker
 Dockerfile
 .dockerignore
-*.mp4
-*.gif
-*.png
-skills
-scripts
