@@ -19,5 +19,17 @@ jobs:
         run: go vet ./...
       - name: Build
         run: go build ./...
-      - name: Test
-        run: go test ./...
+      - name: Test (with race detector)
+        run: go test -race -count=1 ./...
+      - name: Coverage
+        run: |
+          go test -coverprofile=coverage.out ./... 2>/dev/null || true
+          go tool cover -func=coverage.out | tail -1
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"

@@ -14,8 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Serialize so the matrix jobs don't race to create the same release
-      # (parallel create-or-update hits "already_exists" and fails).
       max-parallel: 1
       matrix:
         include:
@@ -39,12 +37,15 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME}"
+          COMMIT="${GITHUB_SHA::7}"
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X github.com/puemos/peek/internal/version.Version=${VERSION} -X github.com/puemos/peek/internal/version.Commit=${COMMIT} -X github.com/puemos/peek/internal/version.BuildDate=${DATE}"
           NAME="peek_${VERSION}_${GOOS}_${GOARCH}"
           mkdir -p "dist/${NAME}"
           EXT=""
           [ "${GOOS}" = "windows" ] && EXT=".exe"
-          go build -trimpath -ldflags "-s -w" -o "dist/${NAME}/peekd${EXT}" ./cmd/peekd
-          go build -trimpath -ldflags "-s -w" -o "dist/${NAME}/peek${EXT}"  ./cmd/peek
+          go build -trimpath -ldflags "${LDFLAGS}" -o "dist/${NAME}/peekd${EXT}" ./cmd/peekd
+          go build -trimpath -ldflags "${LDFLAGS}" -o "dist/${NAME}/peek${EXT}"  ./cmd/peek
           cp README.md LICENSE "dist/${NAME}/" 2>/dev/null || true
           cd dist
           if [ "${GOOS}" = "windows" ]; then
@@ -60,6 +61,21 @@ jobs:
         with:
           files: ${{ steps.pkg.outputs.archive }}
           generate_release_notes: true
+
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: peek-sbom.spdx.json
+      - name: Upload SBOM to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: peek-sbom.spdx.json
 
   docker:
     name: docker image
@@ -95,5 +111,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

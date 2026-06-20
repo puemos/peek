@@ -234,6 +234,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 
+	// Prometheus metrics (unauthenticated, for monitoring).
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
 	// Web GUI (browser-based management).
 	mux.HandleFunc("GET /login", s.handleLogin)
 	mux.HandleFunc("POST /login", s.rateLimit(s.loginLimiter, s.handleLogin))
@@ -260,8 +263,24 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 			http.Error(w, "Too many requests. Try again shortly.", http.StatusTooManyRequests)
 			return
 		}
-		h.ServeHTTP(w, r)
+		reqTotal.Add(1)
+		rw := &statusRecorder{ResponseWriter: w, status: 200}
+		h.ServeHTTP(rw, r)
+		if rw.status >= 400 {
+			reqErrors.Add(1)
+		}
 	})
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code for metrics.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
 }
 
 // handleHealthz is a liveness probe — returns 200 if the process is running.

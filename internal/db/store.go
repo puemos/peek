@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -120,13 +121,73 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	store := &Store{db}
-	if err := store.migrateTokenHashes(); err != nil {
-		return nil, err
-	}
-	if err := store.migrateTokenExpiry(); err != nil {
+	if err := store.runMigrations(); err != nil {
 		return nil, err
 	}
 	return store, nil
+}
+
+// migrations is an ordered list of schema migrations. Each migration has a
+// unique integer ID. Migrations that have already been applied (recorded in
+// the schema_migrations table) are skipped.
+var migrations = []struct {
+	id   int
+	desc string
+	sql  string
+}{
+	{1, "token_hashes", ""}, // handled by migrateTokenHashes (legacy compat)
+	{2, "token_expiry", `-- ALTER TABLE handled idempotently below`},
+	{3, "audit_log", `
+CREATE TABLE IF NOT EXISTS audit_log (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	actor TEXT NOT NULL DEFAULT '',
+	action TEXT NOT NULL,
+	detail TEXT NOT NULL DEFAULT '',
+	ip TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);`},
+}
+
+func (s *Store) runMigrations() error {
+	// Create the migrations tracking table.
+	if _, err := s.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		id INTEGER PRIMARY KEY,
+		applied_at INTEGER NOT NULL
+	)`); err != nil {
+		return err
+	}
+
+	// Run legacy migration first (pre-migration-system).
+	if err := s.migrateTokenHashes(); err != nil {
+		return err
+	}
+	// Mark migration 1 as applied if not already.
+	s.markMigrationApplied(1)
+
+	for _, m := range migrations {
+		if s.isMigrationApplied(m.id) {
+			continue
+		}
+		if m.sql != "" {
+			if _, err := s.Exec(m.sql); err != nil {
+				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
+			}
+		}
+		s.markMigrationApplied(m.id)
+	}
+	return nil
+}
+
+func (s *Store) isMigrationApplied(id int) bool {
+	var n int
+	err := s.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE id=?`, id).Scan(&n)
+	return err == nil && n > 0
+}
+
+func (s *Store) markMigrationApplied(id int) {
+	_, _ = s.Exec(`INSERT OR IGNORE INTO schema_migrations(id, applied_at) VALUES(?, ?)`,
+		id, time.Now().Unix())
 }
 
 // migrateTokenExpiry adds the expires_at column to the tokens table for

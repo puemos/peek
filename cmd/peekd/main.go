@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	_ "modernc.org/sqlite"
 
 	"github.com/puemos/peek/internal/server"
 	"github.com/puemos/peek/internal/version"
@@ -43,6 +46,44 @@ func main() {
 		return
 	}
 
+	abs, err := filepath.Abs(*dataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "data dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Subcommand: healthcheck — used by Docker HEALTHCHECK (scratch image has no curl).
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		addr := *addr
+		if v := os.Getenv("PEEK_HEALTHCHECK_ADDR"); v != "" {
+			addr = v
+		}
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Get("http://" + addr + "/healthz")
+		if err != nil {
+			os.Exit(1)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Subcommand: backup — snapshot the SQLite DB to a file.
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		backupPath := filepath.Join(abs, "peek-backup.db")
+		if len(os.Args) > 2 {
+			backupPath = os.Args[2]
+		}
+		if err := backupDatabase(abs, backupPath); err != nil {
+			fmt.Fprintf(os.Stderr, "backup failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("backup written to %s\n", backupPath)
+		return
+	}
+
 	// Structured JSON logging (parseable by log aggregators).
 	logLevel := slog.LevelInfo
 	if v := os.Getenv("PEEK_LOG_LEVEL"); v == "debug" {
@@ -51,12 +92,6 @@ func main() {
 		logLevel = slog.LevelWarn
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
-
-	abs, err := filepath.Abs(*dataDir)
-	if err != nil {
-		slog.Error("data dir", "err", err)
-		os.Exit(1)
-	}
 
 	srv, err := server.New(server.Config{
 		Addr:       *addr,
@@ -143,4 +178,26 @@ func getenvIntAsInt(k string, d int) int {
 func getenvBool(k string) bool {
 	v := os.Getenv(k)
 	return v == "1" || v == "true" || v == "yes"
+}
+
+// backupDatabase creates a consistent snapshot of the SQLite database using
+// VACUUM INTO, which works even while the server is running. The backup file
+// is a standalone SQLite database that can be restored by simply replacing
+// the original peek.db.
+func backupDatabase(dataDir, destPath string) error {
+	dbPath := filepath.Join(dataDir, "peek.db")
+	dsn := "file:" + dbPath + "?_pragma=foreign_keys(ON)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return fmt.Errorf("open source db: %w", err)
+	}
+	defer db.Close()
+
+	// VACUUM INTO creates a compact, consistent snapshot.
+	destURI := "file:" + destPath
+	_, err = db.Exec("VACUUM INTO ?", destURI)
+	if err != nil {
+		return fmt.Errorf("vacuum into: %w", err)
+	}
+	return nil
 }

@@ -14,8 +14,14 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags "-s -w" -o /out/peekd ./cmd/peekd
+    go build -trimpath -ldflags "-s -w \
+    -X github.com/puemos/peek/internal/version.Version=${VERSION} \
+    -X github.com/puemos/peek/internal/version.Commit=${COMMIT} \
+    -X github.com/puemos/peek/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    -o /out/peekd ./cmd/peekd
 
 # Prepare a nonroot passwd entry and a writable data dir owned by it.
 RUN echo 'peek:x:65532:65532:peek:/:/sbin/nologin' > /out/passwd \
@@ -38,5 +44,8 @@ ENV PEEK_ADDR=:7700 \
 EXPOSE 7700
 VOLUME ["/data"]
 USER 65532:65532
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/peekd", "healthcheck", "--addr", "localhost:7700"]
 
 ENTRYPOINT ["/peekd"]
