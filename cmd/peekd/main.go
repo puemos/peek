@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -43,9 +43,19 @@ func main() {
 		return
 	}
 
+	// Structured JSON logging (parseable by log aggregators).
+	logLevel := slog.LevelInfo
+	if v := os.Getenv("PEEK_LOG_LEVEL"); v == "debug" {
+		logLevel = slog.LevelDebug
+	} else if v == "warn" {
+		logLevel = slog.LevelWarn
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
+
 	abs, err := filepath.Abs(*dataDir)
 	if err != nil {
-		log.Fatalf("data dir: %v", err)
+		slog.Error("data dir", "err", err)
+		os.Exit(1)
 	}
 
 	srv, err := server.New(server.Config{
@@ -68,10 +78,11 @@ func main() {
 		TrustedProxy:  *trustedProxy,
 	})
 	if err != nil {
-		log.Fatalf("init: %v", err)
+		slog.Error("init", "err", err)
+		os.Exit(1)
 	}
 
-	log.Printf("peek listening on %s (data: %s, base: %s)", *addr, abs, *baseURL)
+	slog.Info("peek starting", "addr", *addr, "data", abs, "base_url", *baseURL)
 	hs := &http.Server{
 		Addr:         *addr,
 		Handler:      srv.Handler(),
@@ -83,24 +94,25 @@ func main() {
 	// Graceful shutdown on SIGINT / SIGTERM.
 	go func() {
 		if err := hs.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
+			slog.Error("server", "err", err)
+			os.Exit(1)
 		}
 	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-stop
-	log.Printf("received %s, shutting down…", sig)
+	slog.Info("shutting down", "signal", sig.String())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := hs.Shutdown(ctx); err != nil {
-		log.Printf("graceful shutdown failed: %v", err)
+		slog.Error("graceful shutdown failed", "err", err)
 	}
 	if err := srv.Close(); err != nil {
-		log.Printf("store close: %v", err)
+		slog.Error("store close", "err", err)
 	}
-	log.Printf("bye.")
+	slog.Info("bye")
 }
 
 func getenv(k, d string) string {

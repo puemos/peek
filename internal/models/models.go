@@ -8,6 +8,7 @@ type Token struct {
 	Name      string
 	IsAdmin   bool
 	CreatedAt time.Time
+	ExpiresAt int64 // unix timestamp, 0 = no expiry
 }
 
 type Upload struct {

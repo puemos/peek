@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -113,7 +114,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
-	s.audit("upload created slug=%s file=%q size=%d by=%s", slug, filename, len(data), owner.Name)
+	s.auditRequest(r, owner.Name, "upload.create", "slug="+slug+" file="+filename+" size="+strconv.Itoa(len(data)))
 
 	jsonOK(w, uploadResp{Slug: slug, URL: s.baseURL + "/p/" + slug})
 }
@@ -171,7 +172,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
-	s.audit("upload deleted slug=%s file=%q by=%s", slug, u.Filename, owner.Name)
+	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
 	_ = s.storage.Delete(r.Context(), slug)
 	jsonOK(w, map[string]any{"deleted": slug})
 }
@@ -218,7 +219,7 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	if hash != "" {
 		action = "set"
 	}
-	s.audit("upload password %s slug=%s by=%s", action, slug, owner.Name)
+	s.auditRequest(r, owner.Name, "upload.password."+action, "slug="+slug)
 	jsonOK(w, map[string]any{"protected": hash != ""})
 }
 
@@ -266,7 +267,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		ExpiresH int    `json:"expires_hours"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 		jsonError(w, http.StatusBadRequest, "name required")
@@ -277,13 +279,47 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
-	if err := s.store.CreateToken(t, strings.TrimSpace(body.Name), false); err != nil {
+	var expiresAt int64
+	if body.ExpiresH > 0 {
+		expiresAt = time.Now().Add(time.Duration(body.ExpiresH) * time.Hour).Unix()
+	}
+	if err := s.store.CreateToken(t, strings.TrimSpace(body.Name), false, expiresAt); err != nil {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
 	actor, _ := s.store.GetToken(bearerToken(r))
-	s.audit("token created name=%q by=%s", body.Name, actorName(actor))
+	s.auditRequest(r, actorName(actor), "token.create", "name="+body.Name)
 	jsonOK(w, map[string]any{"token": t, "name": body.Name})
+}
+
+func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	entries, err := s.store.ListAuditLog(limit)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	type arow struct {
+		ID        int64  `json:"id"`
+		Actor     string `json:"actor"`
+		Action    string `json:"action"`
+		Detail    string `json:"detail"`
+		IP        string `json:"ip"`
+		CreatedAt int64  `json:"created_at"`
+	}
+	out := make([]arow, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, arow{
+			ID: e.ID, Actor: e.Actor, Action: e.Action,
+			Detail: e.Detail, IP: e.IP, CreatedAt: e.CreatedAt.Unix(),
+		})
+	}
+	jsonOK(w, out)
 }
 
 func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
@@ -294,13 +330,14 @@ func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	// Tokens are stored hashed and never returned after creation.
 	type trow struct {
-		ID    int64  `json:"id"`
-		Name  string `json:"name"`
-		Admin bool   `json:"admin"`
+		ID        int64  `json:"id"`
+		Name      string `json:"name"`
+		Admin     bool   `json:"admin"`
+		ExpiresAt int64  `json:"expires_at"`
 	}
 	out := make([]trow, 0, len(tokens))
 	for _, t := range tokens {
-		out = append(out, trow{ID: t.ID, Name: t.Name, Admin: t.IsAdmin})
+		out = append(out, trow{ID: t.ID, Name: t.Name, Admin: t.IsAdmin, ExpiresAt: t.ExpiresAt})
 	}
 	jsonOK(w, out)
 }
@@ -332,7 +369,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, _ := s.store.GetToken(bearerToken(r))
-	s.audit("token revoked id=%d name=%q by=%s", id, t.Name, actorName(actor))
+	s.auditRequest(r, actorName(actor), "token.revoke", "id="+strconv.FormatInt(id, 10)+" name="+t.Name)
 	jsonOK(w, map[string]any{"revoked": id})
 }
 

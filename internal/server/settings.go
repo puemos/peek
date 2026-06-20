@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 )
 
 type settingsRow struct {
@@ -60,12 +62,19 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if _, ok := settingsMeta[k]; !ok {
 			continue
 		}
+		if k == "s3_endpoint" && v != "" {
+			if err := validateS3Endpoint(v); err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid S3 endpoint: "+err.Error())
+				return
+			}
+		}
 		if err := s.encryptedSetSetting(k, v); err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
 		}
 	}
-	s.audit("settings updated keys=%v", s.settingKeys(body))
+	actor, _ := s.store.GetToken(bearerToken(r))
+	s.auditRequest(r, actorName(actor), "settings.update", strings.Join(s.settingKeys(body), ","))
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
@@ -97,10 +106,16 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 			}
 			_ = s.encryptedSetSetting(k, v)
 		} else {
+			if k == "s3_endpoint" {
+				if err := validateS3Endpoint(v); err != nil {
+					http.Redirect(w, r, "/dashboard?err=invalid+s3+endpoint:+ "+url.PathEscape(err.Error()), http.StatusSeeOther)
+					return
+				}
+			}
 			_ = s.encryptedSetSetting(k, v)
 		}
 	}
-	s.audit("settings updated via dashboard by=%s", owner.Name)
+	s.auditRequest(r, owner.Name, "settings.update", "via dashboard")
 	http.Redirect(w, r, "/dashboard?ok=settings+saved", http.StatusSeeOther)
 }
 

@@ -5,7 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,8 +52,11 @@ type Server struct {
 	storage  Storage
 	secure   bool
 
-	loginLimiter   *limiter
-	commentLimiter *limiter
+	loginLimiter    *limiter
+	commentLimiter  *limiter
+	uploadLimiter   *limiter
+	passwordLimiter *limiter
+	globalLimiter   *limiter
 
 	trustedProxy bool
 }
@@ -100,20 +104,20 @@ func New(cfg Config) (*Server, error) {
 			v, _ := store.GetSetting(key)
 			return v
 		})
-		log.Printf("storage: s3 backend (config managed via settings API / dashboard)")
+		slog.Info("storage backend: s3 (config managed via settings API / dashboard)")
 	} else {
 		uploadsDir := filepath.Join(cfg.DataDir, "uploads")
 		if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 			return nil, err
 		}
 		st = &FileStorage{Dir: uploadsDir}
-		log.Printf("storage: file backend (dir=%s)", uploadsDir)
+		slog.Info("storage backend: file", "dir", uploadsDir)
 	}
 
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	secure := strings.HasPrefix(baseURL, "https://")
 	if !secure && !isLocalBaseURL(baseURL) {
-		log.Printf("WARNING: base URL %q is not https. Bearer tokens and session cookies will be sent in clear — put peek behind a TLS reverse proxy (e.g. Caddy/nginx) for any non-local deployment.", baseURL)
+		slog.Warn("base URL is not https — tokens and cookies sent in clear. Use a TLS reverse proxy.", "base_url", baseURL)
 	}
 
 	srv := &Server{
@@ -124,11 +128,14 @@ func New(cfg Config) (*Server, error) {
 		secure:         secure,
 		loginLimiter:   newLimiter(10, time.Minute),
 		commentLimiter: newLimiter(30, time.Minute),
+		uploadLimiter:  newLimiter(20, time.Minute),
+		passwordLimiter: newLimiter(10, time.Minute),
+		globalLimiter:  newLimiter(300, time.Minute),
 		trustedProxy:   cfg.TrustedProxy,
 	}
 
 	if !cfg.TrustedProxy && !isLocalBaseURL(baseURL) {
-		log.Printf("WARNING: --trusted-proxy is not set. X-Forwarded-For headers will be ignored for rate limiting. Set --trusted-proxy if peek runs behind a reverse proxy (Caddy/nginx).")
+		slog.Warn("trusted-proxy not set — X-Forwarded-For will be ignored. Enable if behind a reverse proxy.")
 	}
 
 	go srv.startRetentionCleanup()
@@ -157,7 +164,7 @@ func loadOrCreateSecret(path string) string {
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		log.Fatalf("generating secret: %v", err)
+		panic("generating secret: " + err.Error())
 	}
 	s := hex.EncodeToString(b)
 	_ = os.WriteFile(path, []byte(s), 0o600)
@@ -180,14 +187,16 @@ func bootstrapTokens(store *db.Store, adminToken string) error {
 		}
 		adminToken = t
 	}
-	if err := store.CreateToken(adminToken, "admin", true); err != nil {
+	if err := store.CreateToken(adminToken, "admin", true, 0); err != nil {
 		return err
 	}
-	log.Printf("==========================================================")
-	log.Printf(" Created admin token (save it now, it is stored in the DB):")
-	log.Printf("   %s", adminToken)
-	log.Printf(" Use it with the CLI:  peek login --host <url>   (paste this token when prompted)")
-	log.Printf("==========================================================")
+	// Print to stdout (not the JSON structured log) so the operator sees it
+	// clearly on first run. This is the only time the plaintext is shown.
+	fmt.Println("==========================================================")
+	fmt.Println(" Created admin token (save it now, it is stored hashed in the DB):")
+	fmt.Printf("   %s\n", adminToken)
+	fmt.Println(" Use it with the CLI:  peek login --host <url>   (paste this token when prompted)")
+	fmt.Println("==========================================================")
 	return nil
 }
 
@@ -195,7 +204,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Trusted, same-origin JSON API (token-gated where noted).
-	mux.HandleFunc("POST /api/upload", s.authToken(s.handleUpload))
+	mux.HandleFunc("POST /api/upload", s.rateLimit(s.uploadLimiter, s.authToken(s.handleUpload)))
 	mux.HandleFunc("GET /api/uploads", s.authToken(s.handleListUploads))
 	mux.HandleFunc("DELETE /api/uploads/{slug}", s.authToken(s.handleDeleteUpload))
 	mux.HandleFunc("POST /api/uploads/{slug}/password", s.authToken(s.handleSetPassword))
@@ -205,6 +214,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.authAdmin(s.handleDeleteToken))
 	mux.HandleFunc("GET /api/settings", s.authAdmin(s.handleGetSettings))
 	mux.HandleFunc("PUT /api/settings", s.authAdmin(s.handleUpdateSettings))
+	mux.HandleFunc("GET /api/audit", s.authAdmin(s.handleAuditLog))
 
 	// Page-side API (callable by the trusted parent page JS).
 	mux.HandleFunc("GET /api/uploads/{slug}/comments", s.handleListComments)
@@ -212,7 +222,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Pages & assets.
 	mux.HandleFunc("GET /p/{slug}", s.handlePage)
-	mux.HandleFunc("POST /p/{slug}", s.rateLimit(s.loginLimiter, s.handlePagePassword))
+	mux.HandleFunc("POST /p/{slug}", s.rateLimit(s.passwordLimiter, s.handlePagePassword))
 	mux.HandleFunc("GET /raw/{slug}", s.handleRaw)
 	mux.HandleFunc("GET /bridge.js", s.handleBridge)
 	mux.HandleFunc("GET /app.js", s.handleApp)
@@ -244,6 +254,11 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		if s.secure {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+		// Global rate limit to protect against request floods.
+		if !s.globalLimiter.allow(s.clientIP(r)) {
+			http.Error(w, "Too many requests. Try again shortly.", http.StatusTooManyRequests)
+			return
 		}
 		h.ServeHTTP(w, r)
 	})
@@ -411,7 +426,16 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) audit(format string, args ...any) {
-	log.Printf("[audit] "+format, args...)
+	msg := fmt.Sprintf(format, args...)
+	slog.Info("audit", "action", "system", "detail", msg)
+	_ = s.store.AddAuditLog("", "system", msg, "")
+}
+
+// auditRequest logs an audit event with the actor's IP from the request.
+func (s *Server) auditRequest(r *http.Request, actor, action, detail string) {
+	ip := s.clientIP(r)
+	slog.Info("audit", "actor", actor, "action", action, "detail", detail, "ip", ip)
+	_ = s.store.AddAuditLog(actor, action, detail, ip)
 }
 
 func (s *Server) startRetentionCleanup() {
@@ -434,18 +458,18 @@ func (s *Server) cleanupExpired() {
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
 	uploads, err := s.store.ListUploadsOlderThan(cutoff)
 	if err != nil {
-		log.Printf("retention cleanup: list: %v", err)
+		slog.Error("retention cleanup: list", "err", err)
 		return
 	}
 	for _, u := range uploads {
 		if err := s.storage.Delete(context.Background(), u.Slug); err != nil {
-			log.Printf("retention cleanup: storage delete %s: %v", u.Slug, err)
+			slog.Error("retention cleanup: storage delete", "slug", u.Slug, "err", err)
 		}
 		if err := s.store.DeleteUpload(u.ID); err != nil {
-			log.Printf("retention cleanup: db delete %s: %v", u.Slug, err)
+			slog.Error("retention cleanup: db delete", "slug", u.Slug, "err", err)
 		}
 	}
 	if len(uploads) > 0 {
-		log.Printf("retention cleanup: removed %d expired uploads (cutoff %s)", len(uploads), cutoff.Format(time.DateOnly))
+		slog.Info("retention cleanup: removed expired uploads", "count", len(uploads), "cutoff", cutoff.Format(time.DateOnly))
 	}
 }

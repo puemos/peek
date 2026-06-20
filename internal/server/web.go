@@ -296,7 +296,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 		HttpOnly: true,
 	})
-	s.audit("login success user=%q", owner.Name)
+	s.auditRequest(r, owner.Name, "login.success", "")
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
@@ -454,7 +454,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard?err=db+failed", http.StatusSeeOther)
 		return
 	}
-	s.audit("upload created slug=%s file=%q size=%d by=%s", slug, filename, len(data), owner.Name)
+	s.auditRequest(r, owner.Name, "upload.create", "slug="+slug+" file="+filename+" size="+strconv.Itoa(len(data)))
 	url := s.baseURL + "/p/" + slug
 	http.Redirect(w, r, "/dashboard?ok="+url, http.StatusSeeOther)
 }
@@ -482,7 +482,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.store.DeleteUpload(u.ID)
 	_ = s.storage.Delete(r.Context(), slug)
-	s.audit("upload deleted slug=%s file=%q by=%s", slug, u.Filename, owner.Name)
+	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS tokens (
 	token TEXT UNIQUE NOT NULL,
 	name TEXT NOT NULL,
 	is_admin INTEGER NOT NULL DEFAULT 0,
-	created_at INTEGER NOT NULL
+	created_at INTEGER NOT NULL,
+	expires_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS uploads (
@@ -90,6 +92,17 @@ CREATE TABLE IF NOT EXISTS settings (
 	value TEXT NOT NULL,
 	updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS audit_log (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	actor TEXT NOT NULL DEFAULT '',
+	action TEXT NOT NULL,
+	detail TEXT NOT NULL DEFAULT '',
+	ip TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
 `
 
 type Store struct {
@@ -110,7 +123,21 @@ func Open(path string) (*Store, error) {
 	if err := store.migrateTokenHashes(); err != nil {
 		return nil, err
 	}
+	if err := store.migrateTokenExpiry(); err != nil {
+		return nil, err
+	}
 	return store, nil
+}
+
+// migrateTokenExpiry adds the expires_at column to the tokens table for
+// existing installs that predate it.
+func (s *Store) migrateTokenExpiry() error {
+	_, err := s.Exec(`ALTER TABLE tokens ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0`)
+	if err != nil {
+		// Column already exists — ignore the error.
+		return nil
+	}
+	return nil
 }
 
 // migrateTokenHashes upgrades any legacy plaintext token rows to hashes, so an
@@ -147,9 +174,9 @@ func (s *Store) migrateTokenHashes() error {
 	return nil
 }
 
-func (s *Store) CreateToken(token, name string, isAdmin bool) error {
-	_, err := s.Exec(`INSERT INTO tokens(token,name,is_admin,created_at) VALUES(?,?,?,?)`,
-		HashToken(token), name, boolToInt(isAdmin), time.Now().Unix())
+func (s *Store) CreateToken(token, name string, isAdmin bool, expiresAt int64) error {
+	_, err := s.Exec(`INSERT INTO tokens(token,name,is_admin,created_at,expires_at) VALUES(?,?,?,?,?)`,
+		HashToken(token), name, boolToInt(isAdmin), time.Now().Unix(), expiresAt)
 	return err
 }
 
@@ -163,14 +190,19 @@ func (s *Store) GetTokenByID(id int64) (*models.Token, error) {
 
 func (s *Store) getTokenWhere(where string, arg any) (*models.Token, error) {
 	t := &models.Token{}
-	var isAdmin, ts int64
-	err := s.QueryRow(`SELECT id,token,name,is_admin,created_at FROM tokens WHERE `+where, arg).
-		Scan(&t.ID, &t.Token, &t.Name, &isAdmin, &ts)
+	var isAdmin, ts, exp int64
+	err := s.QueryRow(`SELECT id,token,name,is_admin,created_at,expires_at FROM tokens WHERE `+where, arg).
+		Scan(&t.ID, &t.Token, &t.Name, &isAdmin, &ts, &exp)
 	if err != nil {
 		return nil, err
 	}
 	t.IsAdmin = isAdmin == 1
 	t.CreatedAt = time.Unix(ts, 0)
+	t.ExpiresAt = exp
+	// Check expiry: 0 means no expiry.
+	if exp > 0 && time.Now().Unix() > exp {
+		return nil, errors.New("token expired")
+	}
 	return t, nil
 }
 
@@ -186,7 +218,7 @@ func (s *Store) CountAdminTokens() (int, error) {
 }
 
 func (s *Store) ListTokens() ([]models.Token, error) {
-	rows, err := s.Query(`SELECT id,token,name,is_admin,created_at FROM tokens ORDER BY created_at`)
+	rows, err := s.Query(`SELECT id,token,name,is_admin,created_at,expires_at FROM tokens ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -194,12 +226,13 @@ func (s *Store) ListTokens() ([]models.Token, error) {
 	var out []models.Token
 	for rows.Next() {
 		var t models.Token
-		var isAdmin, ts int64
-		if err := rows.Scan(&t.ID, &t.Token, &t.Name, &isAdmin, &ts); err != nil {
+		var isAdmin, ts, exp int64
+		if err := rows.Scan(&t.ID, &t.Token, &t.Name, &isAdmin, &ts, &exp); err != nil {
 			return nil, err
 		}
 		t.IsAdmin = isAdmin == 1
 		t.CreatedAt = time.Unix(ts, 0)
+		t.ExpiresAt = exp
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -430,4 +463,41 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (s *Store) AddAuditLog(actor, action, detail, ip string) error {
+	_, err := s.Exec(`INSERT INTO audit_log(actor,action,detail,ip,created_at) VALUES(?,?,?,?,?)`,
+		actor, action, detail, ip, time.Now().Unix())
+	return err
+}
+
+type AuditEntry struct {
+	ID        int64
+	Actor     string
+	Action    string
+	Detail    string
+	IP        string
+	CreatedAt time.Time
+}
+
+func (s *Store) ListAuditLog(limit int) ([]AuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.Query(`SELECT id,actor,action,detail,ip,created_at FROM audit_log ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var ts int64
+		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.Detail, &e.IP, &ts); err != nil {
+			return nil, err
+		}
+		e.CreatedAt = time.Unix(ts, 0)
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

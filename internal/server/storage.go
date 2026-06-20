@@ -6,10 +6,13 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -94,6 +97,63 @@ func (s *S3Storage) secretKey() string { return s.getSetting("s3_secret_key") }
 
 func (s *S3Storage) objectKey(slug string) string {
 	return "uploads/" + slug + ".html"
+}
+
+// validateS3Endpoint checks that the endpoint URL is safe — HTTPS (or localhost
+// for dev), not pointing at private/link-local/metadata IPs. This prevents
+// SSRF via the admin-configurable S3 endpoint.
+func validateS3Endpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid endpoint URL: %w", err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("endpoint missing host")
+	}
+
+	// Allow http only for localhost (development); require https otherwise.
+	isLocal := host == "localhost" || host == "127.0.0.1" || host == "::1"
+	if u.Scheme == "http" && !isLocal {
+		return errors.New("S3 endpoint must use HTTPS (http only allowed for localhost)")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("S3 endpoint must use http or https scheme")
+	}
+
+	// Resolve and check for private/metadata IPs (skip for hostnames that
+	// don't resolve — S3 endpoints may use virtual-hosted style).
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateOrMetadataIP(ip) {
+			return fmt.Errorf("S3 endpoint IP %s is private or link-local", ip)
+		}
+	} else {
+		ips, err := net.LookupIP(host)
+		if err == nil {
+			for _, ip := range ips {
+				if isPrivateOrMetadataIP(ip) {
+					return fmt.Errorf("S3 endpoint %s resolves to private IP %s", host, ip)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// isPrivateOrMetadataIP returns true for RFC 1918, link-local, loopback (non-
+// localhost check), and cloud metadata endpoints.
+func isPrivateOrMetadataIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	// Cloud metadata endpoints.
+	cloudMetadata := []string{"169.254.169.254", "fd00:ec2::254"}
+	for _, addr := range cloudMetadata {
+		if mdIP := net.ParseIP(addr); mdIP != nil && ip.Equal(mdIP) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *S3Storage) objectURL(key string) string {
@@ -255,7 +315,7 @@ func (s *S3Storage) bodyHash(body io.Reader) string {
 	}
 	data, err := io.ReadAll(body)
 	if err != nil {
-		log.Printf("s3 body hash error: %v", err)
+		slog.Error("s3 body hash", "err", err)
 		return hashString("")
 	}
 	return hashString(string(data))
