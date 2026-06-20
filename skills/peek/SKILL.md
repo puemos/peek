@@ -125,6 +125,13 @@ Total visits, unique visitors, and a recent-visit log.
 peek delete <slug>
 ```
 
+### Export or delete all owned upload data
+
+```sh
+peek export <slug>   # JSON export with upload metadata, visits, and comments
+peek delete-all      # delete every upload owned by the current token
+```
+
 ## Reading feedback in the browser
 
 Open the share URL (`/p/<slug>`) and click the comments panel. Reviewers select
@@ -166,3 +173,6 @@ The JSON response has the shape `{"slug":"...","url":"https://..."}`.
   server or other visitors.
 - Only token holders can upload, and `peek comments` only returns comments for
   uploads you own.
+- Use `peek export <slug>` when the user asks for a portable data copy of one
+  upload, and `peek delete-all` only when they explicitly want to remove all
+  uploads owned by the configured token.

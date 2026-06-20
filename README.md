@@ -36,6 +36,10 @@ HTML. Single static Go binary, pure-Go SQLite, no CGO.
   or let a coding agent share HTML for you.
 - 📊 **Privacy-respecting analytics** — total/unique visits, recent views with
   SHA-256-hashed IPs.
+- 🏭 **Production-ready** — health/readiness checks, graceful shutdown,
+  structured JSON logging, Prometheus metrics, audit log, token expiry,
+  quota/retention controls, GDPR data export/deletion, and S3 endpoint SSRF
+  protection.
 
 ## Install
 
@@ -84,16 +88,29 @@ Container Registry on every release:
 docker run -d --name peek -p 7700:7700 \
   -v peek-data:/data \
   -e PEEK_BASE_URL=https://peek.example.com \
-  -e PEEK_ADMIN_TOKEN=change-me \
   ghcr.io/puemos/peek:latest
 ```
 
 The `/data` volume holds the SQLite database, uploads, and the signing key — keep
-it to persist state across restarts. Configure via env vars: `PEEK_ADDR` (default
-`:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`, `PEEK_ADMIN_TOKEN` (only
-used on first run), `PEEK_MAX_UPLOAD`. The container runs as a nonroot user
-(uid `65532`); if you bind-mount a host directory instead of a named volume, make
-sure that path is writable by uid `65532`.
+it to persist state across restarts. On first run, an admin token is
+auto-generated and printed to stdout. Configure via env vars: `PEEK_ADDR`
+(default `:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`,
+`PEEK_ADMIN_TOKEN` (only used on first run), `PEEK_MAX_UPLOAD`, `PEEK_SECRET`
+(for shared-secret deployments and encrypted settings), `PEEK_LOG_LEVEL`
+(`debug`/`info`/`warn`), `PEEK_MAX_TOTAL_SIZE`, `PEEK_RETENTION_DAYS`,
+`PEEK_TRUSTED_PROXY`, and the S3 vars listed below. The container runs as a
+nonroot user (uid `65532`) and includes a `HEALTHCHECK`. If you bind-mount a
+host directory instead of a named volume, make sure that path is writable by uid
+`65532`.
+
+For a local Docker Compose stack:
+
+```sh
+docker compose up -d
+
+# Optional S3-compatible storage test stack with MinIO:
+docker compose --profile s3 up -d
+```
 
 ## Quick start
 
@@ -116,6 +133,8 @@ peek list
 peek stats PhiUs-lMbZE_Sw
 peek password PhiUs-lMbZE_Sw --set newpass   # or --clear
 peek delete PhiUs-lMbZE_Sw
+peek export PhiUs-lMbZE_Sw                    # GDPR data export
+peek delete-all                               # delete all your uploads
 ```
 
 ## Commenting
@@ -145,11 +164,15 @@ peek config show                       show current host + masked token
 peek upload <file.html> [--password <pw>] [--name <filename>]
 peek list
 peek delete <slug>
+peek delete-all                        delete all your uploads (GDPR)
 peek password <slug> --set <pw> | --clear
 peek stats <slug>
+peek comments <slug>                   list comments on one of your uploads
+peek export <slug>                     export all data for an upload (GDPR)
 peek token create --name <name>        create a user token (admin only)
 peek token list                        list tokens (admin only)
 peek token revoke <id>                 revoke a token by id (admin only)
+peek version                           show version
 ```
 
 **Token input, most secure first:** `peek login` (hidden prompt) ·
@@ -168,6 +191,26 @@ leaks into shell history and `ps`.
 | `--base-url` | `PEEK_BASE_URL` | `http://localhost:7700` | Public base URL in share links. **Use `https://…` in production** — it enables `Secure` cookies + HSTS. |
 | `--admin-token` | `PEEK_ADMIN_TOKEN` | *(random)* | Initial admin token (first run only) |
 | `--max-upload` | `PEEK_MAX_UPLOAD` | `2097152` (2 MiB) | Max upload size in bytes |
+| `--secret` | `PEEK_SECRET` | *(stored in data dir)* | HMAC/encryption secret. Set explicitly when multiple instances must share signed cookies/settings. |
+| `--max-total-size` | `PEEK_MAX_TOTAL_SIZE` | `0` | Total upload storage limit in bytes (`0` = unlimited) |
+| `--retention-days` | `PEEK_RETENTION_DAYS` | `0` | Auto-delete uploads older than N days (`0` = off) |
+| `--trusted-proxy` | `PEEK_TRUSTED_PROXY` | `false` | Trust `X-Forwarded-For` for analytics/audit IPs. Enable only behind your reverse proxy. |
+| `--storage` | `PEEK_STORAGE` | `file` | Storage backend: `file` or `s3` |
+| `--s3-endpoint` | `PEEK_S3_ENDPOINT` | *(empty)* | S3-compatible endpoint URL |
+| `--s3-bucket` | `PEEK_S3_BUCKET` | *(empty)* | S3 bucket name |
+| `--s3-region` | `PEEK_S3_REGION` | `us-east-1` | S3 region |
+| `--s3-access-key` | `PEEK_S3_ACCESS_KEY` | *(empty)* | S3 access key |
+| `--s3-secret-key` | `PEEK_S3_SECRET_KEY` | *(empty)* | S3 secret key, encrypted in settings after initialization |
+
+`peekd --version` prints the server version. `PEEK_DATA=./data peekd backup
+[path/to/backup.db]` writes a consistent SQLite snapshot using `VACUUM INTO`.
+`peekd healthcheck` checks `/healthz`; set `PEEK_HEALTHCHECK_ADDR=host:port`
+when the probe should target a specific address.
+
+Admins can also update runtime settings from the dashboard: max upload size,
+total storage limit, max uploads per token, max storage per token, retention
+days, and S3 credentials. Changing the storage backend itself requires a
+restart.
 
 ### CLI (`peek`)
 
@@ -181,15 +224,18 @@ Saved to `<user-config-dir>/peek/config.json` (e.g. `~/.config/peek` on Linux,
 |---|---|
 | Anyone can upload | Every upload requires a valid bearer token. |
 | Token theft from the database/backups | Tokens are stored only as **SHA-256 hashes**; the plaintext is shown once at creation. `peek token revoke <id>` invalidates one. |
+| Long-lived service tokens | API-created tokens can include an expiry; expired tokens are rejected during auth. |
 | Token leaking via the terminal | CLI reads the token from a **hidden prompt / stdin / file**, never argv. |
 | Session-cookie theft | The dashboard cookie is a **signed, revocable reference** to the token id — not the token itself. `HttpOnly`, `SameSite=Strict`, and `Secure` (auto on https). |
+| Dashboard CSRF / clickjacking | Dashboard forms require CSRF tokens and dashboard pages send a CSP with `frame-ancestors 'none'`. |
 | Credentials sent in clear | `Secure` cookies + **HSTS** when the base URL is https; the server **warns** on startup if a non-local base URL is plain http. Run behind a TLS reverse proxy. |
 | Uploaded HTML harms the host | The server never executes HTML — it only streams bytes. |
 | Uploaded HTML steals cookies/data | Rendered in `<iframe sandbox="allow-scripts">` with **no `allow-same-origin`** (opaque origin): no access to server cookies, storage, or same-origin requests. |
 | Uploaded HTML attacks the parent page | Parent ↔ iframe communicate only via `postMessage`; the iframe can only send "pick"/"pin" events. |
-| Hot-linking / bypassing the password gate | `/raw` requires a short-lived HMAC-signed view token issued only by `/p/<slug>`. |
+| Hot-linking / bypassing the password gate | `/raw` requires a short-lived HMAC-signed view token issued only by `/p/<slug>` and bound to the visitor cookie. |
 | Brute force / spam | Per-IP rate limits on `/login`, the password gate, and comment posting. |
 | Malicious content / huge uploads | HTML sniffed, binaries rejected, configurable max size, `MaxBytesReader`. |
+| SSRF via S3 settings | S3 endpoints must be HTTP(S), HTTPS unless localhost, and cannot resolve to private/link-local IPs. |
 | Path traversal / SQLi | Random base64url slugs (filenames never user-derived); all queries parameterized. |
 | Password / IP leakage | Passwords bcrypt-hashed; analytics IPs SHA-256-hashed with the server secret. |
 
@@ -205,16 +251,29 @@ peek.example.com {
 ```
 
 Run `peekd` with `--base-url https://peek.example.com` so links and cookie flags
-are correct, and make sure the proxy forwards `X-Forwarded-For` (used for
-analytics). Back up the `data/` directory — it holds the DB, uploads, and the
-signing secret.
+are correct. If your proxy forwards `X-Forwarded-For` and you want those client
+IPs used for analytics/audit logs, also set `--trusted-proxy`; otherwise Peek
+intentionally ignores forwarded IP headers. Back up the `data/` directory — it
+holds the DB, uploads, and the signing secret.
+
+Operational endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `/healthz` | Liveness check |
+| `/readyz` | Readiness check; verifies the database is reachable |
+| `/metrics` | Prometheus text metrics |
+
+Protect `/metrics` at your proxy if the server is reachable from untrusted
+networks.
 
 ## Web GUI
 
 A browser dashboard at `/login` (sign in with a token) lets non-technical users
 upload files or paste HTML, list/delete uploads, set passwords, and view stats.
 Sessions are signed, revocable, `HttpOnly`, `SameSite=Strict` cookies with CSRF
-protection on every form. Non-admins only see their own uploads.
+protection on every form. Admins can edit runtime limits, retention, and S3
+settings. Non-admins only see their own uploads.
 
 ## Agent skills
 
