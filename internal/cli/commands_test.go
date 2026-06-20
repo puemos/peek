@@ -31,6 +31,16 @@ func TestOAuthAvailableDiscovery(t *testing.T) {
 		t.Fatalf("expected no providers, ok=%v err=%v", ok, err)
 	}
 
+	browserLogin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"providers":[],"browser_login":true}`))
+	}))
+	defer browserLogin.Close()
+	ok, err = oauthAvailable(browserLogin.URL)
+	if err != nil || !ok {
+		t.Fatalf("expected browser login discovery, ok=%v err=%v", ok, err)
+	}
+
 	oldServer := httptest.NewServer(http.NotFoundHandler())
 	defer oldServer.Close()
 	ok, err = oauthAvailable(oldServer.URL)

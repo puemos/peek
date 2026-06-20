@@ -154,3 +154,27 @@ func TestCLILoginPollIssuesTokenOnce(t *testing.T) {
 		t.Fatalf("second poll should be consumed, got %+v", out)
 	}
 }
+
+func TestCLILoginStartDoesNotRequireOAuth(t *testing.T) {
+	s := newTestServer(t)
+	if _, err := s.store.CreateAccountWithPassword("admin@example.com", "Admin", "hash", true); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleCLILoginStart(rec, httptest.NewRequest(http.MethodPost, "/api/cli/login/start", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURL string `json:"verification_url"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.DeviceCode == "" || out.UserCode == "" || out.VerificationURL == "" {
+		t.Fatalf("unexpected start response: %+v", out)
+	}
+}

@@ -248,6 +248,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if s.setupRequired() {
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	indexTmpl.Execute(w, map[string]any{"BaseURL": s.baseURL})
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/server"
 )
 
@@ -19,12 +20,21 @@ func newTestServer(t *testing.T) (*server.Server, string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	adminToken := "dev-admin-token"
+	store, err := db.Open(filepath.Join(dir, "peek.db"))
+	if err != nil {
+		t.Fatalf("open test store: %v", err)
+	}
+	if err := store.CreateToken(adminToken, "admin", true, 0); err != nil {
+		t.Fatalf("seed admin token: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close test store: %v", err)
+	}
 	srv, err := server.New(server.Config{
-		DataDir:    dir,
-		BaseURL:    "http://localhost:7700",
-		AdminToken: adminToken,
-		Secret:     strings.Repeat("ab", 32), // 64 hex chars = 32 bytes
-		MaxUpload:  10 << 20,
+		DataDir:   dir,
+		BaseURL:   "http://localhost:7700",
+		Secret:    strings.Repeat("ab", 32), // 64 hex chars = 32 bytes
+		MaxUpload: 10 << 20,
 	})
 	if err != nil {
 		t.Fatalf("create server: %v", err)

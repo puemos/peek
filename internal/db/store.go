@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	email TEXT UNIQUE,
 	name TEXT NOT NULL,
+	password_hash TEXT NOT NULL DEFAULT '',
 	is_admin INTEGER NOT NULL DEFAULT 0,
 	disabled INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL,
@@ -209,6 +210,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 	created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);`},
+	{4, "account_password_hash", `-- ALTER TABLE handled idempotently below`},
 }
 
 func (s *Store) runMigrations() error {
@@ -233,6 +235,10 @@ func (s *Store) runMigrations() error {
 		}
 		if m.id == 2 {
 			if err := s.migrateTokenExpiry(); err != nil {
+				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
+			}
+		} else if m.id == 4 {
+			if err := s.migrateAccountPasswordHash(); err != nil {
 				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
 			}
 		} else if m.sql != "" {
@@ -260,6 +266,17 @@ func (s *Store) markMigrationApplied(id int) {
 // existing installs that predate it.
 func (s *Store) migrateTokenExpiry() error {
 	_, err := s.Exec(`ALTER TABLE tokens ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0`)
+	if err != nil {
+		// Column already exists — ignore the error.
+		return nil
+	}
+	return nil
+}
+
+// migrateAccountPasswordHash adds optional local-login password hashes to
+// accounts. Empty means the account cannot use password login.
+func (s *Store) migrateAccountPasswordHash() error {
+	_, err := s.Exec(`ALTER TABLE accounts ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`)
 	if err != nil {
 		// Column already exists — ignore the error.
 		return nil
@@ -452,6 +469,10 @@ func normalizeEmail(email string) string {
 }
 
 func (s *Store) CreateAccount(email, name string, isAdmin bool) (*models.Account, error) {
+	return s.CreateAccountWithPassword(email, name, "", isAdmin)
+}
+
+func (s *Store) CreateAccountWithPassword(email, name, passwordHash string, isAdmin bool) (*models.Account, error) {
 	email = normalizeEmail(email)
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -462,8 +483,8 @@ func (s *Store) CreateAccount(email, name string, isAdmin bool) (*models.Account
 	if email != "" {
 		emailArg = email
 	}
-	res, err := s.Exec(`INSERT INTO accounts(email,name,is_admin,disabled,created_at,updated_at) VALUES(?,?,?,?,?,?)`,
-		emailArg, name, boolToInt(isAdmin), 0, now, now)
+	res, err := s.Exec(`INSERT INTO accounts(email,name,password_hash,is_admin,disabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`,
+		emailArg, name, strings.TrimSpace(passwordHash), boolToInt(isAdmin), 0, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -486,8 +507,8 @@ func (s *Store) getAccountWhere(where string, arg any) (*models.Account, error) 
 	a := &models.Account{}
 	var isAdmin, disabled, created, updated int64
 	var email sql.NullString
-	err := s.QueryRow(`SELECT id,email,name,is_admin,disabled,created_at,updated_at FROM accounts WHERE `+where, arg).
-		Scan(&a.ID, &email, &a.Name, &isAdmin, &disabled, &created, &updated)
+	err := s.QueryRow(`SELECT id,email,name,password_hash,is_admin,disabled,created_at,updated_at FROM accounts WHERE `+where, arg).
+		Scan(&a.ID, &email, &a.Name, &a.PasswordHash, &isAdmin, &disabled, &created, &updated)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +521,7 @@ func (s *Store) getAccountWhere(where string, arg any) (*models.Account, error) 
 }
 
 func (s *Store) ListAccounts() ([]models.Account, error) {
-	rows, err := s.Query(`SELECT id,email,name,is_admin,disabled,created_at,updated_at FROM accounts ORDER BY created_at,id`)
+	rows, err := s.Query(`SELECT id,email,name,password_hash,is_admin,disabled,created_at,updated_at FROM accounts ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +531,7 @@ func (s *Store) ListAccounts() ([]models.Account, error) {
 		var a models.Account
 		var email sql.NullString
 		var isAdmin, disabled, created, updated int64
-		if err := rows.Scan(&a.ID, &email, &a.Name, &isAdmin, &disabled, &created, &updated); err != nil {
+		if err := rows.Scan(&a.ID, &email, &a.Name, &a.PasswordHash, &isAdmin, &disabled, &created, &updated); err != nil {
 			return nil, err
 		}
 		a.Email = email.String
@@ -536,6 +557,12 @@ func (s *Store) SetAccountDisabled(id int64, disabled bool) error {
 func (s *Store) CountAdminAccounts() (int, error) {
 	var n int
 	err := s.QueryRow(`SELECT COUNT(*) FROM accounts WHERE is_admin=1 AND disabled=0`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CountAccounts() (int, error) {
+	var n int
+	err := s.QueryRow(`SELECT COUNT(*) FROM accounts`).Scan(&n)
 	return n, err
 }
 
@@ -865,6 +892,12 @@ func (s *Store) UpsertOAuthIdentity(accountID int64, provider, providerUserID, e
 			updated_at=excluded.updated_at`,
 		accountID, provider, providerUserID, normalizeEmail(email), strings.TrimSpace(name), now, now)
 	return err
+}
+
+func (s *Store) AccountHasOAuthIdentity(accountID int64) (bool, error) {
+	var n int
+	err := s.QueryRow(`SELECT COUNT(*) FROM oauth_identities WHERE account_id=?`, accountID).Scan(&n)
+	return n > 0, err
 }
 
 func (s *Store) CreateInvite(rawToken, tokenCipher, email string, createdByAccountID int64, expiresAt time.Time) (*models.Invite, error) {

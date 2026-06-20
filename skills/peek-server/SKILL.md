@@ -40,13 +40,12 @@ go build -o bin/peek  ./cmd/peek
 ## Run the server
 
 ```sh
-# First run prints (and stores) an admin token. Set one explicitly with PEEK_ADMIN_TOKEN.
-PEEK_ADMIN_TOKEN=<choose-a-secret> peekd \
-  --addr :7700 --data ./data --base-url https://peek.example.com
+peekd --addr :7700 --data ./data --base-url https://peek.example.com
 ```
 
-The admin token is stored hashed in the SQLite DB on first run; after that the
-`--admin-token` flag is ignored.
+On first run, `peekd` prints a one-time setup URL. Open it to create the first
+local admin account. After setup, use the dashboard or `peek login --host
+https://peek.example.com`.
 
 ### Docker
 
@@ -68,7 +67,6 @@ uid `65532`.
 | `--addr` | `PEEK_ADDR` | `:7700` | Listen address |
 | `--data` | `PEEK_DATA` | `./data` | Data dir (db + uploads + secret) |
 | `--base-url` | `PEEK_BASE_URL` | `http://localhost:7700` | Public base URL in share links. **Use `https://…` in production** — it enables `Secure` cookies + HSTS. |
-| `--admin-token` | `PEEK_ADMIN_TOKEN` | *(random)* | Initial admin token (first run only) |
 | `--max-upload` | `PEEK_MAX_UPLOAD` | `2097152` (2 MiB) | Max upload size in bytes |
 | `--secret` | `PEEK_SECRET` | *(stored in data dir)* | HMAC/encryption secret. Set explicitly when multiple instances must share signed cookies/settings. |
 | `--max-total-size` | `PEEK_MAX_TOTAL_SIZE` | `0` | Total upload storage limit in bytes (`0` = unlimited) |
@@ -91,8 +89,8 @@ restart.
 
 ## Administer with the CLI
 
-Configure the CLI against the server with browser OAuth or the admin token (see
-the **peek** skill for `peek login`), then:
+Configure the CLI against the server with browser login (see the **peek** skill
+for `peek login`), then:
 
 ### Manage access tokens (admin only)
 
@@ -125,9 +123,12 @@ local base URL and `Authorization callback URL` set to
 `http://127.0.0.1:<port>/oauth/github/callback`.
 
 OAuth signups are invite-only. Create manual invite links in the dashboard and
-send them to users. The same verified email maps to the same Peek account across
-Google and GitHub. Admins can disable users or promote/demote admins in the
-dashboard later.
+send them to users. When OAuth is enabled, non-admin dashboard and CLI login
+must use OAuth; the local password form remains available to admins. When OAuth
+is not enabled, token login remains available and can be disabled from Settings.
+Direct bearer tokens still work for API/automation. The same verified email maps
+to the same Peek account across Google and GitHub. Admins can disable users or
+promote/demote admins in the dashboard later.
 
 ### Manage page passwords
 

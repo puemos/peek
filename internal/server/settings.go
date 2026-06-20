@@ -19,6 +19,7 @@ type settingsRow struct {
 }
 
 var settingsMeta = map[string]settingsRow{
+	"auth_token_login_enabled":   {Label: "Access token login", Description: "Allow signing in to the web dashboard with an access token", IsBool: true},
 	"max_upload":                 {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
 	"max_total_size":             {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
 	"retention_days":             {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
@@ -184,6 +185,7 @@ func (s *Server) settingsSummary() map[string]any {
 
 func dashboardSettingsRows(raw map[string]string) []settingsRow {
 	order := []string{
+		"auth_token_login_enabled",
 		"oauth_google_enabled", "oauth_google_client_id", "oauth_google_client_secret",
 		"oauth_github_enabled", "oauth_github_client_id", "oauth_github_client_secret",
 		"storage", "s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",

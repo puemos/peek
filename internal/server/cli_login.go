@@ -61,8 +61,8 @@ var cliLoginDoneTmpl = template.Must(template.New("cli-login-done").Parse(`<!doc
 </html>`))
 
 func (s *Server) handleCLILoginStart(w http.ResponseWriter, r *http.Request) {
-	if len(s.enabledOAuthProviders()) == 0 {
-		jsonError(w, http.StatusBadRequest, "oauth login is not configured")
+	if s.setupRequired() {
+		jsonError(w, http.StatusBadRequest, "server setup is not complete")
 		return
 	}
 	deviceCode, err := randID(32)

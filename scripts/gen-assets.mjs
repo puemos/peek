@@ -6,7 +6,7 @@
 //   DEBUG  - Chrome remote-debugging base (http://localhost:PORT)
 //   BASE   - Peek base URL
 //   SLUG   - slug of the seeded report upload
-//   TOKEN  - admin token (to log into the dashboard)
+//   TOKEN  - API token minted by the setup script
 //   OUT    - assets output dir
 //   FRAMES - dir for video frames
 import fs from "node:fs";

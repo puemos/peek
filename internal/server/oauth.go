@@ -55,7 +55,12 @@ var (
 )
 
 func (s *Server) handleAuthProviders(w http.ResponseWriter, r *http.Request) {
-	jsonOK(w, map[string]any{"providers": s.enabledOAuthProviders()})
+	providers := s.enabledOAuthProviders()
+	jsonOK(w, map[string]any{
+		"providers":      providers,
+		"browser_login":  !s.setupRequired(),
+		"oauth_required": len(providers) > 0,
+	})
 }
 
 func (s *Server) enabledOAuthProviders() []authProvider {

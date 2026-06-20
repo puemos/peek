@@ -74,7 +74,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `peek — Peek CLI
 
 Usage:
-  peek login [--host <url>]             sign in with browser OAuth when available
+  peek login [--host <url>]             sign in with browser login when available
   peek login --token-stdin              read an access token from stdin
   peek config set --host <url>          set host (use 'login' / --token-stdin for the token)
   peek config show
@@ -92,7 +92,7 @@ Usage:
   peek token revoke <id>               revoke a token by id (admin only)
 
 Token input (most secure first):
-  peek login                           browser OAuth when available; otherwise hidden prompt
+  peek login                           browser login when available; otherwise hidden prompt
   peek login --token-stdin             read token from a pipe
   peek login --token-file <path>       read token from a file
   peek login --token <token>           discouraged: exposed in history & 'ps'
@@ -181,17 +181,20 @@ func cmdLogin(args []string) error {
 	}
 
 	tokenMode := tokenFlag != "" || tokenFile != "" || tokenStdin || !term.IsTerminal(int(os.Stdin.Fd()))
+	discovery, discoveryErr := discoverAuth(host)
 	if forceOAuth || !tokenMode {
-		available, err := oauthAvailable(host)
-		if err == nil && available {
+		if discoveryErr == nil && discovery.BrowserLogin {
 			return loginOAuth(cfg, host)
 		}
 		if forceOAuth {
-			if err != nil {
-				return err
+			if discoveryErr != nil {
+				return discoveryErr
 			}
-			return fmt.Errorf("oauth login is not configured on %s", host)
+			return fmt.Errorf("browser login is not configured on %s", host)
 		}
+	}
+	if tokenMode && discoveryErr == nil && len(discovery.Providers) > 0 {
+		return fmt.Errorf("this server requires OAuth browser login; run `peek login --host %s`", host)
 	}
 
 	token := strings.TrimSpace(tokenFlag)
@@ -230,28 +233,43 @@ func cmdLogin(args []string) error {
 	return nil
 }
 
-func oauthAvailable(host string) (bool, error) {
+type authDiscovery struct {
+	Providers []struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+	} `json:"providers"`
+	BrowserLogin  bool `json:"browser_login"`
+	OAuthRequired bool `json:"oauth_required"`
+}
+
+func discoverAuth(host string) (authDiscovery, error) {
+	var out authDiscovery
 	resp, err := httpClient.Get(strings.TrimRight(host, "/") + "/api/auth/providers")
 	if err != nil {
-		return false, err
+		return out, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return false, nil
+		return out, nil
 	}
 	if resp.StatusCode >= 400 {
-		return false, nil
-	}
-	var out struct {
-		Providers []struct {
-			Key  string `json:"key"`
-			Name string `json:"name"`
-		} `json:"providers"`
+		return out, nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	if len(out.Providers) > 0 {
+		out.BrowserLogin = true
+	}
+	return out, nil
+}
+
+func oauthAvailable(host string) (bool, error) {
+	out, err := discoverAuth(host)
+	if err != nil {
 		return false, err
 	}
-	return len(out.Providers) > 0, nil
+	return out.BrowserLogin, nil
 }
 
 func loginOAuth(cfg *Config, host string) error {
@@ -429,6 +447,12 @@ func configSet(args []string) error {
 	}
 	if host == "" {
 		return fmt.Errorf("--host is required")
+	}
+	if usedTokenFlag || tokenFile != "" || tokenStdin {
+		discovery, err := discoverAuth(host)
+		if err == nil && len(discovery.Providers) > 0 {
+			return fmt.Errorf("this server requires OAuth browser login; run `peek login --host %s`", host)
+		}
 	}
 	cfg.Host = host
 	cfg.Token = token

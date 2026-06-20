@@ -24,7 +24,6 @@ func main() {
 	addr := flag.String("addr", getenv("PEEK_ADDR", ":7700"), "listen address")
 	dataDir := flag.String("data", getenv("PEEK_DATA", "./data"), "data directory")
 	baseURL := flag.String("base-url", getenv("PEEK_BASE_URL", "http://localhost:7700"), "public base URL")
-	adminToken := flag.String("admin-token", getenv("PEEK_ADMIN_TOKEN", ""), "initial admin token (only used on first run)")
 	maxUpload := flag.Int64("max-upload", getenvInt("PEEK_MAX_UPLOAD", 2<<20), "max upload size in bytes (per file)")
 	secret := flag.String("secret", getenv("PEEK_SECRET", ""), "server secret for HMAC signing and encryption (auto-generated if empty)")
 
@@ -94,12 +93,11 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
 	srv, err := server.New(server.Config{
-		Addr:       *addr,
-		DataDir:    abs,
-		BaseURL:    *baseURL,
-		AdminToken: *adminToken,
-		Secret:     *secret,
-		MaxUpload:  *maxUpload,
+		Addr:      *addr,
+		DataDir:   abs,
+		BaseURL:   *baseURL,
+		Secret:    *secret,
+		MaxUpload: *maxUpload,
 
 		Storage:     *storageFlag,
 		S3Endpoint:  *s3Endpoint,

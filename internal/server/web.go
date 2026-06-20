@@ -28,6 +28,34 @@ const dashboardCSP = "default-src 'self'; style-src 'self'; script-src 'self' 'u
 
 // --- templates ---
 
+var setupTmpl = template.Must(template.New("setup").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Peek</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<div class="hn-welcome">
+  <div class="hn-gate-card">
+  <form method="POST" action="/setup" class="hn-gate-form">
+    <h2>Set up Peek</h2>
+    <p>Create the first admin account.</p>
+    <input type="email" name="email" placeholder="Admin email" required autofocus autocomplete="email">
+    <input type="text" name="name" placeholder="Name" autocomplete="name">
+    <input type="password" name="password" placeholder="Password" required autocomplete="new-password">
+    <input type="hidden" name="code" value="{{.Code}}">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Create admin</button>
+    {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
+  </form>
+  </div>
+</div>
+</body>
+</html>`))
+
 var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -45,16 +73,31 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
   <div class="hn-oauth-list">
     {{range .Providers}}<a href="/oauth/{{.Key}}/start" class="hn-oauth-btn">Continue with {{.Name}}</a>{{end}}
   </div>
-  <div class="hn-login-sep"><span>or</span></div>
+  {{if or .PasswordLogin .TokenLogin}}<div class="hn-login-sep"><span>or</span></div>{{end}}
   {{end}}
+  {{if .PasswordLogin}}
+  <form method="POST" action="/login" class="hn-gate-form">
+    <h2>Peek</h2>
+    <p>{{if .OAuthEnabled}}Admin sign in{{else}}Sign in with email and password{{end}}</p>
+    <input type="hidden" name="method" value="password">
+    <input type="email" name="email" placeholder="Email" required autofocus autocomplete="email">
+    <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Sign in &rarr;</button>
+  </form>
+  {{end}}
+  {{if .TokenLogin}}
+  {{if .PasswordLogin}}<div class="hn-login-sep"><span>token</span></div>{{end}}
   <form method="POST" action="/login" class="hn-gate-form">
     <h2>Peek</h2>
     <p>Enter your access token to manage uploads.</p>
-    <input type="password" name="token" placeholder="Access token" required autofocus autocomplete="off">
+    <input type="hidden" name="method" value="token">
+    <input type="password" name="token" placeholder="Access token" required {{if not .PasswordLogin}}autofocus{{end}} autocomplete="off">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <button type="submit">Sign in &rarr;</button>
-    {{if .Error}}<p class="hn-err">Invalid token. Try again.</p>{{end}}
   </form>
+  {{end}}
+  {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
   </div>
 </div>
 </body>
@@ -321,6 +364,12 @@ type statsVisit struct {
 	WhenHuman string
 }
 
+type setupData struct {
+	CSRF  string
+	Code  string
+	Error string
+}
+
 type inviteDashRow struct {
 	ID        int64
 	Email     string
@@ -363,10 +412,13 @@ type statsData struct {
 }
 
 type loginData struct {
-	CSRF      string
-	Error     bool
-	Invite    bool
-	Providers []authProvider
+	CSRF          string
+	Error         string
+	Invite        bool
+	Providers     []authProvider
+	PasswordLogin bool
+	TokenLogin    bool
+	OAuthEnabled  bool
 }
 
 // --- helpers ---
@@ -377,45 +429,170 @@ func noCache(w http.ResponseWriter) {
 
 // --- handlers ---
 
+func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
+	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	if !s.setupRequired() {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	if r.Method == "GET" {
+		code := strings.TrimSpace(r.URL.Query().Get("code"))
+		csrf := s.newCSRF(w)
+		data := setupData{CSRF: csrf}
+		if s.validSetupCode(code) {
+			data.Code = code
+		} else {
+			data.Error = "Use the setup URL printed by the server."
+		}
+		setupTmpl.Execute(w, data)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Error: "Invalid form."})
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("code"))
+	if !s.validateCSRF(r, w, r.FormValue("csrf")) || !s.validSetupCode(code) {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Error: "Invalid setup session."})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(r.FormValue("email")))
+	name := strings.TrimSpace(r.FormValue("name"))
+	password := r.FormValue("password")
+	if email == "" || !strings.Contains(email, "@") {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Admin email is required."})
+		return
+	}
+	if password == "" {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password is required."})
+		return
+	}
+	if !validatePasswordLength(password) {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password must be 72 characters or fewer."})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Could not create password."})
+		return
+	}
+	account, err := s.store.CreateAccountWithPassword(email, name, string(hash), true)
+	if err != nil {
+		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Could not create admin account."})
+		return
+	}
+	s.clearSetupCode()
+	s.setWebSession(w, account.ID)
+	s.auditRequest(r, account.Name, "setup.admin_created", "")
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	if s.setupRequired() {
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		return
+	}
 	if r.Method == "GET" {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, false, r))
+		loginTmpl.Execute(w, s.loginData(csrf, "", r))
 		return
 	}
 	// POST
 	r.ParseForm()
-	tok := strings.TrimSpace(r.FormValue("token"))
-	if tok == "" || !s.validateCSRF(r, w, r.FormValue("csrf")) {
+	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, true, r))
+		loginTmpl.Execute(w, s.loginData(csrf, "Invalid session.", r))
 		return
 	}
-	owner, err := s.store.GetToken(tok)
+
+	var (
+		accountID int64
+		actorName string
+		err       error
+	)
+	switch r.FormValue("method") {
+	case "password":
+		accountID, actorName, err = s.loginWithPassword(r)
+	case "token":
+		accountID, actorName, err = s.loginWithToken(r)
+	default:
+		err = fmt.Errorf("unsupported login method")
+	}
 	if err != nil {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, true, r))
+		loginTmpl.Execute(w, s.loginData(csrf, "Invalid credentials.", r))
 		return
 	}
-	if owner.Disabled {
-		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, true, r))
-		return
-	}
-	s.setWebSession(w, owner.AccountID)
-	s.auditRequest(r, owner.Name, "login.success", "")
+	s.setWebSession(w, accountID)
+	s.auditRequest(r, actorName, "login.success", "")
 	http.Redirect(w, r, s.consumeNextPath(w, r), http.StatusSeeOther)
 }
 
-func (s *Server) loginData(csrf string, hasError bool, r *http.Request) loginData {
+func (s *Server) loginWithPassword(r *http.Request) (int64, string, error) {
+	email := strings.TrimSpace(r.FormValue("email"))
+	password := r.FormValue("password")
+	if email == "" || password == "" {
+		return 0, "", fmt.Errorf("missing credentials")
+	}
+	owner, err := s.store.GetAccountByEmail(email)
+	if err != nil || owner.PasswordHash == "" {
+		return 0, "", fmt.Errorf("invalid credentials")
+	}
+	if owner.Disabled {
+		return 0, "", fmt.Errorf("account disabled")
+	}
+	if s.oauthLoginRequired() && !owner.IsAdmin {
+		return 0, "", fmt.Errorf("oauth required")
+	}
+	if bcrypt.CompareHashAndPassword([]byte(owner.PasswordHash), []byte(password)) != nil {
+		return 0, "", fmt.Errorf("invalid credentials")
+	}
+	return owner.ID, owner.Name, nil
+}
+
+func (s *Server) loginWithToken(r *http.Request) (int64, string, error) {
+	tok := strings.TrimSpace(r.FormValue("token"))
+	if tok == "" {
+		return 0, "", fmt.Errorf("missing token")
+	}
+	owner, err := s.store.GetToken(tok)
+	if err != nil {
+		return 0, "", err
+	}
+	if owner.Disabled {
+		return 0, "", fmt.Errorf("account disabled")
+	}
+	if (!s.tokenLoginEnabled() || s.oauthLoginRequired()) && !owner.IsAdmin {
+		return 0, "", fmt.Errorf("token login disabled")
+	}
+	return owner.AccountID, owner.Name, nil
+}
+
+func (s *Server) oauthLoginRequired() bool {
+	return len(s.enabledOAuthProviders()) > 0
+}
+
+func (s *Server) tokenLoginEnabled() bool {
+	return s.settingBool("auth_token_login_enabled")
+}
+
+func (s *Server) loginData(csrf, errMsg string, r *http.Request) loginData {
 	_, inviteErr := r.Cookie(inviteCookie)
+	providers := s.enabledOAuthProviders()
+	oauthEnabled := len(providers) > 0
 	return loginData{
-		CSRF:      csrf,
-		Error:     hasError,
-		Invite:    inviteErr == nil,
-		Providers: s.enabledOAuthProviders(),
+		CSRF:          csrf,
+		Error:         errMsg,
+		Invite:        inviteErr == nil,
+		Providers:     providers,
+		PasswordLogin: true,
+		TokenLogin:    s.tokenLoginEnabled() && !oauthEnabled,
+		OAuthEnabled:  oauthEnabled,
 	}
 }
 
@@ -431,6 +608,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	if s.setupRequired() {
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		return
+	}
 	owner, ok := s.webAuth(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -698,6 +879,12 @@ func (s *Server) webAuth(r *http.Request) (*models.Account, bool) {
 	}
 	if a.Disabled {
 		return nil, false
+	}
+	if s.oauthLoginRequired() && !a.IsAdmin {
+		hasOAuth, err := s.store.AccountHasOAuthIdentity(a.ID)
+		if err != nil || !hasOAuth {
+			return nil, false
+		}
 	}
 	return a, true
 }

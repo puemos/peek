@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,12 +26,11 @@ const (
 )
 
 type Config struct {
-	Addr       string
-	DataDir    string
-	BaseURL    string
-	AdminToken string
-	Secret     string
-	MaxUpload  int64
+	Addr      string
+	DataDir   string
+	BaseURL   string
+	Secret    string
+	MaxUpload int64
 
 	Storage     string
 	S3Endpoint  string
@@ -49,6 +49,7 @@ type Server struct {
 	store   *db.Store
 	secret  string
 	baseURL string
+	dataDir string
 	storage Storage
 	secure  bool
 
@@ -63,6 +64,9 @@ type Server struct {
 }
 
 func New(cfg Config) (*Server, error) {
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return nil, err
+	}
 	if cfg.Storage == "s3" {
 		if cfg.S3Bucket == "" || cfg.S3Endpoint == "" {
 			return nil, errors.New("s3 storage requires --s3-bucket and --s3-endpoint (or set via dashboard after first run)")
@@ -79,9 +83,12 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := bootstrapTokens(store, cfg.AdminToken); err != nil {
+
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	if _, err := bootstrapSetup(store, cfg.DataDir, baseURL); err != nil {
 		return nil, err
 	}
+
 	s3Defaults := map[string]string{
 		"storage":       cfg.Storage,
 		"s3_endpoint":   cfg.S3Endpoint,
@@ -115,7 +122,6 @@ func New(cfg Config) (*Server, error) {
 		slog.Info("storage backend: file", "dir", uploadsDir)
 	}
 
-	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	secure := strings.HasPrefix(baseURL, "https://")
 	if !secure && !isLocalBaseURL(baseURL) {
 		slog.Warn("base URL is not https — tokens and cookies sent in clear. Use a TLS reverse proxy.", "base_url", baseURL)
@@ -125,6 +131,7 @@ func New(cfg Config) (*Server, error) {
 		store:           store,
 		secret:          secret,
 		baseURL:         baseURL,
+		dataDir:         cfg.DataDir,
 		storage:         st,
 		secure:          secure,
 		loginLimiter:    newLimiter(10, time.Minute),
@@ -173,33 +180,92 @@ func loadOrCreateSecret(path string) string {
 	return s
 }
 
-// bootstrapTokens ensures at least one admin token exists.
-func bootstrapTokens(store *db.Store, adminToken string) error {
-	n, err := store.CountTokens()
+const setupCodeFile = "setup.key"
+
+func setupCodePath(dataDir string) string {
+	return filepath.Join(dataDir, setupCodeFile)
+}
+
+// bootstrapSetup prepares a one-time setup URL when the database has no
+// accounts. The first admin is created through /setup, not through a token.
+func bootstrapSetup(store *db.Store, dataDir, baseURL string) (string, error) {
+	n, err := store.CountAccounts()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if n > 0 {
-		return nil
+		_ = os.Remove(setupCodePath(dataDir))
+		return "", nil
 	}
-	if adminToken == "" {
-		t, err := randID(24)
-		if err != nil {
-			return err
+
+	path := setupCodePath(dataDir)
+	if b, err := os.ReadFile(path); err == nil {
+		code := strings.TrimSpace(string(b))
+		if code != "" {
+			printSetupURL(baseURL, code)
+			return code, nil
 		}
-		adminToken = t
 	}
-	if err := store.CreateToken(adminToken, "admin", true, 0); err != nil {
-		return err
+	code, err := randID(24)
+	if err != nil {
+		return "", err
 	}
-	// Print to stdout (not the JSON structured log) so the operator sees it
-	// clearly on first run. This is the only time the plaintext is shown.
+	if err := os.WriteFile(path, []byte(code+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	printSetupURL(baseURL, code)
+	return code, nil
+}
+
+func printSetupURL(baseURL, code string) {
 	fmt.Println("==========================================================")
-	fmt.Println(" Created admin token (save it now, it is stored hashed in the DB):")
-	fmt.Printf("   %s\n", adminToken)
-	fmt.Println(" Use it with the CLI:  peek login --host <url>   (paste this token when prompted)")
+	fmt.Println(" Peek first-run setup")
+	fmt.Println(" Open this URL to create the first admin account:")
+	fmt.Printf("   %s/setup?code=%s\n", baseURL, url.QueryEscape(code))
 	fmt.Println("==========================================================")
-	return nil
+}
+
+func (s *Server) setupRequired() bool {
+	n, err := s.store.CountAccounts()
+	return err == nil && n == 0
+}
+
+func (s *Server) readSetupCode() string {
+	b, err := os.ReadFile(setupCodePath(s.dataDir))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func (s *Server) validSetupCode(code string) bool {
+	if !s.setupRequired() {
+		return false
+	}
+	want := s.readSetupCode()
+	if want == "" || strings.TrimSpace(code) != want {
+		return false
+	}
+	return true
+}
+
+func (s *Server) clearSetupCode() {
+	_ = os.Remove(setupCodePath(s.dataDir))
+}
+
+func (s *Server) ensureSetupCode() (string, error) {
+	if !s.setupRequired() {
+		return "", nil
+	}
+	code := s.readSetupCode()
+	if code != "" {
+		return code, nil
+	}
+	code, err := randID(24)
+	if err != nil {
+		return "", err
+	}
+	return code, os.WriteFile(setupCodePath(s.dataDir), []byte(code+"\n"), 0o600)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -245,6 +311,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	// Web GUI (browser-based management).
+	mux.HandleFunc("GET /setup", s.handleSetup)
+	mux.HandleFunc("POST /setup", s.rateLimit(s.loginLimiter, s.handleSetup))
 	mux.HandleFunc("GET /login", s.handleLogin)
 	mux.HandleFunc("POST /login", s.rateLimit(s.loginLimiter, s.handleLogin))
 	mux.HandleFunc("GET /oauth/{provider}/start", s.rateLimit(s.loginLimiter, s.handleOAuthStart))
@@ -386,6 +454,7 @@ func initDefaultSettings(store *db.Store, secret string, maxUpload, maxTotalSize
 		}
 		return store.SetSetting(key, val)
 	}
+	_ = upsert("auth_token_login_enabled", "true")
 	_ = upsert("max_upload", strconv.FormatInt(maxUpload, 10))
 	_ = upsert("max_total_size", strconv.FormatInt(maxTotalSize, 10))
 	_ = upsert("retention_days", strconv.Itoa(retentionDays))
