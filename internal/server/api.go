@@ -86,10 +86,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Per-token quotas (0 = unlimited).
+	// Per-owner quotas (0 = unlimited). The setting names keep legacy API
+	// compatibility, but OAuth and token users are both grouped by account.
 	maxUploadsPerToken := s.settingInt("max_uploads_per_token", 0)
 	if maxUploadsPerToken > 0 {
-		count, err := s.store.CountUploadsByOwner(owner.ID)
+		count, err := s.store.CountUploadsByOwner(owner.AccountID)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
@@ -101,7 +102,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	maxStoragePerToken := s.settingInt64("max_storage_per_token", 0)
 	if maxStoragePerToken > 0 {
-		ownerTotal, err := s.store.SumUploadSizesByOwner(owner.ID)
+		ownerTotal, err := s.store.SumUploadSizesByOwner(owner.AccountID)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
@@ -135,7 +136,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		pwHash = string(h)
 	}
-	if err := s.store.CreateUpload(slug, owner.ID, filename, int64(len(data)), pwHash); err != nil {
+	if err := s.store.CreateUpload(slug, owner.AccountID, owner.ID, filename, int64(len(data)), pwHash); err != nil {
 		_ = s.storage.Delete(r.Context(), slug)
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
@@ -155,7 +156,7 @@ func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
 	if owner.IsAdmin {
 		list, err = s.store.ListAllUploads()
 	} else {
-		list, err = s.store.ListUploadsByOwner(owner.ID)
+		list, err = s.store.ListUploadsByOwner(owner.AccountID)
 	}
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
@@ -190,7 +191,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := bearerToken(r)
 	owner, _ := s.store.GetToken(tok)
-	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
@@ -212,7 +213,7 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := bearerToken(r)
 	owner, _ := s.store.GetToken(tok)
-	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
@@ -258,7 +259,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := bearerToken(r)
 	owner, _ := s.store.GetToken(tok)
-	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
@@ -327,7 +328,7 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := bearerToken(r)
 	owner, _ := s.store.GetToken(tok)
-	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
@@ -381,7 +382,7 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) {
 	tok := bearerToken(r)
 	owner, _ := s.store.GetToken(tok)
-	uploads, err := s.store.ListUploadsByOwner(owner.ID)
+	uploads, err := s.store.ListUploadsByOwner(owner.AccountID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return

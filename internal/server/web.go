@@ -40,6 +40,13 @@ var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
 <body>
 <div class="hn-welcome">
   <div class="hn-gate-card">
+  {{if .Invite}}<p class="hn-login-note">Choose a provider to accept your invite.</p>{{end}}
+  {{if .Providers}}
+  <div class="hn-oauth-list">
+    {{range .Providers}}<a href="/oauth/{{.Key}}/start" class="hn-oauth-btn">Continue with {{.Name}}</a>{{end}}
+  </div>
+  <div class="hn-login-sep"><span>or</span></div>
+  {{end}}
   <form method="POST" action="/login" class="hn-gate-form">
     <h2>Peek</h2>
     <p>Enter your access token to manage uploads.</p>
@@ -150,6 +157,71 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
 
   {{if .IsAdmin}}
   <section class="hn-card">
+    <h2>Invitations <span class="hn-card-count">{{len .Invites}}</span></h2>
+    <form method="POST" action="/dashboard/invites" class="hn-inline-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="email" name="email" placeholder="person@example.com" required>
+      <button type="submit">Create invite</button>
+    </form>
+    {{if .Invites}}
+    <div class="hn-table-wrap">
+    <table class="hn-table">
+      <thead><tr><th>Email</th><th>Status</th><th>Expires</th><th>Link</th><th></th></tr></thead>
+      <tbody>
+      {{range .Invites}}
+        <tr>
+          <td>{{.Email}}</td>
+          <td><span class="hn-tag {{if eq .Status "pending"}}hn-tag-on{{end}}">{{.Status}}</span></td>
+          <td class="hn-muted-cell">{{.Expires}}</td>
+          <td>{{if .Link}}<code>{{.Link}}</code> <button type="button" data-url="{{.Link}}" onclick="hnCopyAbsolute(this, this.dataset.url)" class="hn-copy-btn">copy</button>{{else}}<span class="hn-muted-cell">{{.Status}}</span>{{end}}</td>
+          <td class="hn-actions">
+            {{if .CanRevoke}}
+            <form method="POST" action="/dashboard/invites/revoke/{{.ID}}">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <button type="submit" class="hn-btn-sm hn-btn-danger">revoke</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+  </section>
+
+  <section class="hn-card">
+    <h2>Users <span class="hn-card-count">{{len .Accounts}}</span></h2>
+    <div class="hn-table-wrap">
+    <table class="hn-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Admin</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {{range .Accounts}}
+        <tr>
+          <td>{{.Name}}{{if .IsSelf}} <span class="hn-muted-cell">(you)</span>{{end}}</td>
+          <td class="hn-muted-cell">{{if .Email}}{{.Email}}{{else}}token-only{{end}}</td>
+          <td>{{if .Admin}}<span class="hn-tag hn-tag-on">admin</span>{{else}}<span class="hn-tag">user</span>{{end}}</td>
+          <td>{{if .Disabled}}<span class="hn-tag hn-tag-danger">disabled</span>{{else}}<span class="hn-tag hn-tag-on">active</span>{{end}}</td>
+          <td class="hn-actions">
+            <form method="POST" action="/dashboard/users/{{.ID}}/admin">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="admin" value="{{if .Admin}}false{{else}}true{{end}}">
+              <button type="submit" class="hn-btn-sm">{{if .Admin}}remove admin{{else}}make admin{{end}}</button>
+            </form>
+            <form method="POST" action="/dashboard/users/{{.ID}}/disabled">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+              <button type="submit" class="hn-btn-sm hn-btn-danger">{{if .Disabled}}enable{{else}}disable{{end}}</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="hn-card">
     <h2>Settings</h2>
     <form method="POST" action="/dashboard/settings" class="hn-settings-form">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -157,7 +229,11 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
         {{range .SettingsMeta}}
         <label>
           <span>{{.Label}}{{if .IsStartup}} <em>(restart to apply)</em>{{end}}</span>
+          {{if .IsBool}}
+          <input type="checkbox" name="{{.Key}}" value="true" {{if .Value}}checked{{end}}>
+          {{else}}
           <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off">
+          {{end}}
           <span class="hn-muted">{{.Description}}</span>
         </label>
         {{end}}
@@ -170,6 +246,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
 <script>
 function hnToggle(el){var f=document.getElementById('hn-file-input'),p=document.getElementById('hn-paste-input');if(el.value==='file'){f.hidden=false;p.hidden=true;}else{f.hidden=true;p.hidden=false;}}
 function hnCopyLink(btn,url){navigator.clipboard.writeText(location.origin+url).then(function(){btn.textContent='copied!';setTimeout(function(){btn.textContent='copy';},1500);});}
+function hnCopyAbsolute(btn,url){navigator.clipboard.writeText(url).then(function(){btn.textContent='copied!';setTimeout(function(){btn.textContent='copy';},1500);});}
 </script>
 </body>
 </html>`))
@@ -244,12 +321,32 @@ type statsVisit struct {
 	WhenHuman string
 }
 
+type inviteDashRow struct {
+	ID        int64
+	Email     string
+	Status    string
+	Expires   string
+	Link      string
+	CanRevoke bool
+}
+
+type accountDashRow struct {
+	ID       int64
+	Name     string
+	Email    string
+	Admin    bool
+	Disabled bool
+	IsSelf   bool
+}
+
 type dashData struct {
 	CSRF                 string
 	User                 string
 	IsAdmin              bool
 	Settings             map[string]string
 	SettingsMeta         []settingsRow
+	Invites              []inviteDashRow
+	Accounts             []accountDashRow
 	Uploads              []dashUpload
 	UploadError          string
 	UploadSuccess        bool
@@ -265,6 +362,13 @@ type statsData struct {
 	Recent         []statsVisit
 }
 
+type loginData struct {
+	CSRF      string
+	Error     bool
+	Invite    bool
+	Providers []authProvider
+}
+
 // --- helpers ---
 
 func noCache(w http.ResponseWriter) {
@@ -278,7 +382,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", dashboardCSP)
 	if r.Method == "GET" {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, map[string]any{"CSRF": csrf, "Error": false})
+		loginTmpl.Execute(w, s.loginData(csrf, false, r))
 		return
 	}
 	// POST
@@ -286,25 +390,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	tok := strings.TrimSpace(r.FormValue("token"))
 	if tok == "" || !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, map[string]any{"CSRF": csrf, "Error": true})
+		loginTmpl.Execute(w, s.loginData(csrf, true, r))
 		return
 	}
 	owner, err := s.store.GetToken(tok)
 	if err != nil {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, map[string]any{"CSRF": csrf, "Error": true})
+		loginTmpl.Execute(w, s.loginData(csrf, true, r))
 		return
 	}
-	s.setCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    makeWebSession(s.secret, strconv.FormatInt(owner.ID, 10), sessionTTL),
-		Path:     "/",
-		MaxAge:   int(sessionTTL.Seconds()),
-		SameSite: http.SameSiteStrictMode,
-		HttpOnly: true,
-	})
+	if owner.Disabled {
+		csrf := s.newCSRF(w)
+		loginTmpl.Execute(w, s.loginData(csrf, true, r))
+		return
+	}
+	s.setWebSession(w, owner.AccountID)
 	s.auditRequest(r, owner.Name, "login.success", "")
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, s.consumeNextPath(w, r), http.StatusSeeOther)
+}
+
+func (s *Server) loginData(csrf string, hasError bool, r *http.Request) loginData {
+	_, inviteErr := r.Cookie(inviteCookie)
+	return loginData{
+		CSRF:      csrf,
+		Error:     hasError,
+		Invite:    inviteErr == nil,
+		Providers: s.enabledOAuthProviders(),
+	}
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -348,6 +460,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Settings:     allSettings,
 		SettingsMeta: sortedMeta,
 		Uploads:      uploads,
+	}
+	if owner.IsAdmin {
+		dashData_.Invites = s.dashboardInviteRows()
+		dashData_.Accounts = s.dashboardAccountRows(owner.ID)
 	}
 	// carry over flash messages from query params
 	if e := r.URL.Query().Get("err"); e != "" {
@@ -483,7 +599,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		pwHash = string(h)
 	}
-	if err := s.store.CreateUpload(slug, owner.ID, filename, int64(len(data)), pwHash); err != nil {
+	if err := s.store.CreateUpload(slug, owner.ID, 0, filename, int64(len(data)), pwHash); err != nil {
 		_ = s.storage.Delete(r.Context(), slug)
 		http.Redirect(w, r, "/dashboard?err=db+failed", http.StatusSeeOther)
 		return
@@ -510,7 +626,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard?err=not+found", http.StatusSeeOther)
 		return
 	}
-	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+	if u.OwnerAccountID != owner.ID && !owner.IsAdmin {
 		http.Redirect(w, r, "/dashboard?err=not+owner", http.StatusSeeOther)
 		return
 	}
@@ -534,7 +650,7 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+	if u.OwnerAccountID != owner.ID && !owner.IsAdmin {
 		http.NotFound(w, r)
 		return
 	}
@@ -560,10 +676,10 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 
 // --- auth helpers ---
 
-// webAuth validates the signed session cookie and returns the owning token.
-// The cookie holds a signed reference to the token's id (not the bearer token),
-// so it is revocable and never carries the credential itself.
-func (s *Server) webAuth(r *http.Request) (*models.Token, bool) {
+// webAuth validates the signed session cookie and returns the account.
+// The cookie holds a signed reference to the account id, so it is revocable via
+// account disablement and never carries an API credential.
+func (s *Server) webAuth(r *http.Request) (*models.Account, bool) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
 		return nil, false
@@ -576,11 +692,14 @@ func (s *Server) webAuth(r *http.Request) (*models.Token, bool) {
 	if err != nil {
 		return nil, false
 	}
-	t, err := s.store.GetTokenByID(id)
+	a, err := s.store.GetAccountByID(id)
 	if err != nil {
 		return nil, false
 	}
-	return t, true
+	if a.Disabled {
+		return nil, false
+	}
+	return a, true
 }
 
 // --- CSRF ---

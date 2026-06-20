@@ -69,10 +69,10 @@ func newClient(cfg *Config) (*client, error) {
 	host := envOr("PEEK_HOST", cfg.Host)
 	token := envOr("PEEK_TOKEN", cfg.Token)
 	if host == "" {
-		return nil, fmt.Errorf("host not set. Run: hn config set --host <url> --token <token>")
+		return nil, fmt.Errorf("host not set. Run: peek login --host <url>")
 	}
 	if token == "" {
-		return nil, fmt.Errorf("token not set. Run: hn config set --host <url> --token <token>")
+		return nil, fmt.Errorf("token not set. Run: peek login --host <url>")
 	}
 	return &client{host: strings.TrimRight(host, "/"), token: token}, nil
 }

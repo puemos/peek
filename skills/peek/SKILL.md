@@ -40,18 +40,23 @@ Verify with `peek version`.
 
 ## Configure
 
-Point the CLI at a peek server and authenticate with an access token:
+Point the CLI at a peek server and authenticate. If the server has OAuth
+enabled, this opens the browser approval flow. Otherwise, paste an access token
+at the hidden prompt:
 
 ```sh
-peek login --host https://peek.example.com   # paste the token at the hidden prompt
+peek login --host https://peek.example.com
 ```
 
-The token never lands in your shell history. Config is saved to
+OAuth login saves a normal Peek API token locally after browser approval. For
+token-only or automation flows, use `peek login --token-stdin`,
+`peek login --token-file <path>`, or `PEEK_TOKEN`. The token never lands in your
+shell history unless you explicitly use `--token`. Config is saved to
 `<user-config-dir>/peek/config.json` (`~/.config/peek` on Linux,
 `~/Library/Application Support/peek` on macOS). You can also set `PEEK_HOST` and
 `PEEK_TOKEN` per command (handy for CI/agents).
 
-If the user doesn't have a server or a token yet, point them to the
+If the user doesn't have a server, token, or OAuth invite yet, point them to the
 **peek-server** skill.
 
 ## Core operations

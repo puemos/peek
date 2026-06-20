@@ -15,20 +15,27 @@ type settingsRow struct {
 	Description string `json:"description"`
 	IsSecret    bool   `json:"is_secret"`
 	IsStartup   bool   `json:"is_startup"`
+	IsBool      bool   `json:"is_bool"`
 }
 
 var settingsMeta = map[string]settingsRow{
-	"max_upload":              {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
-	"max_total_size":          {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
-	"retention_days":          {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
-	"max_uploads_per_token":   {Label: "Max uploads per token", Description: "Maximum number of uploads per token (0 = unlimited)"},
-	"max_storage_per_token":   {Label: "Max storage per token (bytes)", Description: "Maximum total storage per token (0 = unlimited)"},
-	"storage":        {Label: "Storage backend", Description: "file or s3 (requires restart to take effect)", IsStartup: true},
-	"s3_endpoint":    {Label: "S3 endpoint URL", Description: "S3-compatible endpoint (e.g. https://<id>.r2.cloudflarestorage.com)"},
-	"s3_bucket":      {Label: "S3 bucket", Description: "Bucket name for HTML file storage"},
-	"s3_region":      {Label: "S3 region", Description: "AWS region (e.g. us-east-1, auto)"},
-	"s3_access_key":  {Label: "S3 access key", Description: "Access key ID for S3-compatible storage"},
-	"s3_secret_key":  {Label: "S3 secret key", Description: "Secret access key for S3-compatible storage", IsSecret: true},
+	"max_upload":                 {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
+	"max_total_size":             {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
+	"retention_days":             {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
+	"max_uploads_per_token":      {Label: "Max uploads per owner", Description: "Maximum number of uploads per account/token owner (0 = unlimited)"},
+	"max_storage_per_token":      {Label: "Max storage per owner (bytes)", Description: "Maximum total storage per account/token owner (0 = unlimited)"},
+	"storage":                    {Label: "Storage backend", Description: "file or s3 (requires restart to take effect)", IsStartup: true},
+	"s3_endpoint":                {Label: "S3 endpoint URL", Description: "S3-compatible endpoint (e.g. https://<id>.r2.cloudflarestorage.com)"},
+	"s3_bucket":                  {Label: "S3 bucket", Description: "Bucket name for HTML file storage"},
+	"s3_region":                  {Label: "S3 region", Description: "AWS region (e.g. us-east-1, auto)"},
+	"s3_access_key":              {Label: "S3 access key", Description: "Access key ID for S3-compatible storage"},
+	"s3_secret_key":              {Label: "S3 secret key", Description: "Secret access key for S3-compatible storage", IsSecret: true},
+	"oauth_google_enabled":       {Label: "Google login", Description: "Enable Google OAuth login", IsBool: true},
+	"oauth_google_client_id":     {Label: "Google client ID", Description: "OAuth web client ID"},
+	"oauth_google_client_secret": {Label: "Google client secret", Description: "OAuth web client secret", IsSecret: true},
+	"oauth_github_enabled":       {Label: "GitHub login", Description: "Enable GitHub OAuth login", IsBool: true},
+	"oauth_github_client_id":     {Label: "GitHub client ID", Description: "OAuth app client ID"},
+	"oauth_github_client_secret": {Label: "GitHub client secret", Description: "OAuth app client secret", IsSecret: true},
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +109,14 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 	}
 	for k, meta := range settingsMeta {
 		v := r.FormValue(k)
+		if meta.IsBool {
+			if v != "" {
+				_ = s.encryptedSetSetting(k, "true")
+			} else {
+				_ = s.encryptedSetSetting(k, "")
+			}
+			continue
+		}
 		if v == "" {
 			if meta.IsSecret {
 				continue
@@ -169,6 +184,8 @@ func (s *Server) settingsSummary() map[string]any {
 
 func dashboardSettingsRows(raw map[string]string) []settingsRow {
 	order := []string{
+		"oauth_google_enabled", "oauth_google_client_id", "oauth_google_client_secret",
+		"oauth_github_enabled", "oauth_github_client_id", "oauth_github_client_secret",
 		"storage", "s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
 		"max_upload", "max_total_size", "max_uploads_per_token", "max_storage_per_token", "retention_days",
 	}
@@ -179,7 +196,8 @@ func dashboardSettingsRows(raw map[string]string) []settingsRow {
 		meta.Key = k
 		meta.Value = raw[k]
 		if meta.IsSecret && meta.Value != "" {
-			meta.Value = "••••••••"
+			meta.Value = ""
+			meta.Description = meta.Description + " (leave blank to keep current value)"
 		}
 		out = append(out, meta)
 		seen[k] = true
@@ -191,4 +209,21 @@ func dashboardSettingsRows(raw map[string]string) []settingsRow {
 		out = append(out, settingsRow{Key: k, Value: v, Label: k})
 	}
 	return out
+}
+
+func (s *Server) settingString(key string) string {
+	v, err := s.encryptedGetSetting(key)
+	if err != nil {
+		return ""
+	}
+	return v
+}
+
+func (s *Server) settingBool(key string) bool {
+	switch s.settingString(key) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

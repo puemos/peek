@@ -46,17 +46,18 @@ type Config struct {
 }
 
 type Server struct {
-	store    *db.Store
-	secret   string
-	baseURL  string
-	storage  Storage
-	secure   bool
+	store   *db.Store
+	secret  string
+	baseURL string
+	storage Storage
+	secure  bool
 
 	loginLimiter    *limiter
 	commentLimiter  *limiter
 	uploadLimiter   *limiter
 	passwordLimiter *limiter
 	globalLimiter   *limiter
+	cliLoginLimiter *limiter
 
 	trustedProxy bool
 }
@@ -121,17 +122,18 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	srv := &Server{
-		store:          store,
-		secret:         secret,
-		baseURL:        baseURL,
-		storage:        st,
-		secure:         secure,
-		loginLimiter:   newLimiter(10, time.Minute),
-		commentLimiter: newLimiter(30, time.Minute),
-		uploadLimiter:  newLimiter(20, time.Minute),
+		store:           store,
+		secret:          secret,
+		baseURL:         baseURL,
+		storage:         st,
+		secure:          secure,
+		loginLimiter:    newLimiter(10, time.Minute),
+		commentLimiter:  newLimiter(30, time.Minute),
+		uploadLimiter:   newLimiter(20, time.Minute),
 		passwordLimiter: newLimiter(10, time.Minute),
-		globalLimiter:  newLimiter(300, time.Minute),
-		trustedProxy:   cfg.TrustedProxy,
+		globalLimiter:   newLimiter(300, time.Minute),
+		cliLoginLimiter: newLimiter(120, time.Minute),
+		trustedProxy:    cfg.TrustedProxy,
 	}
 
 	if !cfg.TrustedProxy && !isLocalBaseURL(baseURL) {
@@ -217,6 +219,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/audit", s.authAdmin(s.handleAuditLog))
 	mux.HandleFunc("GET /api/uploads/{slug}/export", s.authToken(s.handleExportUpload))
 	mux.HandleFunc("DELETE /api/uploads-by-owner", s.authToken(s.handleDeleteAllByOwner))
+	mux.HandleFunc("GET /api/auth/providers", s.handleAuthProviders)
+	mux.HandleFunc("POST /api/cli/login/start", s.rateLimit(s.cliLoginLimiter, s.handleCLILoginStart))
+	mux.HandleFunc("POST /api/cli/login/poll", s.rateLimit(s.cliLoginLimiter, s.handleCLILoginPoll))
 
 	// Page-side API (callable by the trusted parent page JS).
 	mux.HandleFunc("GET /api/uploads/{slug}/comments", s.handleListComments)
@@ -242,11 +247,20 @@ func (s *Server) Handler() http.Handler {
 	// Web GUI (browser-based management).
 	mux.HandleFunc("GET /login", s.handleLogin)
 	mux.HandleFunc("POST /login", s.rateLimit(s.loginLimiter, s.handleLogin))
+	mux.HandleFunc("GET /oauth/{provider}/start", s.rateLimit(s.loginLimiter, s.handleOAuthStart))
+	mux.HandleFunc("GET /oauth/{provider}/callback", s.rateLimit(s.loginLimiter, s.handleOAuthCallback))
+	mux.HandleFunc("GET /invite/{token}", s.handleInviteLink)
+	mux.HandleFunc("GET /cli-login/{code}", s.handleCLILoginPage)
+	mux.HandleFunc("POST /cli-login/{code}", s.handleCLILoginApprove)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	mux.HandleFunc("POST /dashboard/upload", s.handleDashboardUpload)
 	mux.HandleFunc("POST /dashboard/delete/{slug}", s.handleDashboardDelete)
 	mux.HandleFunc("POST /dashboard/settings", s.handleDashboardSettings)
+	mux.HandleFunc("POST /dashboard/invites", s.handleDashboardCreateInvite)
+	mux.HandleFunc("POST /dashboard/invites/revoke/{id}", s.handleDashboardRevokeInvite)
+	mux.HandleFunc("POST /dashboard/users/{id}/admin", s.handleDashboardUserAdmin)
+	mux.HandleFunc("POST /dashboard/users/{id}/disabled", s.handleDashboardUserDisabled)
 	mux.HandleFunc("GET /dashboard/stats/{slug}", s.handleDashboardStats)
 
 	return s.withMiddleware(mux)
@@ -313,8 +327,13 @@ func (s *Server) authToken(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, http.StatusUnauthorized, "missing token")
 			return
 		}
-		if _, err := s.store.GetToken(tok); err != nil {
+		t, err := s.store.GetToken(tok)
+		if err != nil {
 			jsonError(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		if t.Disabled {
+			jsonError(w, http.StatusForbidden, "account disabled")
 			return
 		}
 		next(w, r)
@@ -331,6 +350,10 @@ func (s *Server) authAdmin(next http.HandlerFunc) http.HandlerFunc {
 		t, err := s.store.GetToken(tok)
 		if err != nil {
 			jsonError(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		if t.Disabled {
+			jsonError(w, http.StatusForbidden, "account disabled")
 			return
 		}
 		if !t.IsAdmin {

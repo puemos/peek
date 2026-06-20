@@ -3,13 +3,16 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -71,7 +74,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `peek — Peek CLI
 
 Usage:
-  peek login [--host <url>]             set host + token (token entered hidden)
+  peek login [--host <url>]             sign in with browser OAuth when available
+  peek login --token-stdin              read an access token from stdin
   peek config set --host <url>          set host (use 'login' / --token-stdin for the token)
   peek config show
   peek upload <file.html> [--password <pw>] [--name <filename>]
@@ -88,7 +92,10 @@ Usage:
   peek token revoke <id>               revoke a token by id (admin only)
 
 Token input (most secure first):
-  peek login                           hidden prompt, nothing in shell history
+  peek login                           browser OAuth when available; otherwise hidden prompt
+  peek login --token-stdin             read token from a pipe
+  peek login --token-file <path>       read token from a file
+  peek login --token <token>           discouraged: exposed in history & 'ps'
   PEEK_TOKEN=…  (env override)          handy for CI
   peek config set --token-stdin        read token from a pipe
   peek config set --token-file <path>  read token from a file
@@ -128,10 +135,40 @@ func cmdLogin(args []string) error {
 		return err
 	}
 	host := cfg.Host
+	var (
+		forceOAuth    bool
+		tokenFlag     string
+		tokenFile     string
+		tokenStdin    bool
+		usedTokenFlag bool
+	)
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--host" && i+1 < len(args) {
+		switch args[i] {
+		case "--host":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--host requires a value")
+			}
 			host = args[i+1]
 			i++
+		case "--oauth":
+			forceOAuth = true
+		case "--token":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--token requires a value")
+			}
+			tokenFlag = args[i+1]
+			usedTokenFlag = true
+			i++
+		case "--token-file":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--token-file requires a value")
+			}
+			tokenFile = args[i+1]
+			i++
+		case "--token-stdin":
+			tokenStdin = true
+		default:
+			return fmt.Errorf("unknown flag: %s", args[i])
 		}
 	}
 	if host == "" {
@@ -142,9 +179,44 @@ func cmdLogin(args []string) error {
 	if host == "" {
 		return fmt.Errorf("host is required")
 	}
-	token, err := readTokenInteractive()
-	if err != nil {
-		return err
+
+	tokenMode := tokenFlag != "" || tokenFile != "" || tokenStdin || !term.IsTerminal(int(os.Stdin.Fd()))
+	if forceOAuth || !tokenMode {
+		available, err := oauthAvailable(host)
+		if err == nil && available {
+			return loginOAuth(cfg, host)
+		}
+		if forceOAuth {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("oauth login is not configured on %s", host)
+		}
+	}
+
+	token := strings.TrimSpace(tokenFlag)
+	if tokenFile != "" {
+		b, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return err
+		}
+		token = strings.TrimSpace(string(b))
+	}
+	if tokenStdin {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		token = strings.TrimSpace(line)
+	}
+	if token == "" {
+		token, err = readTokenInteractive()
+		if err != nil {
+			return err
+		}
+	}
+	if usedTokenFlag {
+		fmt.Fprintln(os.Stderr, "warning: --token is exposed in your shell history and process list (ps). Prefer browser login, --token-stdin, or --token-file.")
 	}
 	if token == "" {
 		return fmt.Errorf("no token provided")
@@ -156,6 +228,127 @@ func cmdLogin(args []string) error {
 	}
 	fmt.Println("saved.")
 	return nil
+}
+
+func oauthAvailable(host string) (bool, error) {
+	resp, err := httpClient.Get(strings.TrimRight(host, "/") + "/api/auth/providers")
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode >= 400 {
+		return false, nil
+	}
+	var out struct {
+		Providers []struct {
+			Key  string `json:"key"`
+			Name string `json:"name"`
+		} `json:"providers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, err
+	}
+	return len(out.Providers) > 0, nil
+}
+
+func loginOAuth(cfg *Config, host string) error {
+	host = strings.TrimRight(host, "/")
+	var start struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURL string `json:"verification_url"`
+		Interval        int    `json:"interval"`
+		ExpiresIn       int    `json:"expires_in"`
+	}
+	if err := postJSONNoAuth(host, "/api/cli/login/start", nil, &start); err != nil {
+		return err
+	}
+	if start.Interval <= 0 {
+		start.Interval = 2
+	}
+	if start.ExpiresIn <= 0 {
+		start.ExpiresIn = 900
+	}
+	fmt.Fprintf(os.Stderr, "Opening browser for Peek login.\nCode: %s\nURL:  %s\n", start.UserCode, start.VerificationURL)
+	if err := openBrowser(start.VerificationURL); err != nil {
+		fmt.Fprintln(os.Stderr, "Open the URL above to continue.")
+	}
+	deadline := time.Now().Add(time.Duration(start.ExpiresIn) * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(time.Duration(start.Interval) * time.Second)
+		var poll struct {
+			Status string `json:"status"`
+			Token  string `json:"token"`
+		}
+		body := map[string]string{"device_code": start.DeviceCode}
+		if err := postJSONNoAuth(host, "/api/cli/login/poll", body, &poll); err != nil {
+			return err
+		}
+		switch poll.Status {
+		case "pending":
+			continue
+		case "approved":
+			if poll.Token == "" {
+				return fmt.Errorf("server approved login without a token")
+			}
+			cfg.Host = host
+			cfg.Token = poll.Token
+			if err := SaveConfig(cfg); err != nil {
+				return err
+			}
+			fmt.Println("saved.")
+			return nil
+		case "denied":
+			return fmt.Errorf("login denied")
+		case "expired":
+			return fmt.Errorf("login expired")
+		case "consumed":
+			return fmt.Errorf("login already consumed")
+		default:
+			return fmt.Errorf("unexpected login status: %s", poll.Status)
+		}
+	}
+	return fmt.Errorf("login expired")
+}
+
+func postJSONNoAuth(host, path string, in, out any) error {
+	var body io.Reader
+	if in != nil {
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(in); err != nil {
+			return err
+		}
+		body = &buf
+	}
+	req, err := http.NewRequest(http.MethodPost, host+path, body)
+	if err != nil {
+		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return decodeResp(resp, out)
+}
+
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
 }
 
 // --- config ---

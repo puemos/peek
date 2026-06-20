@@ -245,7 +245,24 @@ html, body {
 .hn-gate-form input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .hn-gate-form button { height: 38px; border-radius: var(--radius); border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; font: inherit; font-weight: 500; transition: background .12s ease; }
 .hn-gate-form button:hover { background: var(--accent-hover); }
+.hn-gate-form .hn-secondary-btn { background: var(--elevated); color: var(--fg); border: 1px solid var(--border); }
+.hn-gate-form .hn-secondary-btn:hover { background: var(--card); border-color: var(--border-strong); }
 .hn-err { color: var(--danger); margin: 0; font-size: 13px; }
+.hn-login-note {
+  margin: 0 0 16px; color: var(--accent-text); font-size: 13px;
+  background: var(--accent-soft); border: 1px solid rgba(94,106,210,.25);
+  border-radius: var(--radius); padding: 10px 12px;
+}
+.hn-oauth-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.hn-oauth-btn {
+  display: flex; align-items: center; justify-content: center; height: 40px;
+  border-radius: var(--radius); border: 1px solid var(--border); background: var(--elevated);
+  color: var(--fg); text-decoration: none; font-weight: 500;
+  transition: border-color .12s ease, background .12s ease;
+}
+.hn-oauth-btn:hover { border-color: var(--border-strong); background: var(--panel); }
+.hn-login-sep { display: flex; align-items: center; gap: 10px; color: var(--fg-subtle); font-size: 12px; margin: 0 0 14px; }
+.hn-login-sep::before, .hn-login-sep::after { content: ""; height: 1px; flex: 1; background: var(--border); }
 
 /* welcome / index page */
 .hn-welcome { display: grid; place-items: center; height: 100vh; overflow: auto; padding: 40px 20px; }

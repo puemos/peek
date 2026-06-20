@@ -94,9 +94,9 @@ func verifySessionCookie(secret, val, slug string) bool {
 	return verifyToken(secret, val, slug)
 }
 
-// makeWebSession signs subject.exp for an authenticated dashboard session. The
-// subject is the token's row id, so the cookie carries a revocable reference
-// rather than the bearer token itself.
+// makeWebSession signs subject.exp for an authenticated dashboard session.
+// Dashboard sessions use account ids, so disabling the account revokes web
+// access without storing a bearer token in the cookie.
 func makeWebSession(secret, subject string, ttl time.Duration) string {
 	return signToken(secret, subject, time.Now().Add(ttl).Unix())
 }
@@ -187,6 +187,8 @@ func decryptSecret(secretHex, ciphertext string) (string, error) {
 
 // secretSettingKeys lists settings keys whose values are encrypted at rest.
 var secretSettingKeys = map[string]bool{
-	"s3_access_key": true,
-	"s3_secret_key": true,
+	"s3_access_key":              true,
+	"s3_secret_key":              true,
+	"oauth_google_client_secret": true,
+	"oauth_github_client_secret": true,
 }

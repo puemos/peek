@@ -118,7 +118,8 @@ docker compose --profile s3 up -d
 # 1. Start the server (first run prints an admin token)
 peekd --addr :7700 --data ./data --base-url http://localhost:7700
 
-# 2. Log in — paste the admin token at the hidden prompt (nothing hits your shell history)
+# 2. Log in. If OAuth is enabled, this opens the browser approval flow.
+#    Otherwise, paste the admin token at the hidden prompt.
 peek login --host http://localhost:7700
 
 # 3. Share a page
@@ -159,7 +160,9 @@ pages, commenting is gated behind the same session.
 ## CLI reference
 
 ```
-peek login [--host <url>]              set host + token (token entered hidden)
+peek login [--host <url>]              browser OAuth when enabled; token fallback
+peek login --token-stdin               read an access token from stdin
+peek login --token-file <path>         read an access token from a file
 peek config show                       show current host + masked token
 peek upload <file.html> [--password <pw>] [--name <filename>]
 peek list
@@ -175,10 +178,10 @@ peek token revoke <id>                 revoke a token by id (admin only)
 peek version                           show version
 ```
 
-**Token input, most secure first:** `peek login` (hidden prompt) ·
-`PEEK_TOKEN=…` env · `peek config set --token-stdin` (pipe) ·
-`--token-file <path>`. The `--token <value>` flag still works but warns, since it
-leaks into shell history and `ps`.
+**Login input, most secure first:** `peek login` (browser OAuth when enabled;
+otherwise hidden token prompt) · `PEEK_TOKEN=…` env · `peek login --token-stdin`
+(pipe) · `peek login --token-file <path>`. The `--token <value>` flag still works
+but warns, since it leaks into shell history and `ps`.
 
 ## Configuration
 
@@ -222,18 +225,20 @@ Saved to `<user-config-dir>/peek/config.json` (e.g. `~/.config/peek` on Linux,
 
 | Threat | Mitigation |
 |---|---|
-| Anyone can upload | Every upload requires a valid bearer token. |
+| Anyone can upload | Every upload requires a valid API token or authenticated dashboard session. |
 | Token theft from the database/backups | Tokens are stored only as **SHA-256 hashes**; the plaintext is shown once at creation. `peek token revoke <id>` invalidates one. |
 | Long-lived service tokens | API-created tokens can include an expiry; expired tokens are rejected during auth. |
 | Token leaking via the terminal | CLI reads the token from a **hidden prompt / stdin / file**, never argv. |
-| Session-cookie theft | The dashboard cookie is a **signed, revocable reference** to the token id — not the token itself. `HttpOnly`, `SameSite=Strict`, and `Secure` (auto on https). |
+| OAuth provider token exposure | Provider access tokens are used only for profile/email lookup and are not stored. Google requires a verified OIDC email; GitHub requires a verified email from `user:email`. |
+| CLI OAuth token delivery | Browser approval creates a normal Peek API token exactly once through a short-lived device flow; the API token is never put in a URL and is stored only as a hash. |
+| Session-cookie theft | The dashboard cookie is a **signed, revocable reference** to the account id — not the token itself. `HttpOnly`, `SameSite=Strict`, and `Secure` (auto on https). |
 | Dashboard CSRF / clickjacking | Dashboard forms require CSRF tokens and dashboard pages send a CSP with `frame-ancestors 'none'`. |
 | Credentials sent in clear | `Secure` cookies + **HSTS** when the base URL is https; the server **warns** on startup if a non-local base URL is plain http. Run behind a TLS reverse proxy. |
 | Uploaded HTML harms the host | The server never executes HTML — it only streams bytes. |
 | Uploaded HTML steals cookies/data | Rendered in `<iframe sandbox="allow-scripts">` with **no `allow-same-origin`** (opaque origin): no access to server cookies, storage, or same-origin requests. |
 | Uploaded HTML attacks the parent page | Parent ↔ iframe communicate only via `postMessage`; the iframe can only send "pick"/"pin" events. |
 | Hot-linking / bypassing the password gate | `/raw` requires a short-lived HMAC-signed view token issued only by `/p/<slug>` and bound to the visitor cookie. |
-| Brute force / spam | Per-IP rate limits on `/login`, the password gate, and comment posting. |
+| Brute force / spam | Per-IP rate limits on `/login`, CLI login, the password gate, and comment posting. |
 | Malicious content / huge uploads | HTML sniffed, binaries rejected, configurable max size, `MaxBytesReader`. |
 | SSRF via S3 settings | S3 endpoints must be HTTP(S), HTTPS unless localhost, and cannot resolve to private/link-local IPs. |
 | Path traversal / SQLi | Random base64url slugs (filenames never user-derived); all queries parameterized. |
@@ -269,11 +274,35 @@ networks.
 
 ## Web GUI
 
-A browser dashboard at `/login` (sign in with a token) lets non-technical users
-upload files or paste HTML, list/delete uploads, set passwords, and view stats.
-Sessions are signed, revocable, `HttpOnly`, `SameSite=Strict` cookies with CSRF
-protection on every form. Admins can edit runtime limits, retention, and S3
-settings. Non-admins only see their own uploads.
+A browser dashboard at `/login` lets non-technical users upload files or paste
+HTML, list/delete uploads, set passwords, and view stats. Admins can keep token
+login only, or enable Google and/or GitHub OAuth from Settings by entering each
+provider's web client ID and secret. Configure provider callback URLs as:
+
+```
+https://peek.example.com/oauth/google/callback
+https://peek.example.com/oauth/github/callback
+```
+
+For local GitHub testing, create a temporary OAuth App at
+`https://github.com/settings/applications/new` with:
+
+```
+Homepage URL: http://127.0.0.1:7700
+Authorization callback URL: http://127.0.0.1:7700/oauth/github/callback
+```
+
+Use the actual local port from `--addr` / `--base-url`, then paste the Client ID
+and generated client secret into dashboard Settings. Regenerate or delete test
+client secrets after sharing them or committing test notes.
+
+OAuth signups are invite-only. Admins create manual invite links in the
+dashboard, send them to users, and users accept with an enabled OAuth provider.
+The same verified email maps to the same Peek account across Google and GitHub.
+Admins can disable users or promote/demote admins later, and can edit runtime
+limits, retention, and S3 settings. Sessions are signed, revocable, `HttpOnly`,
+`SameSite=Strict` cookies with CSRF protection on every form. Non-admins only
+see their own uploads.
 
 ## Agent skills
 

@@ -1,9 +1,13 @@
 package db
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -27,7 +31,7 @@ func TestCreateGetToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get token: %v", err)
 	}
-	if got.Name != "test" || got.IsAdmin || got.Token == token {
+	if got.Name != "test" || got.IsAdmin || got.Token == token || got.AccountID == 0 {
 		t.Fatalf("token mismatch: %+v", got)
 	}
 	if got.Token != HashToken(token) {
@@ -75,15 +79,22 @@ func TestCreateGetUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get token: %v", err)
 	}
-	if err := s.CreateUpload("slug1", tok.ID, "page.html", 42, ""); err != nil {
+	if err := s.CreateUpload("slug1", tok.AccountID, tok.ID, "page.html", 42, ""); err != nil {
 		t.Fatalf("create upload: %v", err)
 	}
 	got, err := s.GetUpload("slug1")
 	if err != nil {
 		t.Fatalf("get upload: %v", err)
 	}
-	if got.Slug != "slug1" || got.Filename != "page.html" || got.Size != 42 || got.OwnerTokenID != tok.ID {
+	if got.Slug != "slug1" || got.Filename != "page.html" || got.Size != 42 || got.OwnerTokenID != tok.ID || got.OwnerAccountID != tok.AccountID {
 		t.Fatalf("upload mismatch: %+v", got)
+	}
+	total, err := s.SumUploadSizesByOwner(tok.AccountID)
+	if err != nil {
+		t.Fatalf("sum owner sizes: %v", err)
+	}
+	if total != 42 {
+		t.Fatalf("expected owner size 42, got %d", total)
 	}
 }
 
@@ -94,7 +105,7 @@ func TestAddListComments(t *testing.T) {
 		t.Fatalf("create token: %v", err)
 	}
 	tok, _ := s.GetToken("owner")
-	if err := s.CreateUpload("slug2", tok.ID, "page.html", 0, ""); err != nil {
+	if err := s.CreateUpload("slug2", tok.AccountID, tok.ID, "page.html", 0, ""); err != nil {
 		t.Fatalf("create upload: %v", err)
 	}
 	up, _ := s.GetUpload("slug2")
@@ -184,7 +195,8 @@ func TestListTokens(t *testing.T) {
 	if err := s.CreateToken("a", "first", false, 0); err != nil {
 		t.Fatalf("create token: %v", err)
 	}
-	if err := s.CreateToken("b", "second", true, time.Now().Add(time.Hour).Unix()); err != nil {
+	exp := time.Now().Add(time.Hour).Unix()
+	if err := s.CreateToken("b", "second", true, exp); err != nil {
 		t.Fatalf("create token: %v", err)
 	}
 	tokens, err := s.ListTokens()
@@ -196,5 +208,156 @@ func TestListTokens(t *testing.T) {
 	}
 	if !tokens[0].IsAdmin && !tokens[1].IsAdmin {
 		t.Fatalf("expected one admin token")
+	}
+	if tokens[0].AccountID == 0 || tokens[1].AccountID == 0 {
+		t.Fatalf("expected account-backed tokens: %+v", tokens)
+	}
+	if tokens[1].ExpiresAt != exp && tokens[0].ExpiresAt != exp {
+		t.Fatalf("expected list to include expiry %d, got %+v", exp, tokens)
+	}
+}
+
+func TestLegacyAuthMigrationPreservesTokenAndUploadOwnership(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "peek.db")
+	legacy, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(ON)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec(`
+CREATE TABLE tokens (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	token TEXT UNIQUE NOT NULL,
+	name TEXT NOT NULL,
+	is_admin INTEGER NOT NULL DEFAULT 0,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE uploads (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	slug TEXT UNIQUE NOT NULL,
+	owner_token_id INTEGER NOT NULL REFERENCES tokens(id),
+	filename TEXT NOT NULL,
+	size INTEGER NOT NULL,
+	password_hash TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE comments (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+	element_selector TEXT NOT NULL,
+	element_text TEXT NOT NULL DEFAULT '',
+	author_name TEXT NOT NULL,
+	author_cookie TEXT NOT NULL,
+	body TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE visits (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+	visitor_cookie TEXT NOT NULL,
+	visitor_name TEXT NOT NULL DEFAULT '',
+	ip TEXT NOT NULL DEFAULT '',
+	user_agent TEXT NOT NULL DEFAULT '',
+	visited_at INTEGER NOT NULL
+);
+CREATE TABLE visitors (
+	cookie TEXT PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL,
+	last_seen INTEGER NOT NULL
+);
+CREATE TABLE settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+INSERT INTO tokens(token,name,is_admin,created_at) VALUES('legacy-admin','Admin',1,100);
+INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1,'page.html',10,101);
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	tok, err := store.GetToken("legacy-admin")
+	if err != nil {
+		t.Fatalf("legacy token should still authenticate: %v", err)
+	}
+	if !tok.IsAdmin || tok.AccountID == 0 || tok.Token == "legacy-admin" || tok.ExpiresAt != 0 {
+		t.Fatalf("unexpected migrated token: %+v", tok)
+	}
+	up, err := store.GetUpload("abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.OwnerAccountID != tok.AccountID || up.OwnerTokenID != tok.ID {
+		t.Fatalf("upload ownership not migrated: upload=%+v token=%+v", up, tok)
+	}
+	if err := store.CreateUpload("oauth", tok.AccountID, 0, "oauth.html", 5, ""); err != nil {
+		t.Fatalf("account-owned upload without token should be allowed: %v", err)
+	}
+	n, err := store.CountUploadsByOwner(tok.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 account uploads, got %d", n)
+	}
+}
+
+func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.CreateToken("admin-token", "Admin", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := store.GetToken("admin-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inv, err := store.CreateInvite("raw-invite", "ciphertext", "USER@Example.COM", admin.AccountID, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetInviteByToken("raw-invite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Email != "user@example.com" || got.Token != "ciphertext" {
+		t.Fatalf("unexpected invite: %+v", got)
+	}
+	if err := store.ConsumeInvite(inv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConsumeInvite(inv.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second consume should fail, got %v", err)
+	}
+
+	if err := store.CreateCLILoginDevice("device", "ABCDEFGH", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	device, err := store.GetCLILoginByDevice("device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApproveCLILogin(device.ID, admin.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConsumeCLILogin(device.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ConsumeCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI consume should fail, got %v", err)
 	}
 }

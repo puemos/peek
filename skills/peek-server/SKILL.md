@@ -91,8 +91,8 @@ restart.
 
 ## Administer with the CLI
 
-Configure the CLI against the server with the admin token (see the **peek** skill
-for `peek login`), then:
+Configure the CLI against the server with browser OAuth or the admin token (see
+the **peek** skill for `peek login`), then:
 
 ### Manage access tokens (admin only)
 
@@ -108,6 +108,26 @@ upload and manage only their own uploads.
 Token expiry is available through the admin JSON API by sending
 `{"name":"service","expires_hours":24}` to `POST /api/tokens`. The current CLI
 creates non-expiring tokens.
+
+### Manage OAuth and invitations
+
+Admins can use the web dashboard Settings section to enable Google and/or GitHub
+OAuth. Create web OAuth credentials with these callback URLs:
+
+```text
+https://peek.example.com/oauth/google/callback
+https://peek.example.com/oauth/github/callback
+```
+
+For local GitHub testing, create a temporary OAuth App at
+`https://github.com/settings/applications/new` with `Homepage URL` set to the
+local base URL and `Authorization callback URL` set to
+`http://127.0.0.1:<port>/oauth/github/callback`.
+
+OAuth signups are invite-only. Create manual invite links in the dashboard and
+send them to users. The same verified email maps to the same Peek account across
+Google and GitHub. Admins can disable users or promote/demote admins in the
+dashboard later.
 
 ### Manage page passwords
 
@@ -160,7 +180,8 @@ resolve to private/link-local IPs.
 
 ## Web dashboard
 
-The server also serves a browser dashboard at `/login`. Sign in with a token to
-upload (file or paste HTML), list/delete uploads, set passwords, view stats, and
-for admins edit runtime limits, retention, and S3 settings — no CLI required.
-Direct non-technical users there.
+The server also serves a browser dashboard at `/login`. Sign in with a token or
+an enabled OAuth provider to upload (file or paste HTML), list/delete uploads,
+set passwords, and view stats. Admins can also edit runtime limits, retention,
+S3 settings, OAuth providers, invites, and users — no CLI required. Direct
+non-technical users there.
