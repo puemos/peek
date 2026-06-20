@@ -4,6 +4,9 @@
 *.out
 dist/
 
+# Node tooling for asset generation
+/node_modules/
+
 # Runtime data (uploads + sqlite db) — never commit
 /data/
 

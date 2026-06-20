@@ -1,103 +1,237 @@
-// gen-assets.mjs — drives headless Chrome (via the DevTools Protocol) to capture
-// Peek's launch assets: ProductHunt-ratio (1270x760) screenshots at 2x plus a
-// screencast of the commenting flow as numbered frames for ffmpeg.
+// gen-assets.mjs - drives Chromium with Playwright to record Peek's demo MP4.
 //
 // Invoked by scripts/gen-assets.sh. Env:
-//   DEBUG  - Chrome remote-debugging base (http://localhost:PORT)
-//   BASE   - Peek base URL
-//   SLUG   - slug of the seeded report upload
-//   TOKEN  - API token minted by the setup script
-//   OUT    - assets output dir
-//   FRAMES - dir for video frames
-import fs from "node:fs";
+//   BASE      - Peek base URL
+//   SLUG      - slug of the seeded report upload
+//   VIDEO_RAW - raw Playwright video output path
+//   CHROME    - Chrome / Chromium executable path
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { chromium } from "playwright-core";
 
-const { DEBUG, BASE, SLUG, TOKEN, OUT, FRAMES } = process.env;
-const W = 1270, H = 760; // ProductHunt gallery ratio (~1.67:1)
+const { BASE, SLUG, VIDEO_RAW, CHROME } = process.env;
+const VIDEO_W = 1920;
+const VIDEO_H = 1080;
+const REPORT_ZOOM = "1.18";
 
-const t = await (await fetch(`${DEBUG}/json/new?${encodeURIComponent(BASE + "/p/" + SLUG)}`, { method: "PUT" })).json();
-const ws = new WebSocket(t.webSocketDebuggerUrl);
-let id = 0; const pending = new Map();
-const send = (m, p = {}) => new Promise((r, j) => { const i = ++id; pending.set(i, { r, j }); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
-await new Promise((r) => (ws.onopen = r));
-ws.onmessage = (e) => { const d = JSON.parse(e.data); if (d.id && pending.has(d.id)) { const { r, j } = pending.get(d.id); pending.delete(d.id); d.error ? j(new Error(d.error.message)) : r(d.result); } };
+for (const [key, value] of Object.entries({ BASE, SLUG, VIDEO_RAW, CHROME })) {
+  if (!value) throw new Error(`missing required env var: ${key}`);
+}
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const ev = (x) => send("Runtime.evaluate", { expression: x, awaitPromise: true, returnByValue: true });
-const mouse = (type, x, y, ex = {}) => send("Input.dispatchMouseEvent", Object.assign({ type, x, y, button: "left", buttons: 1 }, ex));
-const png = async (p) => { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(p, Buffer.from(r.data, "base64")); console.log("  shot", p.split("/").pop()); };
-const metrics = (scale) => send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: scale, mobile: false });
-const nav = async (url) => { await send("Page.navigate", { url }); await sleep(2700); };
+const shareURL = `${BASE}/p/${SLUG}`;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-await send("Page.enable");
-await send("Runtime.enable");
+async function launchBrowser() {
+  return chromium.launch({
+    headless: true,
+    executablePath: CHROME,
+    args: ["--hide-scrollbars", "--disable-gpu", "--force-color-profile=srgb"],
+  });
+}
 
-// ---------------- screenshots (2x, crisp, PH ratio) ----------------
-console.log("screenshots…");
-await metrics(2);
-await nav(`${BASE}/p/${SLUG}`);
-await ev(`(document.getElementById('hn-name-skip')||{click(){}}).click()`);
-await sleep(500);
-await png(`${OUT}/hero.png`);                       // report + pins + highlight + island
+async function hold(ms) {
+  await sleep(ms);
+}
 
-await ev(`document.getElementById('hn-panel-btn').click()`);
-await sleep(650);
-await png(`${OUT}/comments.png`);                   // comments panel
+async function typeIntoElement(page, selector, text, delay = 44) {
+  for (const ch of text) {
+    await page.locator(selector).evaluate((el, value) => {
+      el.textContent += value;
+    }, ch);
+    await hold(delay);
+  }
+}
 
-await nav(`${BASE}/login`);
-await ev(`(function(){var f=document.querySelector('input[name=token]');f.value=${JSON.stringify(TOKEN)};f.form.submit();})()`);
-await sleep(1600);
-await png(`${OUT}/dashboard.png`);                  // dashboard
+async function showTerminalIntro(page) {
+  await page.setContent(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peek demo</title>
+<style>
+  :root { color-scheme: light; --line: #d8dce5; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: #f7f8fb;
+    font: 18px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  .terminal {
+    width: min(1180px, calc(100vw - 96px));
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #101217;
+    box-shadow: 0 24px 70px rgba(17, 20, 26, .18);
+  }
+  .chrome {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 46px;
+    padding: 0 18px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+  .dot:nth-child(2) { background: #ffbd2e; }
+  .dot:nth-child(3) { background: #28c840; }
+  .body {
+    min-height: 300px;
+    padding: 38px 42px 42px;
+    font: 28px/1.7 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .prompt { color: #8b93a7; }
+  .cmd { color: #f7f8fb; }
+  .loader { color: #aab2c5; min-height: 48px; }
+  .output { color: #9be7c4; min-height: 48px; }
+  .cursor {
+    display: inline-block;
+    width: 12px;
+    height: 34px;
+    margin-left: 3px;
+    vertical-align: -7px;
+    background: #f7f8fb;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+  <section class="terminal" aria-label="terminal">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="body">
+      <div><span class="prompt">$ </span><span id="cmd" class="cmd"></span><span class="cursor"></span></div>
+      <div id="loader" class="loader"></div>
+      <div id="output" class="output"></div>
+    </div>
+  </section>
+</body>
+</html>`);
 
-// ---------------- screencast (1x, PH ratio) ----------------
-console.log("screencast…");
-let fi = 0;
-const frame = async () => { try { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(`${FRAMES}/f_${String(fi++).padStart(4, "0")}.png`, Buffer.from(r.data, "base64")); } catch {} };
-const hold = async (ms) => { const end = Date.now() + ms; while (Date.now() < end) { await frame(); await sleep(80); } };
+  await hold(760);
+  await typeIntoElement(page, "#cmd", "peek upload codebase-health-report.html");
+  await hold(540);
 
-await metrics(1);
-await nav(`${BASE}/p/${SLUG}`);
+  const frames = ["|", "/", "-", "\\"];
+  for (let i = 0; i < 8; i++) {
+    await page.locator("#loader").evaluate((el, value) => {
+      el.textContent = value;
+    }, `${frames[i % frames.length]} uploading codebase-health-report.html`);
+    await hold(220);
+  }
 
-// 1) one-time name prompt (onboarding)
-await hold(1200);
-await ev(`(function(){var i=document.getElementById('hn-name-input'); if(i) i.value='Sam';})()`);
-await hold(450);
-await ev(`document.getElementById('hn-name-form').requestSubmit()`);
-await hold(900);
+  await page.locator("#loader").evaluate((el) => {
+    el.textContent = "uploaded";
+  });
+  await hold(280);
+  await page.locator("#output").evaluate((el, url) => {
+    el.textContent = url;
+  }, shareURL);
+  await hold(1900);
+}
 
-// 2) open the comments panel (existing review comments)
-await ev(`document.getElementById('hn-panel-btn').click()`);
-await hold(1500);
+async function openSharedPage(page) {
+  await page.context().addCookies([{ name: "hn_name", value: "Sam", url: BASE, sameSite: "Lax" }]);
+  await page.context().addInitScript(() => {
+    try { localStorage.setItem("hn_name_asked", "1"); } catch (e) {}
+  });
 
-// 3) click a comment -> scroll to + flash its anchor on the page
-await ev(`(function(){var li=document.querySelector('#hn-comment-list li.hn-locatable'); if(li) li.click();})()`);
-await hold(1800);
+  await page.goto(shareURL, { waitUntil: "domcontentloaded" });
+  await page.locator("#hn-frame").waitFor({ state: "attached" });
+  await page.locator("#hn-comment-btn").waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const modal = document.getElementById("hn-name-modal");
+    if (modal && !modal.hidden) document.getElementById("hn-name-skip")?.click();
+  });
+  await page.frameLocator("#hn-frame").locator("html").evaluate((html, zoom) => {
+    html.style.zoom = zoom;
+  }, REPORT_ZOOM);
+  await page.locator("#hn-count").waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const count = document.getElementById("hn-count");
+    return count && Number(count.textContent || "0") === 0;
+  });
+}
 
-// 4) flash comment mode + hint, then toggle back off
-await ev(`document.getElementById('hn-panel-btn').click()`);
-await hold(400);
-await ev(`document.getElementById('hn-comment-btn').click()`);   // mode ON -> hint
-await hold(1300);
-await ev(`document.getElementById('hn-comment-btn').click()`);   // mode OFF
-await hold(500);
+async function selectLatencyClaim(page) {
+  const report = page.frameLocator("#hn-frame");
+  await report.locator("#latency-claim").evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
+  await report.locator(".hn-sel-btn").waitFor({ state: "visible" });
+  return report;
+}
 
-// 5) select a word in a paragraph (double-click) -> Comment bubble
-const sx = 430, sy = 360;
-await mouse("mousePressed", sx, sy, { clickCount: 1 }); await mouse("mouseReleased", sx, sy, { clickCount: 1 });
-await mouse("mousePressed", sx, sy, { clickCount: 2 }); await mouse("mouseReleased", sx, sy, { clickCount: 2 });
-await hold(1400);
+async function recordDemo(browser) {
+  console.log("screencast...");
+  const videoDir = path.dirname(VIDEO_RAW);
+  await mkdir(videoDir, { recursive: true });
+  await rm(VIDEO_RAW, { force: true });
 
-// 6) click the Comment bubble -> composer anchored to the text
-await mouse("mousePressed", sx, sy - 42, { clickCount: 1 }); await mouse("mouseReleased", sx, sy - 42, { clickCount: 1 });
-await hold(1100);
+  const context = await browser.newContext({
+    viewport: { width: VIDEO_W, height: VIDEO_H },
+    deviceScaleFactor: 1,
+    recordVideo: {
+      dir: videoDir,
+      size: { width: VIDEO_W, height: VIDEO_H },
+    },
+  });
+  const page = await context.newPage();
+  const video = page.video();
 
-// 7) type a comment
-await ev(`(function(){var b=document.getElementById('hn-body'); if(b) b.focus();})()`);
-for (const c of ["Can we ", "link the trace ", "for this number?"]) { await send("Input.insertText", { text: c }); await hold(420); }
+  try {
+    await showTerminalIntro(page);
 
-// 8) post -> panel reopens with the new comment
-await ev(`document.getElementById('hn-comment-form').requestSubmit()`);
-await hold(2000);
+    await openSharedPage(page);
+    await hold(1300);
 
-console.log("  frames:", fi);
-ws.close();
-process.exit(0);
+    await page.locator("#hn-panel-btn").click();
+    await page.locator("#hn-panel.hn-panel-open").waitFor({ state: "visible" });
+    await page.locator("#hn-comment-list .hn-empty-state").waitFor({ state: "visible" });
+    await hold(1300);
+    await page.locator("#hn-panel-btn").click();
+    await hold(560);
+
+    const report = await selectLatencyClaim(page);
+    await hold(1200);
+
+    await report.locator(".hn-sel-btn").click();
+    await page.locator("#hn-body").waitFor({ state: "visible" });
+    await hold(800);
+    await page.keyboard.insertText("Can we ");
+    await hold(260);
+    await page.keyboard.insertText("attach the benchmark run ");
+    await hold(340);
+    await page.keyboard.insertText("that shows this 38% jump?");
+    await hold(760);
+    await page.locator('#hn-comment-form button[type="submit"]').click();
+    await page.locator("#hn-panel.hn-panel-open").waitFor({ state: "visible" });
+    await page.waitForFunction(() => {
+      const count = document.getElementById("hn-count");
+      return count && Number(count.textContent || "0") === 1;
+    });
+    await hold(1200);
+
+    await page.locator("#hn-comment-list li.hn-locatable").first().click();
+    await hold(2600);
+  } finally {
+    await context.close();
+    if (video) await video.saveAs(VIDEO_RAW);
+  }
+}
+
+const browser = await launchBrowser();
+try {
+  await recordDemo(browser);
+} finally {
+  await browser.close();
+}

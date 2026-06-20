@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# gen-assets.sh — regenerate Peek's README / ProductHunt launch assets.
+# gen-assets.sh — regenerate Peek's MP4 demo.
 #
 # Builds the binaries, boots a throwaway Peek server, seeds a demo "report"
 # (scripts/demo-report.html) plus review comments, drives headless Chrome to
-# capture 1270x760 (ProductHunt ratio) 2x screenshots + a screencast, and uses
-# ffmpeg to produce assets/demo.mp4 and assets/demo.gif. Rerun it any time the
-# app changes to refresh every asset.
+# record the CLI-to-browser commenting story, and uses ffmpeg to produce
+# assets/demo.mp4. Screenshots and GIFs are intentionally left untouched.
 #
-# Requires: go, node (>=20), ffmpeg, and Google Chrome / Chromium.
+# Requires: go, node (>=20), pnpm install, ffmpeg, and Google Chrome / Chromium.
 # Override Chrome with:  CHROME="/path/to/chrome" scripts/gen-assets.sh
 set -euo pipefail
 
@@ -16,21 +15,18 @@ cd "$ROOT"
 
 OUT="$ROOT/assets"
 PORT="${PEEK_ASSET_PORT:-7799}"
-DBG_PORT="${PEEK_ASSET_DBG_PORT:-9355}"
 TOKEN=""
 DATA="$(mktemp -d)"
-FRAMES="$(mktemp -d)"
-CHROME_PROFILE="$(mktemp -d)"
+TMP_ASSETS="$(mktemp -d)"
 COOKIE="$DATA/cookies.txt"
+RAW_VIDEO="$TMP_ASSETS/demo.webm"
 SRV_PID=""
-CHROME_PID=""
 
 cleanup() {
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null || true
-  [ -n "$CHROME_PID" ] && kill "$CHROME_PID" 2>/dev/null || true
   sleep 0.3
-  chmod -R u+w "$DATA" "$FRAMES" "$CHROME_PROFILE" 2>/dev/null || true
-  rm -rf "$DATA" "$FRAMES" "$CHROME_PROFILE" 2>/dev/null || true
+  chmod -R u+w "$DATA" "$TMP_ASSETS" 2>/dev/null || true
+  rm -rf "$DATA" "$TMP_ASSETS" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -38,6 +34,8 @@ trap cleanup EXIT
 command -v go >/dev/null || { echo "error: go not found"; exit 1; }
 command -v node >/dev/null || { echo "error: node not found"; exit 1; }
 command -v ffmpeg >/dev/null || { echo "error: ffmpeg not found"; exit 1; }
+command -v ffprobe >/dev/null || { echo "error: ffprobe not found"; exit 1; }
+node -e "import('playwright-core')" >/dev/null 2>&1 || { echo "error: Playwright not installed; run: pnpm install"; exit 1; }
 if [ -z "${CHROME:-}" ]; then
   for c in \
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
@@ -101,7 +99,7 @@ POLL="$(curl -fsS -H "Content-Type: application/json" \
 TOKEN="$(printf '%s' "$POLL" | json_value token)"
 [ -n "$TOKEN" ] || { echo "error: token setup failed: $POLL"; exit 1; }
 
-echo "› seeding demo report + comments"
+echo "› seeding demo report"
 api() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 UP=$(api --data-binary @scripts/demo-report.html \
   -H "Content-Type: text/html" \
@@ -113,35 +111,23 @@ printf '<!doctype html><h1>Release checklist</h1><p>v2 freeze tasks.</p>' | \
   api --data-binary @- -H "Content-Type: text/html" \
   "http://localhost:$PORT/api/upload?filename=release-checklist.html" >/dev/null
 
-comment() { api -H "Content-Type: application/json" -d "$1" \
-  "http://localhost:$PORT/api/uploads/$SLUG/comments" >/dev/null; }
-comment '{"selector":"#latency-claim","element_text":"p95 request latency regressed by 38% after the caching layer refactor","name":"Priya","body":"Can we link the trace for this? Want to confirm it is the cache key and not GC."}'
-comment '{"selector":"#r1","element_text":"Fix the cache key derivation in session.Store.Get and add a regression benchmark.","name":"Devin","body":"Prioritizing this for the next sprint — Ill take it."}'
-comment '{"selector":"","element_text":"","name":"Sam","body":"Great write-up. Looping in the platform team for the backoff change."}'
+echo "› recording demo"
+BASE="http://localhost:$PORT" SLUG="$SLUG" VIDEO_RAW="$RAW_VIDEO" \
+  CHROME="$CHROME" node scripts/gen-assets.mjs
 
-echo "› launching headless Chrome"
-"$CHROME" --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
-  --remote-debugging-port="$DBG_PORT" --user-data-dir="$CHROME_PROFILE" about:blank \
-  >/dev/null 2>&1 &
-CHROME_PID=$!
-for _ in $(seq 1 50); do
-  curl -fsS "http://localhost:$DBG_PORT/json/version" >/dev/null 2>&1 && break
-  sleep 0.1
-done
-
-echo "› capturing screenshots + screencast"
-DEBUG="http://localhost:$DBG_PORT" BASE="http://localhost:$PORT" SLUG="$SLUG" \
-  TOKEN="$TOKEN" OUT="$OUT" FRAMES="$FRAMES" node scripts/gen-assets.mjs
-
-echo "› encoding video (mp4 + gif)"
-ffmpeg -y -framerate 10 -i "$FRAMES/f_%04d.png" \
-  -c:v libx264 -pix_fmt yuv420p -vf "scale=1270:760,format=yuv420p" -movflags +faststart \
+echo "› encoding video (mp4)"
+ffmpeg -y -i "$RAW_VIDEO" \
+  -c:v libx264 -preset slow -crf 16 \
+  -pix_fmt yuv420p \
+  -vf "fps=60,scale=1920:1080:flags=lanczos,format=yuv420p" \
+  -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
+  -movflags +faststart \
   "$OUT/demo.mp4" >/dev/null 2>&1
-ffmpeg -y -i "$OUT/demo.mp4" -vf "fps=12,scale=1100:-1:flags=lanczos,palettegen=stats_mode=diff" \
-  "$FRAMES/pal.png" >/dev/null 2>&1
-ffmpeg -y -i "$OUT/demo.mp4" -i "$FRAMES/pal.png" \
-  -lavfi "fps=12,scale=1100:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" \
-  "$OUT/demo.gif" >/dev/null 2>&1
 
-echo "✓ assets written to assets/:"
-ls -1 "$OUT"
+DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$OUT/demo.mp4")"
+awk -v duration="$DURATION" 'BEGIN { exit !(duration <= 30.0) }' || {
+  echo "error: assets/demo.mp4 is ${DURATION}s; expected <= 30.0s"
+  exit 1
+}
+
+echo "✓ wrote assets/demo.mp4 (${DURATION}s)"

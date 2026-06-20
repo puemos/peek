@@ -269,7 +269,7 @@ assets/             README / launch media
 scripts/            tooling
 ```
 
-The screenshots and demo video are generated — rerun `scripts/gen-assets.sh` (needs Go, Node, ffmpeg, and Chrome) to refresh them whenever the UI changes.
+The screenshots and 1920x1080/60fps MP4 demo video are generated — run `pnpm install`, then rerun `pnpm gen-assets` (needs Go, Node, ffmpeg, and Chrome) to refresh them whenever the UI changes.
 
 ## License
 
