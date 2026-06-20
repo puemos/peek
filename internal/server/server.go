@@ -220,6 +220,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /dashboard.css", s.handleDashboardCSS)
 	mux.HandleFunc("GET /", s.handleIndex)
 
+	// Health checks (unauthenticated, for load balancers / orchestrators).
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /readyz", s.handleReadyz)
+
 	// Web GUI (browser-based management).
 	mux.HandleFunc("GET /login", s.handleLogin)
 	mux.HandleFunc("POST /login", s.rateLimit(s.loginLimiter, s.handleLogin))
@@ -243,6 +247,26 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// handleHealthz is a liveness probe — returns 200 if the process is running.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+// handleReadyz is a readiness probe — returns 200 if the database is reachable.
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.Ping(); err != nil {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("not ready: " + err.Error()))
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ready"))
 }
 
 // authToken gates an endpoint behind a bearer token (any valid user token).
@@ -376,6 +400,14 @@ func (s *Server) encryptedGetAllSettings() (map[string]string, error) {
 		}
 	}
 	return raw, nil
+}
+
+// Close releases server resources (database connections, etc.).
+func (s *Server) Close() error {
+	if s.store != nil {
+		return s.store.Close()
+	}
+	return nil
 }
 
 func (s *Server) audit(format string, args ...any) {

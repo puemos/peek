@@ -10,7 +10,6 @@ services:
     environment:
       PEEK_ADDR: ":7700"
       PEEK_BASE_URL: http://localhost:7700
-      PEEK_ADMIN_TOKEN: dev-admin
       PEEK_MAX_UPLOAD: "2097152"
       PEEK_MAX_TOTAL_SIZE: "0"
       PEEK_RETENTION_DAYS: "0"
@@ -53,7 +52,6 @@ services:
     environment:
       PEEK_ADDR: ":7700"
       PEEK_BASE_URL: http://localhost:7711
-      PEEK_ADMIN_TOKEN: dev-admin
       PEEK_STORAGE: s3
       PEEK_S3_ENDPOINT: http://minio:9000
       PEEK_S3_BUCKET: peek

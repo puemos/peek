@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/puemos/peek/internal/server"
+	"github.com/puemos/peek/internal/version"
 )
 
 func main() {
@@ -18,6 +23,7 @@ func main() {
 	baseURL := flag.String("base-url", getenv("PEEK_BASE_URL", "http://localhost:7700"), "public base URL")
 	adminToken := flag.String("admin-token", getenv("PEEK_ADMIN_TOKEN", ""), "initial admin token (only used on first run)")
 	maxUpload := flag.Int64("max-upload", getenvInt("PEEK_MAX_UPLOAD", 2<<20), "max upload size in bytes (per file)")
+	secret := flag.String("secret", getenv("PEEK_SECRET", ""), "server secret for HMAC signing and encryption (auto-generated if empty)")
 
 	storageFlag := flag.String("storage", getenv("PEEK_STORAGE", "file"), "storage backend: file or s3")
 	s3Endpoint := flag.String("s3-endpoint", getenv("PEEK_S3_ENDPOINT", ""), "S3-compatible endpoint URL")
@@ -29,7 +35,13 @@ func main() {
 	maxTotalSize := flag.Int64("max-total-size", getenvInt("PEEK_MAX_TOTAL_SIZE", 0), "max total storage bytes across all uploads (0 = unlimited)")
 	retentionDays := flag.Int("retention-days", getenvIntAsInt("PEEK_RETENTION_DAYS", 0), "auto-delete uploads older than N days (0 = off)")
 	trustedProxy := flag.Bool("trusted-proxy", getenvBool("PEEK_TRUSTED_PROXY"), "trust X-Forwarded-For header (set when behind a reverse proxy)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("peekd " + version.String())
+		return
+	}
 
 	abs, err := filepath.Abs(*dataDir)
 	if err != nil {
@@ -41,6 +53,7 @@ func main() {
 		DataDir:    abs,
 		BaseURL:    *baseURL,
 		AdminToken: *adminToken,
+		Secret:     *secret,
 		MaxUpload:  *maxUpload,
 
 		Storage:     *storageFlag,
@@ -66,9 +79,28 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-	if err := hs.ListenAndServe(); err != nil {
-		log.Fatalf("server: %v", err)
+
+	// Graceful shutdown on SIGINT / SIGTERM.
+	go func() {
+		if err := hs.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-stop
+	log.Printf("received %s, shutting down…", sig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := hs.Shutdown(ctx); err != nil {
+		log.Printf("graceful shutdown failed: %v", err)
 	}
+	if err := srv.Close(); err != nil {
+		log.Printf("store close: %v", err)
+	}
+	log.Printf("bye.")
 }
 
 func getenv(k, d string) string {

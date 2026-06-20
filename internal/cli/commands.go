@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/puemos/peek/internal/version"
 )
 
 // Run dispatches a command. args is argv without the program name.
@@ -47,7 +49,7 @@ func Run(args []string) int {
 		usage()
 		return 0
 	case "version", "-v", "--version":
-		fmt.Println("peek 0.2.0")
+		fmt.Println("peek " + version.String())
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)

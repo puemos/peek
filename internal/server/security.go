@@ -123,8 +123,9 @@ func encryptSecret(secretHex, plaintext string) (string, error) {
 }
 
 // decryptSecret decrypts ciphertext produced by encryptSecret. Returns the
-// plaintext or an error. If ciphertext is empty or not base64-encoded, it is
-// returned as-is (allows migration from plaintext settings).
+// plaintext or an error. If the ciphertext is empty, returns empty. If the
+// value is not valid base64 (legacy plaintext migration), it is returned
+// as-is only if it does not look like encrypted data.
 func decryptSecret(secretHex, ciphertext string) (string, error) {
 	if ciphertext == "" {
 		return "", nil
@@ -135,6 +136,7 @@ func decryptSecret(secretHex, ciphertext string) (string, error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(ciphertext)
 	if err != nil {
+		// Not base64 — treat as legacy plaintext setting.
 		return ciphertext, nil
 	}
 	block, err := aes.NewCipher(key)
@@ -147,12 +149,16 @@ func decryptSecret(secretHex, ciphertext string) (string, error) {
 	}
 	nonceSize := gcm.NonceSize()
 	if len(raw) < nonceSize {
+		// Too short to be ciphertext — treat as legacy plaintext.
 		return ciphertext, nil
 	}
 	nonce, ct := raw[:nonceSize], raw[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ct, nil)
 	if err != nil {
-		return ciphertext, nil
+		// GCM authentication failed — do NOT return the ciphertext as
+		// plaintext. Return empty so callers fall back to defaults rather
+		// than leaking encrypted data.
+		return "", nil
 	}
 	return string(plaintext), nil
 }
