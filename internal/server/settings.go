@@ -28,7 +28,7 @@ var settingsMeta = map[string]settingsRow{
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	raw, err := s.store.GetAllSettings()
+	raw, err := s.encryptedGetAllSettings()
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
@@ -60,22 +60,32 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if _, ok := settingsMeta[k]; !ok {
 			continue
 		}
-		if err := s.store.SetSetting(k, v); err != nil {
+		if err := s.encryptedSetSetting(k, v); err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
 		}
 	}
+	s.audit("settings updated keys=%v", s.settingKeys(body))
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
+func (s *Server) settingKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
 	owner, ok := s.webAuth(r)
 	if !ok || !owner.IsAdmin {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 	r.ParseForm()
-	if !s.validateCSRF(r, r.FormValue("csrf")) {
+	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
 		return
 	}
@@ -85,16 +95,17 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 			if meta.IsSecret {
 				continue
 			}
-			_ = s.store.SetSetting(k, v)
+			_ = s.encryptedSetSetting(k, v)
 		} else {
-			_ = s.store.SetSetting(k, v)
+			_ = s.encryptedSetSetting(k, v)
 		}
 	}
+	s.audit("settings updated via dashboard by=%s", owner.Name)
 	http.Redirect(w, r, "/dashboard?ok=settings+saved", http.StatusSeeOther)
 }
 
 func (s *Server) dashboardSettingsMap() map[string]string {
-	raw, _ := s.store.GetAllSettings()
+	raw, _ := s.encryptedGetAllSettings()
 	if raw == nil {
 		raw = map[string]string{}
 	}

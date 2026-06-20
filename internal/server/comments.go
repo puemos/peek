@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -65,7 +67,7 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
-	if !s.commentLimiter.allow(clientIP(r)) {
+	if !s.commentLimiter.allow(s.clientIP(r)) {
 		jsonError(w, http.StatusTooManyRequests, "too many comments, slow down")
 		return
 	}
@@ -107,7 +109,10 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		s.setNameCookie(w, in.Name)
 	}
 
-	if err := s.store.AddComment(u.ID, in.Selector, in.Text, in.Name, vid, in.Body); err != nil {
+	h := sha256.Sum256([]byte(s.secret + "|" + vid))
+	vidHash := hex.EncodeToString(h[:])[:16]
+
+	if err := s.store.AddComment(u.ID, in.Selector, in.Text, in.Name, vidHash, in.Body); err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
 	}

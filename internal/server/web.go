@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -260,9 +259,16 @@ type statsData struct {
 	Recent         []statsVisit
 }
 
+// --- helpers ---
+
+func noCache(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+}
+
 // --- handlers ---
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
 	if r.Method == "GET" {
 		csrf := s.newCSRF(w)
 		loginTmpl.Execute(w, map[string]any{"CSRF": csrf, "Error": false})
@@ -271,7 +277,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// POST
 	r.ParseForm()
 	tok := strings.TrimSpace(r.FormValue("token"))
-	if tok == "" || !s.validateCSRF(r, r.FormValue("csrf")) {
+	if tok == "" || !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		csrf := s.newCSRF(w)
 		loginTmpl.Execute(w, map[string]any{"CSRF": csrf, "Error": true})
 		return
@@ -290,12 +296,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 		HttpOnly: true,
 	})
+	s.audit("login success user=%q", owner.Name)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	_ = s.validateCSRF(r, r.FormValue("csrf"))
+	_ = s.validateCSRF(r, w, r.FormValue("csrf"))
 	s.setCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 	})
@@ -303,6 +310,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
 	owner, ok := s.webAuth(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -360,7 +368,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard?err=file+too+large+or+invalid+form", http.StatusSeeOther)
 		return
 	}
-	if !s.validateCSRF(r, r.FormValue("csrf")) {
+	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
 		return
 	}
@@ -419,7 +427,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	slug, err := randID(10)
+	slug, err := generateSlug(s.store)
 	if err != nil {
 		http.Redirect(w, r, "/dashboard?err=internal+error", http.StatusSeeOther)
 		return
@@ -430,6 +438,10 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	pwHash := ""
 	if password != "" {
+		if !validatePasswordLength(password) {
+			http.Redirect(w, r, "/dashboard?err=password+must+be+72+characters+or+fewer", http.StatusSeeOther)
+			return
+		}
 		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			http.Redirect(w, r, "/dashboard?err=hash+failed", http.StatusSeeOther)
@@ -442,6 +454,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard?err=db+failed", http.StatusSeeOther)
 		return
 	}
+	s.audit("upload created slug=%s file=%q size=%d by=%s", slug, filename, len(data), owner.Name)
 	url := s.baseURL + "/p/" + slug
 	http.Redirect(w, r, "/dashboard?ok="+url, http.StatusSeeOther)
 }
@@ -454,7 +467,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	slug := r.PathValue("slug")
 	r.ParseForm()
-	if !s.validateCSRF(r, r.FormValue("csrf")) {
+	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
 		return
 	}
@@ -469,10 +482,12 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.store.DeleteUpload(u.ID)
 	_ = s.storage.Delete(r.Context(), slug)
+	s.audit("upload deleted slug=%s file=%q by=%s", slug, u.Filename, owner.Name)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
 func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
+	noCache(w)
 	owner, ok := s.webAuth(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -541,21 +556,22 @@ func (s *Server) newCSRF(w http.ResponseWriter) string {
 	val := hex.EncodeToString(b)
 	s.setCookie(w, &http.Cookie{
 		Name: csrfCookie, Value: val, Path: "/",
-		MaxAge:   int((2 * time.Hour).Seconds()),
+		MaxAge:   0,
 		SameSite: http.SameSiteStrictMode, HttpOnly: false,
 	})
 	return val
 }
 
-func (s *Server) validateCSRF(r *http.Request, val string) bool {
+func (s *Server) validateCSRF(r *http.Request, w http.ResponseWriter, val string) bool {
 	if val == "" {
 		return false
 	}
 	c, err := r.Cookie(csrfCookie)
-	if err != nil {
+	if err != nil || c.Value != val {
 		return false
 	}
-	return c.Value == val
+	s.newCSRF(w)
+	return true
 }
 
 // --- size helper (shared with CLI formatting) ---

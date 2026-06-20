@@ -40,6 +40,8 @@ type Config struct {
 
 	MaxTotalSize  int64
 	RetentionDays int
+
+	TrustedProxy bool
 }
 
 type Server struct {
@@ -51,6 +53,8 @@ type Server struct {
 
 	loginLimiter   *limiter
 	commentLimiter *limiter
+
+	trustedProxy bool
 }
 
 func New(cfg Config) (*Server, error) {
@@ -81,7 +85,7 @@ func New(cfg Config) (*Server, error) {
 		"s3_access_key": cfg.S3AccessKey,
 		"s3_secret_key": cfg.S3SecretKey,
 	}
-	if err := initDefaultSettings(store, cfg.MaxUpload, cfg.MaxTotalSize, cfg.RetentionDays, s3Defaults); err != nil {
+	if err := initDefaultSettings(store, secret, cfg.MaxUpload, cfg.MaxTotalSize, cfg.RetentionDays, s3Defaults); err != nil {
 		return nil, err
 	}
 
@@ -92,11 +96,8 @@ func New(cfg Config) (*Server, error) {
 
 	var st Storage
 	if storageBackend == "s3" {
-		st = NewS3Storage(func(key string) string {
-			v, err := store.GetSetting(key)
-			if err != nil {
-				return ""
-			}
+		st = NewS3Storage(secret, func(key string) string {
+			v, _ := store.GetSetting(key)
 			return v
 		})
 		log.Printf("storage: s3 backend (config managed via settings API / dashboard)")
@@ -123,6 +124,11 @@ func New(cfg Config) (*Server, error) {
 		secure:         secure,
 		loginLimiter:   newLimiter(10, time.Minute),
 		commentLimiter: newLimiter(30, time.Minute),
+		trustedProxy:   cfg.TrustedProxy,
+	}
+
+	if !cfg.TrustedProxy && !isLocalBaseURL(baseURL) {
+		log.Printf("WARNING: --trusted-proxy is not set. X-Forwarded-For headers will be ignored for rate limiting. Set --trusted-proxy if peek runs behind a reverse proxy (Caddy/nginx).")
 	}
 
 	go srv.startRetentionCleanup()
@@ -141,8 +147,13 @@ func (s *Server) setCookie(w http.ResponseWriter, c *http.Cookie) {
 }
 
 func loadOrCreateSecret(path string) string {
-	if b, err := os.ReadFile(path); err == nil && len(b) >= 32 {
-		return string(b)
+	if f, err := os.Open(path); err == nil {
+		defer f.Close()
+		b := make([]byte, 128)
+		n, _ := f.Read(b)
+		if n >= 32 {
+			return string(b[:n])
+		}
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -226,6 +237,7 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
 		if s.secure {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		}
@@ -276,11 +288,18 @@ func bearerToken(r *http.Request) string {
 	return ""
 }
 
-func initDefaultSettings(store *db.Store, maxUpload, maxTotalSize int64, retentionDays int, s3Defaults map[string]string) error {
+func initDefaultSettings(store *db.Store, secret string, maxUpload, maxTotalSize int64, retentionDays int, s3Defaults map[string]string) error {
 	upsert := func(key, val string) error {
 		_, err := store.GetSetting(key)
 		if err == nil {
 			return nil
+		}
+		if secretSettingKeys[key] && secret != "" && val != "" {
+			enc, err := encryptSecret(secret, val)
+			if err != nil {
+				return err
+			}
+			val = enc
 		}
 		return store.SetSetting(key, val)
 	}
@@ -296,7 +315,7 @@ func initDefaultSettings(store *db.Store, maxUpload, maxTotalSize int64, retenti
 }
 
 func (s *Server) settingInt64(key string, def int64) int64 {
-	v, err := s.store.GetSetting(key)
+	v, err := s.encryptedGetSetting(key)
 	if err != nil || v == "" {
 		return def
 	}
@@ -308,7 +327,7 @@ func (s *Server) settingInt64(key string, def int64) int64 {
 }
 
 func (s *Server) settingInt(key string, def int) int {
-	v, err := s.store.GetSetting(key)
+	v, err := s.encryptedGetSetting(key)
 	if err != nil || v == "" {
 		return def
 	}
@@ -317,6 +336,50 @@ func (s *Server) settingInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func (s *Server) encryptedGetSetting(key string) (string, error) {
+	v, err := s.store.GetSetting(key)
+	if err != nil {
+		return "", err
+	}
+	if secretSettingKeys[key] {
+		return decryptSecret(s.secret, v)
+	}
+	return v, nil
+}
+
+func (s *Server) encryptedSetSetting(key, val string) error {
+	if secretSettingKeys[key] && val != "" {
+		enc, err := encryptSecret(s.secret, val)
+		if err != nil {
+			return err
+		}
+		val = enc
+	}
+	return s.store.SetSetting(key, val)
+}
+
+func (s *Server) encryptedGetAllSettings() (map[string]string, error) {
+	raw, err := s.store.GetAllSettings()
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range raw {
+		if secretSettingKeys[k] {
+			dec, err := decryptSecret(s.secret, v)
+			if err != nil {
+				raw[k] = ""
+			} else {
+				raw[k] = dec
+			}
+		}
+	}
+	return raw, nil
+}
+
+func (s *Server) audit(format string, args ...any) {
+	log.Printf("[audit] "+format, args...)
 }
 
 func (s *Server) startRetentionCleanup() {

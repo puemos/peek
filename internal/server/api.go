@@ -85,7 +85,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	slug, err := randID(10)
+	slug, err := generateSlug(s.store)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "slug generation failed")
 		return
@@ -97,6 +97,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	pwHash := ""
 	if password != "" {
+		if !validatePasswordLength(password) {
+			jsonError(w, http.StatusBadRequest, "password must be 72 characters or fewer")
+			return
+		}
 		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "hash failed")
@@ -109,6 +113,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
+	s.audit("upload created slug=%s file=%q size=%d by=%s", slug, filename, len(data), owner.Name)
 
 	jsonOK(w, uploadResp{Slug: slug, URL: s.baseURL + "/p/" + slug})
 }
@@ -166,6 +171,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
+	s.audit("upload deleted slug=%s file=%q by=%s", slug, u.Filename, owner.Name)
 	_ = s.storage.Delete(r.Context(), slug)
 	jsonOK(w, map[string]any{"deleted": slug})
 }
@@ -193,6 +199,10 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	hash := ""
 	if !body.Clear && body.Password != "" {
+		if !validatePasswordLength(body.Password) {
+			jsonError(w, http.StatusBadRequest, "password must be 72 characters or fewer")
+			return
+		}
 		h, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "hash failed")
@@ -204,6 +214,11 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
+	action := "cleared"
+	if hash != "" {
+		action = "set"
+	}
+	s.audit("upload password %s slug=%s by=%s", action, slug, owner.Name)
 	jsonOK(w, map[string]any{"protected": hash != ""})
 }
 
@@ -266,6 +281,8 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
+	actor, _ := s.store.GetToken(bearerToken(r))
+	s.audit("token created name=%q by=%s", body.Name, actorName(actor))
 	jsonOK(w, map[string]any{"token": t, "name": body.Name})
 }
 
@@ -314,10 +331,19 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
+	actor, _ := s.store.GetToken(bearerToken(r))
+	s.audit("token revoked id=%d name=%q by=%s", id, t.Name, actorName(actor))
 	jsonOK(w, map[string]any{"revoked": id})
 }
 
 // --- helpers ---
+
+func actorName(t *models.Token) string {
+	if t != nil {
+		return t.Name
+	}
+	return "unknown"
+}
 
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")

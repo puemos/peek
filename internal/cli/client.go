@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Config holds the saved host+token pair, stored in <user-config-dir>/peek/config.json.
@@ -62,6 +63,8 @@ type client struct {
 	token string
 }
 
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 func newClient(cfg *Config) (*client, error) {
 	host := envOr("PEEK_HOST", cfg.Host)
 	token := envOr("PEEK_TOKEN", cfg.Token)
@@ -83,7 +86,7 @@ func (c *client) req(method, path string, body io.Reader, ct string) (*http.Resp
 	if ct != "" {
 		req.Header.Set("Content-Type", ct)
 	}
-	return http.DefaultClient.Do(req)
+	return httpClient.Do(req)
 }
 
 func (c *client) getJSON(path string, out any) error {

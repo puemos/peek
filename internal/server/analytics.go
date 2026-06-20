@@ -38,7 +38,7 @@ func (s *Server) recordVisit(r *http.Request, u *models.Upload, vid string) {
 	if c, err := r.Cookie(nameCookie); err == nil {
 		name = strings.TrimSpace(c.Value)
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	h := sha256.Sum256([]byte(s.secret + "|" + ip))
 	ipHash := hex.EncodeToString(h[:])[:16]
 	if ip == "" {
@@ -54,14 +54,15 @@ func (s *Server) recordVisit(r *http.Request, u *models.Upload, vid string) {
 	}
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			return strings.TrimSpace(xff[:i])
+func (s *Server) clientIP(r *http.Request) string {
+	if s.trustedProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				return strings.TrimSpace(xff[:i])
+			}
+			return strings.TrimSpace(xff)
 		}
-		return strings.TrimSpace(xff)
 	}
-	// strip port
 	addr := r.RemoteAddr
 	if i := strings.LastIndexByte(addr, ':'); i >= 0 {
 		addr = addr[:i]

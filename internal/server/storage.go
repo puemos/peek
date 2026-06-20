@@ -40,7 +40,11 @@ func (fs *FileStorage) Save(_ context.Context, slug string, data []byte) error {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func (fs *FileStorage) Open(_ context.Context, slug string) (io.ReadCloser, error) {
@@ -60,8 +64,21 @@ type S3Storage struct {
 	client     *http.Client
 }
 
-func NewS3Storage(getSetting func(string) string) *S3Storage {
-	return &S3Storage{getSetting: getSetting}
+func NewS3Storage(secret string, getSetting func(string) string) *S3Storage {
+	return &S3Storage{getSetting: func(key string) string {
+		v := getSetting(key)
+		if v == "" {
+			return ""
+		}
+		if secretSettingKeys[key] {
+			dec, err := decryptSecret(secret, v)
+			if err != nil {
+				return ""
+			}
+			return dec
+		}
+		return v
+	}}
 }
 
 func (s *S3Storage) endpoint() string { return s.getSetting("s3_endpoint") }

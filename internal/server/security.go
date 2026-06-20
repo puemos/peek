@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -96,3 +98,67 @@ func parseSignedSubject(secret, val string) (string, bool) {
 }
 
 var errInvalid = errors.New("invalid")
+
+// encryptSecret encrypts plaintext using AES-256-GCM with a key derived from
+// the server secret. Returns base64-encoded nonce+ciphertext.
+func encryptSecret(secretHex, plaintext string) (string, error) {
+	key, err := hex.DecodeString(secretHex)
+	if err != nil || len(key) != 32 {
+		return "", errors.New("invalid secret key")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.RawURLEncoding.EncodeToString(ciphertext), nil
+}
+
+// decryptSecret decrypts ciphertext produced by encryptSecret. Returns the
+// plaintext or an error. If ciphertext is empty or not base64-encoded, it is
+// returned as-is (allows migration from plaintext settings).
+func decryptSecret(secretHex, ciphertext string) (string, error) {
+	if ciphertext == "" {
+		return "", nil
+	}
+	key, err := hex.DecodeString(secretHex)
+	if err != nil || len(key) != 32 {
+		return "", errors.New("invalid secret key")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(ciphertext)
+	if err != nil {
+		return ciphertext, nil
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonceSize := gcm.NonceSize()
+	if len(raw) < nonceSize {
+		return ciphertext, nil
+	}
+	nonce, ct := raw[:nonceSize], raw[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ct, nil)
+	if err != nil {
+		return ciphertext, nil
+	}
+	return string(plaintext), nil
+}
+
+// secretSettingKeys lists settings keys whose values are encrypted at rest.
+var secretSettingKeys = map[string]bool{
+	"s3_access_key": true,
+	"s3_secret_key": true,
+}

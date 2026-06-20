@@ -51,7 +51,7 @@ func (l *limiter) allow(key string) bool {
 // rateLimit wraps a handler with a per-client-IP limit (HTML-style 429).
 func (s *Server) rateLimit(l *limiter, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !l.allow(clientIP(r)) {
+		if !l.allow(s.clientIP(r)) {
 			http.Error(w, "Too many requests. Try again shortly.", http.StatusTooManyRequests)
 			return
 		}

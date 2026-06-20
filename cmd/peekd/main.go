@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/puemos/peek/internal/server"
 )
@@ -27,6 +28,7 @@ func main() {
 
 	maxTotalSize := flag.Int64("max-total-size", getenvInt("PEEK_MAX_TOTAL_SIZE", 0), "max total storage bytes across all uploads (0 = unlimited)")
 	retentionDays := flag.Int("retention-days", getenvIntAsInt("PEEK_RETENTION_DAYS", 0), "auto-delete uploads older than N days (0 = off)")
+	trustedProxy := flag.Bool("trusted-proxy", getenvBool("PEEK_TRUSTED_PROXY"), "trust X-Forwarded-For header (set when behind a reverse proxy)")
 	flag.Parse()
 
 	abs, err := filepath.Abs(*dataDir)
@@ -50,13 +52,21 @@ func main() {
 
 		MaxTotalSize:  *maxTotalSize,
 		RetentionDays: *retentionDays,
+		TrustedProxy:  *trustedProxy,
 	})
 	if err != nil {
 		log.Fatalf("init: %v", err)
 	}
 
 	log.Printf("peek listening on %s (data: %s, base: %s)", *addr, abs, *baseURL)
-	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
+	hs := &http.Server{
+		Addr:         *addr,
+		Handler:      srv.Handler(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	if err := hs.ListenAndServe(); err != nil {
 		log.Fatalf("server: %v", err)
 	}
 }
@@ -84,4 +94,9 @@ func getenvIntAsInt(k string, d int) int {
 		}
 	}
 	return d
+}
+
+func getenvBool(k string) bool {
+	v := os.Getenv(k)
+	return v == "1" || v == "true" || v == "yes"
 }
