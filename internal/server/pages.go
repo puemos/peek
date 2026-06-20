@@ -45,7 +45,23 @@ var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
   <header>
     <h3>Comments</h3>
     <div class="hn-panel-actions">
-      <button id="hn-export-md" type="button" title="Copy all comments as Markdown" hidden>Copy MD</button>
+      <div id="hn-export" class="hn-export" hidden>
+        <button id="hn-export-btn" type="button" title="Export comments" aria-haspopup="menu" aria-expanded="false">
+          <svg class="hn-export-glyph" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          <span id="hn-export-label">Export</span>
+          <svg class="hn-export-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div id="hn-export-menu" class="hn-export-menu" role="menu" hidden>
+          <button id="hn-export-markdown" type="button" role="menuitem">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+            <span>Markdown</span>
+          </button>
+          <button id="hn-export-json" type="button" role="menuitem">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
+            <span>JSON</span>
+          </button>
+        </div>
+      </div>
       <button id="hn-panel-close" type="button">&times;</button>
     </div>
   </header>

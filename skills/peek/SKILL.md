@@ -140,11 +140,7 @@ peek delete-all      # delete every upload owned by the current token
 
 ## Reading feedback in the browser
 
-Open the share URL (`/p/<slug>`) and click the comments panel. Reviewers select
-text, click an element, or leave a page-level note; each anchored comment gets a
-numbered on-page pin. The panel has a **Copy MD** button that copies the whole
-thread — every comment with the element/quote it's anchored to — as Markdown,
-ready to paste into an issue or hand to an agent.
+Open the share URL (`/p/<slug>`) and click the comments panel. Reviewers select text, click an element, or leave a page-level note; each anchored comment gets a numbered on-page pin. The panel has an **Export** button with **Markdown** and **JSON** options; Markdown copies the whole thread with the element/quote it's anchored to, ready to paste into an issue or hand to an agent, while JSON copies the visible comments array for structured reuse.
 
 ## Agent workflow
 

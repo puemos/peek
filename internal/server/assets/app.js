@@ -18,7 +18,12 @@
   var panelBtn = $("hn-panel-btn");
   var panel = $("hn-panel");
   var panelClose = $("hn-panel-close");
-  var exportBtn = $("hn-export-md");
+  var exportWrap = $("hn-export");
+  var exportBtn = $("hn-export-btn");
+  var exportLabel = $("hn-export-label");
+  var exportMenu = $("hn-export-menu");
+  var exportMarkdownBtn = $("hn-export-markdown");
+  var exportJSONBtn = $("hn-export-json");
   var list = $("hn-comment-list");
   var count = $("hn-count");
   var composer = $("hn-composer");
@@ -147,7 +152,8 @@
   function render(comments) {
     lastComments = comments;
     updateCount(comments.length);
-    if (exportBtn) exportBtn.hidden = comments.length === 0;
+    if (exportWrap) exportWrap.hidden = comments.length === 0;
+    if (!comments.length) closeExportMenu();
     var nmap = numberMap(comments);
 
     // sync on-page pins/highlights (one per unique anchored target)
@@ -259,17 +265,47 @@
     });
   }
 
-  function exportMarkdown() {
+  function setExportMenu(open) {
+    if (!exportBtn || !exportMenu) return;
+    exportMenu.hidden = !open;
+    exportBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      var first = exportMenu.querySelector("button");
+      if (first) first.focus();
+    }
+  }
+
+  function closeExportMenu() { setExportMenu(false); }
+
+  function toggleExportMenu() {
     if (!lastComments.length) return;
-    copyText(commentsToMarkdown(lastComments)).then(function () {
-      var prev = exportBtn.textContent;
-      exportBtn.textContent = "Copied!";
-      setTimeout(function () { exportBtn.textContent = prev; }, 1500);
+    setExportMenu(exportMenu ? exportMenu.hidden : false);
+  }
+
+  function showExportFeedback(text) {
+    if (!exportBtn) return;
+    var target = exportLabel || exportBtn;
+    var prev = target.textContent;
+    target.textContent = text;
+    setTimeout(function () { target.textContent = prev; }, 1500);
+  }
+
+  function copyExport(text) {
+    if (!lastComments.length) return;
+    closeExportMenu();
+    copyText(text).then(function () {
+      showExportFeedback("Copied!");
     }).catch(function () {
-      var prev = exportBtn.textContent;
-      exportBtn.textContent = "Copy failed";
-      setTimeout(function () { exportBtn.textContent = prev; }, 1500);
+      showExportFeedback("Copy failed");
     });
+  }
+
+  function exportMarkdown() {
+    copyExport(commentsToMarkdown(lastComments));
+  }
+
+  function exportJSON() {
+    copyExport(JSON.stringify(lastComments, null, 2));
   }
 
   function loadComments() {
@@ -281,7 +317,10 @@
   }
 
   function openPanel() { panel.classList.add("hn-panel-open"); }
-  function closePanel() { panel.classList.remove("hn-panel-open"); }
+  function closePanel() {
+    panel.classList.remove("hn-panel-open");
+    closeExportMenu();
+  }
 
   function locateAndFlag(selector, quote, li) {
     postToFrame({ hn: "locate", selector: selector, quote: quote });
@@ -356,7 +395,25 @@
     else { openPanel(); setMode(false); }
   });
   panelClose.addEventListener("click", closePanel);
-  if (exportBtn) exportBtn.addEventListener("click", exportMarkdown);
+  if (exportBtn) exportBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    toggleExportMenu();
+  });
+  if (exportMarkdownBtn) exportMarkdownBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    exportMarkdown();
+  });
+  if (exportJSONBtn) exportJSONBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    exportJSON();
+  });
+  if (exportWrap) exportWrap.addEventListener("click", function (e) { e.stopPropagation(); });
+  document.addEventListener("click", function (e) {
+    if (exportWrap && !exportWrap.contains(e.target)) closeExportMenu();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeExportMenu();
+  });
   cancelBtn.addEventListener("click", function () { hideComposer(); setMode(false); });
   if (commentingAs) commentingAs.addEventListener("click", openNameModal);
   if (hintGeneral) hintGeneral.addEventListener("click", function () {
