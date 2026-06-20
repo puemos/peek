@@ -20,6 +20,12 @@ const (
 	csrfCookie    = "hn_csrf"
 )
 
+// dashboardCSP is the Content-Security-Policy for the management UI.
+// It restricts all resources to same-origin, with no inline scripts/styles
+// beyond what the templates use (none — all JS/CSS is served from /app.js,
+// /style.css, /dashboard.css).
+const dashboardCSP = "default-src 'self'; style-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+
 // --- templates ---
 
 var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
@@ -269,6 +275,7 @@ func noCache(w http.ResponseWriter) {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
+	w.Header().Set("Content-Security-Policy", dashboardCSP)
 	if r.Method == "GET" {
 		csrf := s.newCSRF(w)
 		loginTmpl.Execute(w, map[string]any{"CSRF": csrf, "Error": false})
@@ -311,6 +318,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
+	w.Header().Set("Content-Security-Policy", dashboardCSP)
 	owner, ok := s.webAuth(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -427,6 +435,32 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Per-token quotas (0 = unlimited).
+	maxUploadsPerToken := s.settingInt("max_uploads_per_token", 0)
+	if maxUploadsPerToken > 0 {
+		count, err := s.store.CountUploadsByOwner(owner.ID)
+		if err != nil {
+			http.Redirect(w, r, "/dashboard?err=db+error", http.StatusSeeOther)
+			return
+		}
+		if count >= maxUploadsPerToken {
+			http.Redirect(w, r, "/dashboard?err=upload+count+quota+exceeded", http.StatusSeeOther)
+			return
+		}
+	}
+	maxStoragePerToken := s.settingInt64("max_storage_per_token", 0)
+	if maxStoragePerToken > 0 {
+		ownerTotal, err := s.store.SumUploadSizesByOwner(owner.ID)
+		if err != nil {
+			http.Redirect(w, r, "/dashboard?err=db+error", http.StatusSeeOther)
+			return
+		}
+		if ownerTotal+int64(len(data)) > maxStoragePerToken {
+			http.Redirect(w, r, "/dashboard?err=per-token+storage+quota+exceeded", http.StatusSeeOther)
+			return
+		}
+	}
+
 	slug, err := generateSlug(s.store)
 	if err != nil {
 		http.Redirect(w, r, "/dashboard?err=internal+error", http.StatusSeeOther)
@@ -488,6 +522,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
+	w.Header().Set("Content-Security-Policy", dashboardCSP)
 	owner, ok := s.webAuth(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)

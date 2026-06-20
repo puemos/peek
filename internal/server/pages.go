@@ -152,7 +152,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	vid := s.visitorID(w, r)
 	go s.recordVisit(r, u, vid)
 
-	rawURL := "/raw/" + slug + "?t=" + makeViewToken(s.secret, slug)
+	rawURL := "/raw/" + slug + "?t=" + makeViewToken(s.secret, slug, vid) + "&v=" + vid
 	d := pageData{
 		Filename: u.Filename, Slug: slug,
 		RawURL: rawURL, Protected: u.PasswordHash != "",
@@ -201,8 +201,16 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Require a valid view token (issued by /p) so /raw cannot be hot-linked
-	// or used to bypass the password gate.
-	if !verifyToken(s.secret, r.URL.Query().Get("t"), slug) {
+	// or used to bypass the password gate. The token is bound to the visitor
+	// id so a shared raw URL won't work for a different viewer.
+	vid := r.URL.Query().Get("v")
+	if vid == "" {
+		// Fall back to cookie-based vid for backward compat.
+		if c, err := r.Cookie(visitorCookie); err == nil {
+			vid = c.Value
+		}
+	}
+	if !verifyViewToken(s.secret, r.URL.Query().Get("t"), slug, vid) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

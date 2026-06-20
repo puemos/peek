@@ -43,6 +43,10 @@ func Run(args []string) int {
 		err = cmdStats(rest)
 	case "comments":
 		err = cmdComments(rest)
+	case "export":
+		err = cmdExport(rest)
+	case "delete-all":
+		err = cmdDeleteAll(rest)
 	case "token":
 		err = cmdToken(rest)
 	case "help", "-h", "--help":
@@ -77,6 +81,8 @@ Usage:
   peek password <slug> --clear         remove protection
   peek stats <slug>
   peek comments <slug>                 list comments on one of your uploads
+  peek export <slug>                   export all data for an upload (GDPR)
+  peek delete-all                      delete all your uploads (GDPR right-to-be-forgotten)
   peek token create --name <name>      create a new user token (admin only)
   peek token list                      list tokens (admin only)
   peek token revoke <id>               revoke a token by id (admin only)
@@ -545,6 +551,54 @@ func cmdComments(args []string) error {
 		fmt.Printf("  on: %s\n", ctx)
 		fmt.Printf("  %s\n", cm.Body)
 	}
+	return nil
+}
+
+// --- export (GDPR data export) ---
+
+func cmdExport(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: peek export <slug>")
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	c, err := newClient(cfg)
+	if err != nil {
+		return err
+	}
+	resp, err := c.req("GET", "/api/uploads/"+args[0]+"/export", nil, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// --- delete-all (GDPR right-to-be-forgotten) ---
+
+func cmdDeleteAll(args []string) error {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	c, err := newClient(cfg)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Deleted int `json:"deleted"`
+	}
+	if err := c.del("/api/uploads-by-owner", &out); err != nil {
+		return err
+	}
+	fmt.Printf("deleted %d uploads\n", out.Deleted)
 	return nil
 }
 

@@ -476,6 +476,12 @@ func (s *Store) CountUploadsByOwner(ownerID int64) (int, error) {
 	return n, err
 }
 
+func (s *Store) SumUploadSizesByOwner(ownerID int64) (int64, error) {
+	var total int64
+	err := s.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner_token_id=?`, ownerID).Scan(&total)
+	return total, err
+}
+
 func (s *Store) ListUploadsOlderThan(cutoff time.Time) ([]models.Upload, error) {
 	rows, err := s.Query(`SELECT u.id,u.slug,u.owner_token_id,t.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN tokens t ON t.id=u.owner_token_id WHERE u.created_at < ? ORDER BY u.created_at ASC`,

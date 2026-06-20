@@ -86,6 +86,32 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Per-token quotas (0 = unlimited).
+	maxUploadsPerToken := s.settingInt("max_uploads_per_token", 0)
+	if maxUploadsPerToken > 0 {
+		count, err := s.store.CountUploadsByOwner(owner.ID)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "db error")
+			return
+		}
+		if count >= maxUploadsPerToken {
+			jsonError(w, http.StatusRequestEntityTooLarge, "per-token upload count quota exceeded")
+			return
+		}
+	}
+	maxStoragePerToken := s.settingInt64("max_storage_per_token", 0)
+	if maxStoragePerToken > 0 {
+		ownerTotal, err := s.store.SumUploadSizesByOwner(owner.ID)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "db error")
+			return
+		}
+		if ownerTotal+int64(len(data)) > maxStoragePerToken {
+			jsonError(w, http.StatusRequestEntityTooLarge, "per-token storage quota exceeded")
+			return
+		}
+	}
+
 	slug, err := generateSlug(s.store)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "slug generation failed")
@@ -290,6 +316,86 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	actor, _ := s.store.GetToken(bearerToken(r))
 	s.auditRequest(r, actorName(actor), "token.create", "name="+body.Name)
 	jsonOK(w, map[string]any{"token": t, "name": body.Name})
+}
+
+func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	u, err := s.store.GetUpload(slug)
+	if err != nil {
+		jsonError(w, http.StatusNotFound, "not found")
+		return
+	}
+	tok := bearerToken(r)
+	owner, _ := s.store.GetToken(tok)
+	if u.OwnerTokenID != owner.ID && !owner.IsAdmin {
+		jsonError(w, http.StatusForbidden, "not owner")
+		return
+	}
+	total, unique, _ := s.store.CountVisits(u.ID)
+	recent, _ := s.store.RecentVisits(u.ID, 500)
+	comments, _ := s.store.ListComments(u.ID)
+
+	type exportComment struct {
+		Author    string `json:"author"`
+		Body      string `json:"body"`
+		Selector  string `json:"selector"`
+		Text      string `json:"element_text"`
+		CreatedAt int64  `json:"created_at"`
+	}
+	type exportVisit struct {
+		Name      string `json:"name"`
+		IP        string `json:"ip"`
+		UA        string `json:"user_agent"`
+		Timestamp int64  `json:"visited_at"`
+	}
+	export := map[string]any{
+		"slug":            slug,
+		"filename":        u.Filename,
+		"size":            u.Size,
+		"protected":       u.PasswordHash != "",
+		"created_at":      u.CreatedAt.Unix(),
+		"total_visits":    total,
+		"unique_visitors": unique,
+	}
+	cmts := make([]exportComment, 0, len(comments))
+	for _, c := range comments {
+		cmts = append(cmts, exportComment{
+			Author: c.AuthorName, Body: c.Body, Selector: c.ElementSelector,
+			Text: c.ElementText, CreatedAt: c.CreatedAt.Unix(),
+		})
+	}
+	export["comments"] = cmts
+	visits := make([]exportVisit, 0, len(recent))
+	for _, v := range recent {
+		visits = append(visits, exportVisit{
+			Name: v.VisitorName, IP: v.IP, UA: v.UserAgent, Timestamp: v.VisitedAt.Unix(),
+		})
+	}
+	export["visits"] = visits
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+slug+`-export.json"`)
+	_ = json.NewEncoder(w).Encode(export)
+}
+
+func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) {
+	tok := bearerToken(r)
+	owner, _ := s.store.GetToken(tok)
+	uploads, err := s.store.ListUploadsByOwner(owner.ID)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	deleted := 0
+	for _, u := range uploads {
+		if err := s.store.DeleteUpload(u.ID); err != nil {
+			continue
+		}
+		_ = s.storage.Delete(r.Context(), u.Slug)
+		deleted++
+	}
+	s.auditRequest(r, owner.Name, "upload.delete_all", "count="+strconv.Itoa(deleted))
+	jsonOK(w, map[string]any{"deleted": deleted})
 }
 
 func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {

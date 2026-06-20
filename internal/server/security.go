@@ -56,9 +56,31 @@ func verifyToken(secret, tok, slug string) bool {
 }
 
 // makeViewToken returns a short-lived token authorizing /raw access for slug.
-func makeViewToken(secret, slug string) string {
+// The vid (visitor id) is bound into the token so a raw URL shared with another
+// viewer cannot be used — the visitor cookie must match.
+func makeViewToken(secret, slug, vid string) string {
 	exp := time.Now().Add(viewTokenTTL).Unix()
-	return signToken(secret, slug, exp)
+	msg := slug + "." + vid + "." + strconv.FormatInt(exp, 10)
+	sig := hmacSHA256(secret, msg)
+	return msg + "." + sig
+}
+
+// verifyViewToken validates a view token for the given slug and visitor id.
+func verifyViewToken(secret, tok, slug, vid string) bool {
+	parts := strings.SplitN(tok, ".", 4)
+	if len(parts) != 4 {
+		return false
+	}
+	tSlug, tVid, expStr, sig := parts[0], parts[1], parts[2], parts[3]
+	if tSlug != slug || tVid != vid {
+		return false
+	}
+	exp, err := strconv.ParseInt(expStr, 10, 64)
+	if err != nil || time.Now().Unix() > exp {
+		return false
+	}
+	want := hmacSHA256(secret, tSlug+"."+tVid+"."+expStr)
+	return hmac.Equal([]byte(sig), []byte(want))
 }
 
 // makeSessionCookieValue signs slug.exp for password-gate sessions.

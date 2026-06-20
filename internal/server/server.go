@@ -215,6 +215,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings", s.authAdmin(s.handleGetSettings))
 	mux.HandleFunc("PUT /api/settings", s.authAdmin(s.handleUpdateSettings))
 	mux.HandleFunc("GET /api/audit", s.authAdmin(s.handleAuditLog))
+	mux.HandleFunc("GET /api/uploads/{slug}/export", s.authToken(s.handleExportUpload))
+	mux.HandleFunc("DELETE /api/uploads-by-owner", s.authToken(s.handleDeleteAllByOwner))
 
 	// Page-side API (callable by the trusted parent page JS).
 	mux.HandleFunc("GET /api/uploads/{slug}/comments", s.handleListComments)

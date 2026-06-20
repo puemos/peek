@@ -18,9 +18,11 @@ type settingsRow struct {
 }
 
 var settingsMeta = map[string]settingsRow{
-	"max_upload":     {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
-	"max_total_size": {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
-	"retention_days": {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
+	"max_upload":              {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
+	"max_total_size":          {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
+	"retention_days":          {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
+	"max_uploads_per_token":   {Label: "Max uploads per token", Description: "Maximum number of uploads per token (0 = unlimited)"},
+	"max_storage_per_token":   {Label: "Max storage per token (bytes)", Description: "Maximum total storage per token (0 = unlimited)"},
 	"storage":        {Label: "Storage backend", Description: "file or s3 (requires restart to take effect)", IsStartup: true},
 	"s3_endpoint":    {Label: "S3 endpoint URL", Description: "S3-compatible endpoint (e.g. https://<id>.r2.cloudflarestorage.com)"},
 	"s3_bucket":      {Label: "S3 bucket", Description: "Bucket name for HTML file storage"},
@@ -168,7 +170,7 @@ func (s *Server) settingsSummary() map[string]any {
 func dashboardSettingsRows(raw map[string]string) []settingsRow {
 	order := []string{
 		"storage", "s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
-		"max_upload", "max_total_size", "retention_days",
+		"max_upload", "max_total_size", "max_uploads_per_token", "max_storage_per_token", "retention_days",
 	}
 	seen := map[string]bool{}
 	out := make([]settingsRow, 0, len(order))
