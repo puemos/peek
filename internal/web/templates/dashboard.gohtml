@@ -74,15 +74,11 @@
     {{if .Uploads}}
     <div class="overflow-x-auto">
     <table class="w-full border-collapse text-sm">
-      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Name</th><th class="px-3 py-2">Size</th><th class="px-3 py-2">Visibility</th><th class="px-3 py-2">Created</th><th class="px-3 py-2">Link</th><th class="px-3 py-2"></th></tr></thead>
+      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Link</th><th class="px-3 py-2">Size</th><th class="px-3 py-2">Visibility</th><th class="px-3 py-2">Created</th><th class="px-3 py-2"></th></tr></thead>
       <tbody>
       {{range .Uploads}}
         <tr class="border-b border-border/50 last:border-0 hover:bg-foreground/[0.025]">
-          <td class="h-10 px-3 font-medium">{{.Name}}</td>
-          <td class="px-3 text-muted-foreground">{{.SizeHuman}}</td>
-          <td class="px-3"><span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">{{.Visibility}}</span></td>
-          <td class="px-3 text-muted-foreground">{{.CreatedHuman}}</td>
-          <td class="px-3">
+          <td class="h-10 px-3">
             <div class="flex items-center gap-2 whitespace-nowrap">
               <a href="/p/{{.Slug}}" target="_blank" class="font-medium text-primary no-underline hover:underline">/p/{{.Slug}}</a>
               <button type="button" x-data="{ url: '/p/{{.Slug}}' }" data-url="/p/{{.Slug}}" x-on:click="copy(url)" class="peek-copy-button" :class="{ 'peek-copy-button-copied': copied === url }" :aria-label="copied === url ? 'Copied' : 'Copy link'" title="Copy link">
@@ -91,6 +87,9 @@
               </button>
             </div>
           </td>
+          <td class="px-3 text-muted-foreground">{{.SizeHuman}}</td>
+          <td class="px-3"><span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">{{.Visibility}}</span></td>
+          <td class="px-3 text-muted-foreground">{{.CreatedHuman}}</td>
           <td class="px-3">
             <div class="peek-row-actions">
               <a href="/dashboard/stats/{{.Slug}}" class="peek-row-button">Stats</a>
