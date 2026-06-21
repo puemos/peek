@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/puemos/peek/internal/models"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 func (s *Store) CreateUpload(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string) error {
@@ -18,7 +19,7 @@ func (s *Store) CreateUpload(slug string, ownerAccountID, ownerTokenID int64, fi
 	return err
 }
 
-func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits UploadLimits) error {
+func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error {
 	tx, err := s.Begin()
 	if err != nil {
 		return err
@@ -31,7 +32,7 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 			return err
 		}
 		if total+size > limits.MaxTotalSize {
-			return ErrTotalQuotaExceeded
+			return uploadquota.ErrTotalExceeded
 		}
 	}
 	if limits.MaxUploadsPerOwner > 0 {
@@ -40,7 +41,7 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 			return err
 		}
 		if count >= limits.MaxUploadsPerOwner {
-			return ErrOwnerUploadCountQuotaExceeded
+			return uploadquota.ErrOwnerCountExceeded
 		}
 	}
 	if limits.MaxStoragePerOwner > 0 {
@@ -49,7 +50,7 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 			return err
 		}
 		if total+size > limits.MaxStoragePerOwner {
-			return ErrOwnerStorageQuotaExceeded
+			return uploadquota.ErrOwnerStorageExceeded
 		}
 	}
 

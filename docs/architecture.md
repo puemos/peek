@@ -9,6 +9,7 @@ Peek is a small Go application, but the codebase is organized as if it needs to 
 - `internal/peekd` owns daemon process concerns: flag and environment parsing, structured logging setup, graceful shutdown, healthcheck command behavior, and SQLite backup command behavior.
 - `internal/server` owns HTTP routing, request authentication, handler orchestration, browser workflows, API responses, comments, analytics, metrics, OAuth flow coordination, setup bootstrap, and runtime settings.
 - `internal/uploads` owns upload creation behavior: HTML sniffing, bcrypt password limit enforcement for upload passwords, slug generation, object-store writes, database insert coordination, domain-level quota errors, and storage cleanup after failed persistence. It returns upload error kinds, not HTTP status codes.
+- `internal/uploadquota` owns the transport- and database-neutral upload quota contract shared by the upload service, HTTP server, and SQLite store.
 - `internal/db` owns SQLite schema, migrations, persistence rules, transactional constraints, and database-level invariants such as quota checks and last-admin protection.
 - `internal/objectstore` owns upload byte storage. The server depends only on its `Storage` interface, while file and S3 implementation details stay outside the HTTP package.
 - `internal/web` owns server-rendered templates, template view models, static asset embedding, and HTML rendering configuration.
@@ -17,7 +18,7 @@ Peek is a small Go application, but the codebase is organized as if it needs to 
 
 ## Dependency Direction
 
-The intended direction is executable packages to internal orchestration packages, orchestration packages to domain/runtime packages, and concrete infrastructure hidden behind small interfaces. `internal/server` may depend on `internal/uploads`, `internal/db`, `internal/objectstore`, `internal/models`, and `internal/web`; `internal/uploads` may depend on `internal/db` and `internal/objectstore` but not `net/http`; `internal/objectstore` must not depend on `internal/server`; `internal/db` must not depend on HTTP, CLI, or template packages.
+The intended direction is executable packages to internal orchestration packages, orchestration packages to domain/runtime packages, and concrete infrastructure hidden behind small interfaces. `internal/server` may depend on `internal/uploads`, `internal/uploadquota`, `internal/db`, `internal/objectstore`, `internal/models`, and `internal/web`; `internal/uploads` may depend on `internal/uploadquota` and `internal/objectstore` but not `internal/db` or `net/http`; `internal/db` may depend on `internal/uploadquota`; `internal/objectstore` must not depend on `internal/server`; `internal/db` must not depend on HTTP, CLI, or template packages.
 
 ## Rendering
 

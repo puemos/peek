@@ -7,8 +7,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/objectstore"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 type Service struct {
@@ -19,7 +19,7 @@ type Service struct {
 
 type Repository interface {
 	UploadSlugExists(slug string) (bool, error)
-	CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits db.UploadLimits) error
+	CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error
 }
 
 type CreateInput struct {
@@ -28,7 +28,7 @@ type CreateInput struct {
 	Filename       string
 	Password       string
 	Data           []byte
-	Limits         db.UploadLimits
+	Limits         uploadquota.Limits
 }
 
 type CreateResult struct {
@@ -114,11 +114,11 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 
 func storeError(err error) error {
 	switch {
-	case errors.Is(err, db.ErrTotalQuotaExceeded):
+	case errors.Is(err, uploadquota.ErrTotalExceeded):
 		return newError(KindTotalQuotaExceeded, "total storage quota exceeded")
-	case errors.Is(err, db.ErrOwnerUploadCountQuotaExceeded):
+	case errors.Is(err, uploadquota.ErrOwnerCountExceeded):
 		return newError(KindOwnerCountExceeded, "per-token upload count quota exceeded")
-	case errors.Is(err, db.ErrOwnerStorageQuotaExceeded):
+	case errors.Is(err, uploadquota.ErrOwnerStorageExceeded):
 		return newError(KindOwnerStorageExceeded, "per-token storage quota exceeded")
 	default:
 		return newError(KindPersistenceFailure, "db failed")

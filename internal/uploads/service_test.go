@@ -10,6 +10,7 @@ import (
 
 	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/models"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 type memoryStorage struct {
@@ -75,7 +76,7 @@ func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 		OwnerTokenID:   owner.ID,
 		Filename:       "page.html",
 		Data:           []byte("<!doctype html><html></html>"),
-		Limits:         db.UploadLimits{MaxTotalSize: 1},
+		Limits:         uploadquota.Limits{MaxTotalSize: 1},
 	})
 	if err == nil {
 		t.Fatal("expected quota error")

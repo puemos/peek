@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/puemos/peek/internal/uploadquota"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -386,11 +388,11 @@ func TestCreateUploadCheckedEnforcesQuotas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	limits := UploadLimits{MaxTotalSize: 15, MaxUploadsPerOwner: 1, MaxStoragePerOwner: 12}
+	limits := uploadquota.Limits{MaxTotalSize: 15, MaxUploadsPerOwner: 1, MaxStoragePerOwner: 12}
 	if err := s.CreateUploadChecked("one", tok.AccountID, tok.ID, "one.html", 10, "", limits); err != nil {
 		t.Fatalf("first upload: %v", err)
 	}
-	if err := s.CreateUploadChecked("two", tok.AccountID, tok.ID, "two.html", 1, "", limits); !errors.Is(err, ErrOwnerUploadCountQuotaExceeded) {
+	if err := s.CreateUploadChecked("two", tok.AccountID, tok.ID, "two.html", 1, "", limits); !errors.Is(err, uploadquota.ErrOwnerCountExceeded) {
 		t.Fatalf("expected owner count quota, got %v", err)
 	}
 
@@ -401,7 +403,7 @@ func TestCreateUploadCheckedEnforcesQuotas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CreateUploadChecked("three", tok2.AccountID, tok2.ID, "three.html", 10, "", limits); !errors.Is(err, ErrTotalQuotaExceeded) {
+	if err := s.CreateUploadChecked("three", tok2.AccountID, tok2.ID, "three.html", 10, "", limits); !errors.Is(err, uploadquota.ErrTotalExceeded) {
 		t.Fatalf("expected total quota, got %v", err)
 	}
 }

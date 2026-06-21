@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/uploadquota"
 	"github.com/puemos/peek/internal/uploads"
 )
 
@@ -12,8 +12,8 @@ func (s *Server) uploadService() uploads.Service {
 	return uploads.Service{Repository: s.store, Storage: s.storage, BaseURL: s.baseURL}
 }
 
-func (s *Server) uploadLimits() db.UploadLimits {
-	return db.UploadLimits{
+func (s *Server) uploadLimits() uploadquota.Limits {
+	return uploadquota.Limits{
 		MaxTotalSize:       s.settingInt64("max_total_size", 0),
 		MaxUploadsPerOwner: s.settingInt("max_uploads_per_token", 0),
 		MaxStoragePerOwner: s.settingInt64("max_storage_per_token", 0),
