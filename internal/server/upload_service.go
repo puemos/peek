@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/puemos/peek/internal/uploadquota"
@@ -40,4 +41,11 @@ func uploadHTTPError(err error) (int, string) {
 func uploadErrorMessage(err error) string {
 	_, msg := uploadHTTPError(err)
 	return msg
+}
+
+func logUploadError(err error) {
+	var cleanupErr *uploads.CleanupError
+	if errors.As(err, &cleanupErr) {
+		slog.Warn("upload storage cleanup failed", "slug", cleanupErr.Slug, "err", cleanupErr.Err)
+	}
 }

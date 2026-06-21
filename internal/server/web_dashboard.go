@@ -132,6 +132,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		Limits:         s.uploadLimits(),
 	})
 	if err != nil {
+		logUploadError(err)
 		dashboardError(w, r, uploadErrorMessage(err))
 		return
 	}

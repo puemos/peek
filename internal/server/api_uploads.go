@@ -74,6 +74,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Limits:         s.uploadLimits(),
 	})
 	if err != nil {
+		logUploadError(err)
 		status, msg := uploadHTTPError(err)
 		jsonError(w, status, msg)
 		return

@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/puemos/peek/internal/uploads"
@@ -50,5 +53,28 @@ func TestUploadHTTPErrorMapsDomainKinds(t *testing.T) {
 				t.Fatalf("uploadHTTPError() = (%d, %q), want (%d, %q)", status, msg, tc.wantStatus, tc.wantMsg)
 			}
 		})
+	}
+}
+
+func TestLogUploadErrorReportsCleanupFailureOnly(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+
+	logUploadError(&uploads.Error{Kind: uploads.KindInvalidHTML, Message: "file does not look like HTML"})
+	if logs.Len() != 0 {
+		t.Fatalf("ordinary upload error was logged: %s", logs.String())
+	}
+
+	logUploadError(errors.Join(
+		&uploads.Error{Kind: uploads.KindTotalQuotaExceeded, Message: "total storage quota exceeded"},
+		&uploads.CleanupError{Slug: "page", Err: errors.New("delete failed")},
+	))
+	if !strings.Contains(logs.String(), "upload storage cleanup failed") {
+		t.Fatalf("cleanup failure was not logged: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "slug=page") {
+		t.Fatalf("cleanup slug was not logged: %s", logs.String())
 	}
 }
