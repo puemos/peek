@@ -1,11 +1,31 @@
 package web
 
 import (
+	"bytes"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+type failingAssetWriter struct {
+	header http.Header
+}
+
+func (w *failingAssetWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *failingAssetWriter) WriteHeader(int) {}
+
+func (w *failingAssetWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
 
 func TestAssetURLIncludesContentHash(t *testing.T) {
 	got := AssetURL("dashboard.js")
@@ -45,6 +65,27 @@ func TestServeAssetNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestServeAssetLogsWriteFailure(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+	w := &failingAssetWriter{}
+	req := httptest.NewRequest(http.MethodGet, AssetURL("dashboard.js"), nil)
+
+	ServeAsset(w, req, "dashboard.js")
+
+	if got := w.Header().Get("Content-Type"); got != "text/javascript; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(logs.String(), "write asset response failed") {
+		t.Fatalf("write failure was not logged: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "asset=dashboard.js") {
+		t.Fatalf("asset name was not logged: %s", logs.String())
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 )
 
@@ -61,5 +62,7 @@ func ServeAsset(w http.ResponseWriter, r *http.Request, name string) {
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}
-	w.Write(b)
+	if _, err := w.Write(b); err != nil {
+		slog.Warn("write asset response failed", "asset", name, "err", err)
+	}
 }
