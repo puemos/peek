@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"strconv"
@@ -78,7 +79,14 @@ func (s *Server) handleDashboardRevokeInvite(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, "/dashboard?err=bad+invite", http.StatusSeeOther)
 		return
 	}
-	_ = s.store.RevokeInvite(id)
+	if err := s.store.RevokeInvite(id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Redirect(w, r, "/dashboard?err=bad+invite", http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/dashboard?err=invite+revoke+failed", http.StatusSeeOther)
+		return
+	}
 	s.audit("invite revoked id=%d by=%s", id, owner.Name)
 	http.Redirect(w, r, "/dashboard?ok=invite+revoked", http.StatusSeeOther)
 }

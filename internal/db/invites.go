@@ -91,6 +91,16 @@ func (s *Store) ConsumeInvite(id int64) error {
 }
 
 func (s *Store) RevokeInvite(id int64) error {
-	_, err := s.Exec(`UPDATE invites SET revoked_at=? WHERE id=? AND used_at=0`, time.Now().Unix(), id)
+	res, err := s.Exec(`UPDATE invites SET revoked_at=? WHERE id=? AND used_at=0 AND revoked_at=0`, time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
 	return err
 }

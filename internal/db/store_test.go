@@ -343,6 +343,20 @@ func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
 	if err := store.ConsumeInvite(inv.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second consume should fail, got %v", err)
 	}
+	if err := store.RevokeInvite(inv.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("revoking consumed invite should fail, got %v", err)
+	}
+
+	revoked, err := store.CreateInvite("raw-revoke", "ciphertext", "revoke@example.com", admin.AccountID, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeInvite(revoked.ID); err != nil {
+		t.Fatalf("revoke invite: %v", err)
+	}
+	if err := store.RevokeInvite(revoked.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second revoke should fail, got %v", err)
+	}
 
 	if err := store.CreateCLILoginDevice("device", "ABCDEFGH", time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
