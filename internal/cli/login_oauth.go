@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+var (
+	oauthNow         = time.Now
+	oauthSleep       = time.Sleep
+	oauthOpenBrowser = openBrowser
+)
+
 func loginOAuth(cfg *Config, host string) error {
 	host = strings.TrimRight(host, "/")
 	var start struct {
@@ -30,12 +36,12 @@ func loginOAuth(cfg *Config, host string) error {
 		start.ExpiresIn = 900
 	}
 	fmt.Fprintf(os.Stderr, "Opening browser for Peek login.\nCode: %s\nURL:  %s\n", start.UserCode, start.VerificationURL)
-	if err := openBrowser(start.VerificationURL); err != nil {
+	if err := oauthOpenBrowser(start.VerificationURL); err != nil {
 		fmt.Fprintln(os.Stderr, "Open the URL above to continue.")
 	}
-	deadline := time.Now().Add(time.Duration(start.ExpiresIn) * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(time.Duration(start.Interval) * time.Second)
+	deadline := oauthNow().Add(time.Duration(start.ExpiresIn) * time.Second)
+	for oauthNow().Before(deadline) {
+		oauthSleep(time.Duration(start.Interval) * time.Second)
 		var poll struct {
 			Status string `json:"status"`
 			Token  string `json:"token"`
