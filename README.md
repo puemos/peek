@@ -224,7 +224,7 @@ Protect `/metrics` at your proxy if the server is reachable from untrusted netwo
 
 ## Architecture
 
-The repository is intentionally split into narrow internal packages: `internal/server` owns HTTP routing and request handling, `internal/db` owns SQLite persistence, `internal/objectstore` owns file and S3 storage backends, `internal/web` owns server-side templates and view models, `internal/peekd` owns daemon runtime/flags/backup/healthcheck orchestration, and `internal/cli` owns the terminal client. See [docs/architecture.md](docs/architecture.md) for the package map and local quality gates.
+The repository is intentionally split into narrow internal packages: `internal/server` owns HTTP routing and request handling, `internal/uploads` owns upload creation and validation, `internal/db` owns SQLite persistence, `internal/objectstore` owns file and S3 storage backends, `internal/web` owns server-side templates and view models, `internal/peekd` owns daemon runtime/flags/backup/healthcheck orchestration, and `internal/cli` owns the terminal client. See [docs/architecture.md](docs/architecture.md) for the package map and local quality gates.
 
 ## Web GUI
 

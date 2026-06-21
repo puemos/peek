@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/puemos/peek/internal/models"
+	"github.com/puemos/peek/internal/uploads"
 )
 
 type uploadResp struct {
@@ -63,7 +64,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	up, err := s.uploadService().Create(r.Context(), uploadCreateInput{
+	up, err := s.uploadService().Create(r.Context(), uploads.CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
 		Filename:       filename,
@@ -72,7 +73,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Limits:         s.uploadLimits(),
 	})
 	if err != nil {
-		if ue, ok := err.(*uploadError); ok {
+		if ue, ok := err.(*uploads.Error); ok {
 			jsonError(w, ue.Status, ue.Message)
 		} else {
 			jsonError(w, http.StatusInternalServerError, "upload failed")
@@ -165,7 +166,7 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	hash := ""
 	if !body.Clear && body.Password != "" {
-		if !validatePasswordLength(body.Password) {
+		if !uploads.ValidatePasswordLength(body.Password) {
 			jsonError(w, http.StatusBadRequest, "password must be 72 characters or fewer")
 			return
 		}

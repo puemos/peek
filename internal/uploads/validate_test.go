@@ -1,4 +1,4 @@
-package server
+package uploads
 
 import (
 	"testing"
@@ -36,13 +36,13 @@ func TestLooksLikeHTML(t *testing.T) {
 }
 
 func TestValidatePasswordLength(t *testing.T) {
-	if !validatePasswordLength("short") {
+	if !ValidatePasswordLength("short") {
 		t.Fatalf("short password should be valid")
 	}
-	if !validatePasswordLength(makeString('a', 72)) {
+	if !ValidatePasswordLength(makeString('a', 72)) {
 		t.Fatalf("exactly 72 chars should be valid")
 	}
-	if validatePasswordLength(makeString('a', 73)) {
+	if ValidatePasswordLength(makeString('a', 73)) {
 		t.Fatalf("73 chars should be rejected")
 	}
 }
@@ -99,5 +99,13 @@ func (m *mockSlugChecker) GetUpload(slug string) (*models.Upload, error) {
 	if m.returnErrorAfter > 0 && m.counter < m.returnErrorAfter {
 		return &models.Upload{Slug: slug}, nil
 	}
-	return nil, errInvalid
+	return nil, errSlugAvailable
+}
+
+var errSlugAvailable = &slugAvailableError{}
+
+type slugAvailableError struct{}
+
+func (*slugAvailableError) Error() string {
+	return "slug available"
 }

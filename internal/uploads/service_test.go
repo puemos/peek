@@ -1,4 +1,4 @@
-package server
+package uploads
 
 import (
 	"bytes"
@@ -35,13 +35,13 @@ func (m *memoryStorage) Delete(_ context.Context, slug string) error {
 	return nil
 }
 
-func TestUploadServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
-	store, owner := uploadServiceTestStore(t)
+func TestServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
+	store, owner := serviceTestStore(t)
 	defer store.Close()
 	st := newMemoryStorage()
-	svc := uploadService{store: store, storage: st, baseURL: "http://localhost:7700"}
+	svc := Service{Store: store, Storage: st, BaseURL: "http://localhost:7700"}
 
-	_, err := svc.Create(context.Background(), uploadCreateInput{
+	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
 		Filename:       "page.html",
@@ -56,13 +56,13 @@ func TestUploadServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
 	}
 }
 
-func TestUploadServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
-	store, owner := uploadServiceTestStore(t)
+func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
+	store, owner := serviceTestStore(t)
 	defer store.Close()
 	st := newMemoryStorage()
-	svc := uploadService{store: store, storage: st, baseURL: "http://localhost:7700"}
+	svc := Service{Store: store, Storage: st, BaseURL: "http://localhost:7700"}
 
-	_, err := svc.Create(context.Background(), uploadCreateInput{
+	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
 		Filename:       "page.html",
@@ -80,7 +80,7 @@ func TestUploadServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 	}
 }
 
-func uploadServiceTestStore(t *testing.T) (*db.Store, *models.Token) {
+func serviceTestStore(t *testing.T) (*db.Store, *models.Token) {
 	t.Helper()
 	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
 	if err != nil {

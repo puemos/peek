@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/puemos/peek/internal/models"
+	"github.com/puemos/peek/internal/uploads"
 	webui "github.com/puemos/peek/internal/web"
 )
 
@@ -114,7 +115,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	up, err := s.uploadService().Create(r.Context(), uploadCreateInput{
+	up, err := s.uploadService().Create(r.Context(), uploads.CreateInput{
 		OwnerAccountID: owner.ID,
 		Filename:       filename,
 		Password:       password,
@@ -122,7 +123,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		Limits:         s.uploadLimits(),
 	})
 	if err != nil {
-		if ue, ok := err.(*uploadError); ok {
+		if ue, ok := err.(*uploads.Error); ok {
 			dashboardError(w, r, ue.Message)
 		} else {
 			dashboardError(w, r, "upload failed")

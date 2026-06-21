@@ -3,13 +3,17 @@ go = "1.26.4"
 
 [tasks.fmt]
 description = "Format all Go source files"
-run = "gofmt -w $(git ls-files '*.go')"
+run = """
+files=$(git ls-files '*.go' | while IFS= read -r file; do [ -f "$file" ] && printf '%s\n' "$file"; done)
+test -z "$files" || gofmt -w $files
+"""
 
 [tasks.fmt-check]
 description = "Verify Go source formatting"
 run = """
-files=$(gofmt -l $(git ls-files '*.go'))
-test -z "$files" || (printf '%s\n' "$files" && exit 1)
+files=$(git ls-files '*.go' | while IFS= read -r file; do [ -f "$file" ] && printf '%s\n' "$file"; done)
+unformatted=$(test -z "$files" || gofmt -l $files)
+test -z "$unformatted" || (printf '%s\n' "$unformatted" && exit 1)
 """
 
 [tasks.build]

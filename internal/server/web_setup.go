@@ -6,6 +6,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/puemos/peek/internal/uploads"
 	webui "github.com/puemos/peek/internal/web"
 )
 
@@ -50,7 +51,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password is required."})
 		return
 	}
-	if !validatePasswordLength(password) {
+	if !uploads.ValidatePasswordLength(password) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password must be 72 characters or fewer."})
 		return
 	}
