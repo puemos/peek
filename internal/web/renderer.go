@@ -199,11 +199,20 @@ type StatsVisit struct {
 	WhenHuman string
 }
 
+type StatsSparkline struct {
+	Summary  string
+	LinePath string
+	AreaPath string
+	LastX    string
+	LastY    string
+}
+
 type StatsData struct {
 	Slug           string
 	Name           string
 	TotalVisits    int
 	UniqueVisitors int
+	Sparkline      StatsSparkline
 	Recent         []StatsVisit
 	Error          string
 }

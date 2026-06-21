@@ -92,6 +92,42 @@ func TestRendererExecutesAllTemplates(t *testing.T) {
 	}
 }
 
+func TestStatsTemplateRendersSparkline(t *testing.T) {
+	renderer, err := newRenderer(func(name string) string {
+		return "/" + name + "?v=test"
+	})
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	body, err := renderer.Execute(TemplateStats, StatsData{
+		Slug:           "abc123",
+		Name:           "page.html",
+		TotalVisits:    3,
+		UniqueVisitors: 2,
+		Sparkline: StatsSparkline{
+			Summary:  "3 visits last 7 days",
+			LinePath: "M 2.0 54.0 L 166.0 2.0",
+			AreaPath: "M 2.0 54.0 L 166.0 2.0 L 166.0 54.0 L 2.0 54.0 Z",
+			LastX:    "166.0",
+			LastY:    "2.0",
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute stats: %v", err)
+	}
+	html := string(body)
+	for _, want := range []string{
+		"3 visits last 7 days",
+		`aria-label="Visit trend for the last 7 days"`,
+		`d="M 2.0 54.0 L 166.0 2.0"`,
+		`cx="166.0"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("stats template missing %q: %s", want, html)
+		}
+	}
+}
+
 func TestPageTemplateUsesDatasetForViewerConfig(t *testing.T) {
 	renderer, err := newRenderer(func(name string) string {
 		return "/" + name + "?v=test"

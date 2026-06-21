@@ -1,11 +1,13 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/puemos/peek/internal/models"
 	"github.com/puemos/peek/internal/uploads"
@@ -211,6 +213,16 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		s.renderDashboardStatsError(w, slug, u.Name)
 		return
 	}
+	const daySeconds = 86400
+	const statsBucketCount = 7
+	since := bucketStart(time.Now().Add(-time.Duration(statsBucketCount-1)*24*time.Hour), daySeconds)
+	buckets, err := s.store.VisitBuckets(r.Context(), u.ID, since, daySeconds)
+	if err != nil {
+		slog.Error("dashboard stats buckets failed", "slug", slug, "err", err)
+		s.renderDashboardStatsError(w, slug, u.Name)
+		return
+	}
+	sparkline := statsSparkline(fillBuckets(buckets, since, daySeconds, statsBucketCount))
 	visits := make([]statsVisit, 0, len(recent))
 	for _, v := range recent {
 		name := v.VisitorName
@@ -224,7 +236,7 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	}
 	s.renderHTML(w, http.StatusOK, webui.TemplateStats, statsData{
 		Slug: slug, Name: u.Name,
-		TotalVisits: total, UniqueVisitors: unique, Recent: visits,
+		TotalVisits: total, UniqueVisitors: unique, Sparkline: sparkline, Recent: visits,
 	})
 }
 
@@ -232,4 +244,61 @@ func (s *Server) renderDashboardStatsError(w http.ResponseWriter, slug, name str
 	s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
 		Slug: slug, Name: name, Error: "stats could not be loaded",
 	})
+}
+
+func statsSparkline(buckets []bucket) statsSparklineData {
+	const (
+		w   = 168.0
+		h   = 56.0
+		pad = 2.0
+	)
+	counts := make([]int, len(buckets))
+	maxCount := 0
+	total := 0
+	for i, b := range buckets {
+		counts[i] = b.Count
+		total += b.Count
+		if b.Count > maxCount {
+			maxCount = b.Count
+		}
+	}
+	if maxCount == 0 {
+		maxCount = 1
+	}
+	stepX := 0.0
+	if len(counts) > 1 {
+		stepX = (w - pad*2) / float64(len(counts)-1)
+	}
+	points := ""
+	lastX := pad
+	lastY := h - pad
+	for i, count := range counts {
+		x := pad + float64(i)*stepX
+		y := h - pad - (float64(count)/float64(maxCount))*(h-pad*4)
+		if i == 0 {
+			points = fmt.Sprintf("M %.1f %.1f", x, y)
+		} else {
+			points += fmt.Sprintf(" L %.1f %.1f", x, y)
+		}
+		lastX = x
+		lastY = y
+	}
+	if points == "" {
+		points = fmt.Sprintf("M %.1f %.1f", pad, h-pad)
+	}
+	area := points + fmt.Sprintf(" L %.1f %.1f L %.1f %.1f Z", lastX, h-pad, pad, h-pad)
+	return statsSparklineData{
+		Summary:  fmt.Sprintf("%s last 7 days", visitCountLabel(total)),
+		LinePath: points,
+		AreaPath: area,
+		LastX:    fmt.Sprintf("%.1f", lastX),
+		LastY:    fmt.Sprintf("%.1f", lastY),
+	}
+}
+
+func visitCountLabel(n int) string {
+	if n == 1 {
+		return "1 visit"
+	}
+	return fmt.Sprintf("%d visits", n)
 }

@@ -18,14 +18,26 @@
 <main class="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-8 pb-20">
   <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
     <h2 class="mb-5 text-base font-semibold tracking-tight text-card-foreground">{{.Name}}</h2>
-    <div class="mb-5 flex rounded-lg border border-border overflow-hidden">
-      <div class="flex flex-1 flex-col gap-1.5 p-4">
+    <div class="peek-stats-summary mb-5">
+      <div class="peek-stats-metric">
         <span class="text-2xl font-semibold tracking-tight text-foreground">{{.TotalVisits}}</span>
         <span class="text-xs text-muted-foreground">total visits</span>
       </div>
-      <div class="flex flex-1 flex-col gap-1.5 border-l border-border p-4">
+      <div class="peek-stats-metric">
         <span class="text-2xl font-semibold tracking-tight text-foreground">{{.UniqueVisitors}}</span>
         <span class="text-xs text-muted-foreground">unique visitors</span>
+      </div>
+      <div class="peek-stats-metric peek-stats-trend">
+        <span class="text-xs font-medium text-muted-foreground">{{.Sparkline.Summary}}</span>
+        {{if .Sparkline.LinePath}}
+        <svg class="peek-stats-sparkline" viewBox="0 0 168 56" preserveAspectRatio="none" role="img" aria-label="Visit trend for the last 7 days">
+          <path d="{{.Sparkline.AreaPath}}" fill="hsl(var(--primary) / 0.14)"></path>
+          <path d="{{.Sparkline.LinePath}}" fill="none" stroke="hsl(var(--primary))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <circle cx="{{.Sparkline.LastX}}" cy="{{.Sparkline.LastY}}" r="2.5" fill="hsl(var(--primary))"></circle>
+        </svg>
+        {{else}}
+        <span class="mt-2 text-sm text-muted-foreground">Trend unavailable.</span>
+        {{end}}
       </div>
     </div>
     <p class="text-sm text-muted-foreground">Share link: <a href="/p/{{.Slug}}" target="_blank" class="font-medium text-primary no-underline hover:underline">/p/{{.Slug}}</a>

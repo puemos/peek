@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/uploadquota"
@@ -102,6 +103,61 @@ func TestDashboardRendersGenericSuccessFlash(t *testing.T) {
 	}
 	if strings.Contains(body, "Uploaded! Share link:") {
 		t.Fatalf("generic flash rendered as upload success: %s", body)
+	}
+}
+
+func TestDashboardStatsRendersVisitSparkline(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	upload, err := store.GetUpload(context.Background(), "page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := bucketStart(time.Now(), 86400).Unix()
+	for i, ts := range []int64{today - 86400, today} {
+		if _, err := store.Exec(`INSERT INTO visits(upload_id,visitor_cookie,visitor_name,ip,user_agent,visited_at) VALUES(?,?,?,?,?,?)`,
+			upload.ID, "visitor-"+strconv.Itoa(i), "", "ip", "ua", ts+3600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, renderer: renderer, secret: strings.Repeat("0", 64)}
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/stats/page", nil)
+	req.SetPathValue("slug", "page")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboardStats(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"2 visits last 7 days",
+		`aria-label="Visit trend for the last 7 days"`,
+		`<circle cx=`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stats page missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "Trend unavailable.") {
+		t.Fatalf("stats page rendered unavailable trend: %s", body)
 	}
 }
 

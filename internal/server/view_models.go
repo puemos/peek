@@ -9,5 +9,6 @@ type inviteDashRow = webui.InviteDashboardRow
 type accountDashRow = webui.AccountDashboardRow
 type dashData = webui.DashboardData
 type statsVisit = webui.StatsVisit
+type statsSparklineData = webui.StatsSparkline
 type statsData = webui.StatsData
 type pageData = webui.PageData

@@ -2,6 +2,53 @@
 
 [x-cloak] { display: none !important; }
 
+.peek-stats-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.peek-stats-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+}
+
+.peek-stats-metric + .peek-stats-metric {
+  border-left: 1px solid hsl(var(--border));
+}
+
+.peek-stats-trend {
+  grid-column: 1 / -1;
+  border-top: 1px solid hsl(var(--border));
+  border-left: 0;
+  padding: 14px 16px 10px;
+}
+
+.peek-stats-sparkline {
+  display: block;
+  width: 100%;
+  height: 56px;
+  margin-top: 8px;
+  overflow: visible;
+}
+
+@media (min-width: 768px) {
+  .peek-stats-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .peek-stats-trend {
+    grid-column: auto;
+    border-top: 0;
+    border-left: 1px solid hsl(var(--border));
+  }
+}
+
 .peek-row-actions {
   display: flex;
   align-items: center;
