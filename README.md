@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/puemos/peek/actions/workflows/ci.yml/badge.svg)](https://github.com/puemos/peek/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/puemos/peek?sort=semver)](https://github.com/puemos/peek/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
 
-**Share an HTML page, get a link, collect feedback right on the page.**
+**Share an HTML page inside your company, get a link, collect feedback right on the page.**
 
-Peek is a self-hosted server that turns any HTML file into a live, shareable preview URL. Viewers can drop comments **pinned to a specific element, anchored to selected text, or on the whole page** — like Figma/Linear review, but for any HTML. Single static Go binary, pure-Go SQLite, no CGO.
+Peek is a self-hosted internal review tool for teams that need to share HTML previews without turning them into public deployments. It turns any HTML file into a live preview URL and lets reviewers drop comments **pinned to a specific element, anchored to selected text, or on the whole page** — like Figma/Linear review, but for any HTML. Single static Go binary, pure-Go SQLite, no CGO.
 
 ![Peek viewer with pinned comments](assets/hero.png)
 
@@ -20,9 +20,11 @@ Peek is a self-hosted server that turns any HTML file into a live, shareable pre
 - 🎯 **Click a comment → jump to it** — the panel and the on-page pins are linked both ways; selected text stays highlighted via the CSS Custom Highlight API (no DOM mutation of the user's HTML).
 - 🔒 **Safe by construction** — uploaded HTML renders inside a sandboxed, opaque-origin iframe. It can never read your cookies, hit the server, or touch the parent page.
 - ⚡ **One static binary** — Go stdlib + pure-Go SQLite, no CGO, no runtime deps.
-- 🧰 **CLI + web dashboard + agent skill** — upload from the terminal, a browser, or let a coding agent share HTML for you.
+- 🧰 **CLI + web dashboard + agent skill** — upload from the terminal, a browser, or let a coding agent share HTML for your team.
 - 📊 **Privacy-respecting analytics** — total/unique visits, recent views with SHA-256-hashed IPs.
-- 🏭 **Production-ready** — health/readiness checks, graceful shutdown, structured JSON logging, Prometheus metrics, audit log, token expiry, quota/retention controls, GDPR data export/deletion, and S3 endpoint SSRF protection.
+- 🏭 **Built for internal company deployments** — first-run admin setup, invite-only OAuth, health/readiness checks, graceful shutdown, structured JSON logging, Prometheus metrics, audit log, token expiry, quota/retention controls, data export/deletion, and S3 endpoint SSRF protection.
+
+Peek is not designed as a SaaS product. It intentionally avoids billing, public multi-tenant onboarding, marketplace workflows, and growth-oriented product surfaces. The operating model is one company, team, lab, or agency running its own Peek server for trusted reviewers and internal automation.
 
 ## Install
 
@@ -104,7 +106,7 @@ peek list
 peek stats PhiUs-lMbZE_Sw
 peek password PhiUs-lMbZE_Sw --set newpass   # or --clear
 peek delete PhiUs-lMbZE_Sw
-peek export PhiUs-lMbZE_Sw                    # GDPR data export
+peek export PhiUs-lMbZE_Sw                    # export upload data
 peek delete-all                               # delete all your uploads
 ```
 
@@ -134,11 +136,11 @@ peek config show                       show current host + masked token
 peek upload <file.html> [--password <pw> | --password-stdin] [--name <filename>]
 peek list
 peek delete <slug>
-peek delete-all                        delete all your uploads (GDPR)
+peek delete-all                        delete all your uploads
 peek password <slug> --set <pw> | --set-stdin | --clear
 peek stats <slug>
 peek comments <slug>                   list comments on one of your uploads
-peek export <slug>                     export all data for an upload (GDPR)
+peek export <slug>                     export all data for an upload
 peek token create --name <name>        create a user token (admin only)
 peek token list                        list tokens (admin only)
 peek token revoke <id>                 revoke a token by id (admin only)
@@ -228,7 +230,7 @@ The repository is intentionally split into narrow internal packages: `internal/s
 
 ## Web GUI
 
-A browser dashboard at `/login` lets non-technical users upload files or paste HTML, list/delete uploads, set passwords, and view stats. First run starts at a one-time `/setup` URL that creates the initial local admin account. Admins can then enable Google and/or GitHub OAuth from Settings by entering each provider's web client ID and secret. Configure provider callback URLs as:
+A browser dashboard at `/login` lets company users upload files or paste HTML, list/delete uploads, set passwords, and view stats. First run starts at a one-time `/setup` URL that creates the initial local admin account. Admins can then enable Google and/or GitHub OAuth from Settings by entering each provider's web client ID and secret. Configure provider callback URLs as:
 
 ```
 https://peek.example.com/oauth/google/callback

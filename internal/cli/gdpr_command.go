@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-// --- export (GDPR data export) ---
+// --- export (upload data export) ---
 
 func cmdExport(args []string) error {
 	if len(args) != 1 {
@@ -32,7 +32,7 @@ func cmdExport(args []string) error {
 	return nil
 }
 
-// --- delete-all (GDPR right-to-be-forgotten) ---
+// --- delete-all (upload data deletion) ---
 
 func cmdDeleteAll(args []string) error {
 	cfg, err := LoadConfig()

@@ -73,8 +73,8 @@ Usage:
   peek password <slug> --clear         remove protection
   peek stats <slug>
   peek comments <slug>                 list comments on one of your uploads
-  peek export <slug>                   export all data for an upload (GDPR)
-  peek delete-all                      delete all your uploads (GDPR right-to-be-forgotten)
+  peek export <slug>                   export all data for an upload
+  peek delete-all                      delete all your uploads
   peek token create --name <name>      create a new user token (admin only)
   peek token list                      list tokens (admin only)
   peek token revoke <id>               revoke a token by id (admin only)

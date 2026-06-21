@@ -2,6 +2,10 @@
 
 Peek is a small Go application, but the codebase is organized as if it needs to be reviewed, operated, and extended by people who care about clear ownership boundaries.
 
+## Product Frame
+
+Peek is an internal company tool, not a SaaS product. Architecture choices should optimize for a single organization or trusted team running its own server: simple deployment, clear admin controls, SSO-friendly login, auditability, backup/restore, retention, and safe handling of uploaded HTML. Do not introduce billing, tenant isolation layers, public signup funnels, marketplace flows, or growth-product abstractions unless the project explicitly changes direction.
+
 ## Package Boundaries
 
 - `cmd/peekd` is only the server executable entrypoint. It should stay thin and delegate runtime behavior to `internal/peekd`.
