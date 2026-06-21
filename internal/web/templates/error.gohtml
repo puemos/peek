@@ -1,0 +1,23 @@
+{{define "error"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} &mdash; Peek</title>
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body class="hn-dash">
+<header class="hn-dash-header">
+  <div class="hn-dash-header-inner">
+    <a href="/" class="hn-dash-logo">Peek</a>
+  </div>
+</header>
+<main class="hn-dash-main">
+  <section class="hn-card">
+    <h2>{{.Title}}</h2>
+    <p class="hn-muted">{{.Message}}</p>
+    <p><a href="/dashboard" class="hn-link">Open dashboard</a></p>
+  </section>
+</main>
+</body>
+</html>{{end}}

@@ -140,6 +140,40 @@ func TestDashboardStatsReportsVisitQueryFailure(t *testing.T) {
 	}
 }
 
+func TestDashboardStatsMissingUploadRendersWebError(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	account, err := store.CreateAccount("user@example.test", "User", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, renderer: renderer, secret: strings.Repeat("0", 64)}
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/stats/missing", nil)
+	req.SetPathValue("slug", "missing")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboardStats(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "Stats not found") {
+		t.Fatalf("stats page did not render web error: %s", rec.Body.String())
+	}
+}
+
 func TestDashboardDeleteStopsWhenDatabaseDeleteFails(t *testing.T) {
 	s, store, storage, accountID := newDashboardDeleteTestServer(t)
 	seedDashboardDeleteUpload(t, store, accountID)

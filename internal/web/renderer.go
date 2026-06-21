@@ -16,6 +16,7 @@ const (
 	TemplatePage         = "page"
 	TemplateGate         = "gate"
 	TemplateIndex        = "index"
+	TemplateError        = "error"
 	TemplateCLILogin     = "cli-login"
 	TemplateCLILoginDone = "cli-login-done"
 )
@@ -177,6 +178,11 @@ type GateData struct {
 
 type IndexData struct {
 	BaseURL string
+}
+
+type ErrorData struct {
+	Title   string
+	Message string
 }
 
 type CLILoginData struct {

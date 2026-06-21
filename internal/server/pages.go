@@ -15,7 +15,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
 	}
 	if u.PasswordHash != "" && !s.pageAuthorized(r, u) {
@@ -38,7 +38,7 @@ func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
 	}
 	if u.PasswordHash == "" {
@@ -46,7 +46,7 @@ func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		s.renderWebError(w, http.StatusBadRequest, "Bad request", "The password form could not be read.")
 		return
 	}
 	pw := r.FormValue("password")
@@ -122,7 +122,7 @@ func writeRawHTML(w http.ResponseWriter, slug string, data []byte) {
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Page not found", "The requested page does not exist.")
 		return
 	}
 	if s.setupRequired() {

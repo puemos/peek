@@ -63,6 +63,11 @@ func TestRendererExecutesAllTemplates(t *testing.T) {
 			want: "CLI quick start",
 		},
 		{
+			name: TemplateError,
+			data: ErrorData{Title: "Page not found", Message: "This shared page does not exist."},
+			want: "Page not found",
+		},
+		{
 			name: TemplateCLILogin,
 			data: CLILoginData{Code: "ABCDEFGH", CSRF: "csrf", User: "Admin"},
 			want: "Approve CLI login",

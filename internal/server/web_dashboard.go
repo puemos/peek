@@ -191,11 +191,11 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Stats not found", "Stats for this page could not be found.")
 		return
 	}
 	if u.OwnerAccountID != owner.ID && !owner.IsAdmin {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Stats not found", "Stats for this page could not be found.")
 		return
 	}
 	total, unique, err := s.store.CountVisits(u.ID)

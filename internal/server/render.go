@@ -3,6 +3,8 @@ package server
 import (
 	"log/slog"
 	"net/http"
+
+	webui "github.com/puemos/peek/internal/web"
 )
 
 func (s *Server) renderHTML(w http.ResponseWriter, status int, templateName string, data any) {
@@ -17,4 +19,13 @@ func (s *Server) renderHTML(w http.ResponseWriter, status int, templateName stri
 	if _, err := w.Write(body); err != nil {
 		slog.Error("write html response", "template", templateName, "err", err)
 	}
+}
+
+func (s *Server) renderWebError(w http.ResponseWriter, status int, title, message string) {
+	noCache(w)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
+	s.renderHTML(w, status, webui.TemplateError, webui.ErrorData{
+		Title:   title,
+		Message: message,
+	})
 }
