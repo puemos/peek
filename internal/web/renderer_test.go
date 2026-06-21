@@ -86,3 +86,29 @@ func TestRendererExecutesAllTemplates(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardRendersGenericAndUploadFlashesSeparately(t *testing.T) {
+	renderer, err := NewRenderer()
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	body, err := renderer.Execute(TemplateDashboard, DashboardData{
+		CSRF:             "csrf",
+		User:             "Admin",
+		FlashSuccess:     "settings saved",
+		UploadSuccessURL: "http://example.test/p/page",
+	})
+	if err != nil {
+		t.Fatalf("execute dashboard: %v", err)
+	}
+	html := string(body)
+	if !strings.Contains(html, "settings saved") {
+		t.Fatalf("dashboard did not render generic success: %s", html)
+	}
+	if !strings.Contains(html, "Uploaded! Share link:") || !strings.Contains(html, "http://example.test/p/page") {
+		t.Fatalf("dashboard did not render upload success: %s", html)
+	}
+	if strings.Contains(html, `data-url="settings saved"`) {
+		t.Fatalf("generic success rendered as copyable upload URL: %s", html)
+	}
+}

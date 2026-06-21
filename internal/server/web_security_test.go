@@ -15,7 +15,6 @@ func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
 	body, err := renderer.Execute(webui.TemplateDashboard, dashData{
 		CSRF:             "csrf",
 		User:             "admin",
-		UploadSuccess:    true,
 		UploadSuccessURL: `");alert(1);//`,
 		Uploads: []dashUpload{{
 			Slug:         "abc123",

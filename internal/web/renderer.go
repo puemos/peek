@@ -143,7 +143,7 @@ type DashboardData struct {
 	Accounts         []AccountDashboardRow
 	Uploads          []DashboardUpload
 	UploadError      string
-	UploadSuccess    bool
+	FlashSuccess     string
 	UploadSuccessURL string
 }
 

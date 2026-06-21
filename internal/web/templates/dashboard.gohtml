@@ -22,12 +22,15 @@
 </header>
 
 <main class="hn-dash-main">
-  {{if .UploadSuccess}}
+  {{if .UploadSuccessURL}}
   <div class="hn-flash hn-flash-ok">
     <span>Uploaded! Share link:</span>
     <code>{{.UploadSuccessURL}}</code>
     <button type="button" data-url="{{.UploadSuccessURL}}" class="hn-flash-copy hn-copy-absolute">Copy</button>
   </div>
+  {{end}}
+  {{if .FlashSuccess}}
+  <div class="hn-flash hn-flash-ok">{{.FlashSuccess}}</div>
   {{end}}
   {{if .UploadError}}
   <div class="hn-flash hn-flash-err">{{.UploadError}}</div>

@@ -65,8 +65,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if e := r.URL.Query().Get("err"); e != "" {
 		dashData_.UploadError = e
 	}
-	if url := r.URL.Query().Get("ok"); url != "" {
-		dashData_.UploadSuccess = true
+	if msg := r.URL.Query().Get("ok"); msg != "" {
+		dashData_.FlashSuccess = msg
+	}
+	if url := r.URL.Query().Get("uploaded"); url != "" {
 		dashData_.UploadSuccessURL = url
 	}
 	s.renderHTML(w, http.StatusOK, webui.TemplateDashboard, dashData_)
@@ -136,7 +138,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
 	shareURL := up.URL
-	http.Redirect(w, r, "/dashboard?ok="+url.QueryEscape(shareURL), http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard?uploaded="+url.QueryEscape(shareURL), http.StatusSeeOther)
 }
 
 func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
