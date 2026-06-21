@@ -1,17 +1,20 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/puemos/peek/internal/db"
 	webui "github.com/puemos/peek/internal/web"
+	"golang.org/x/oauth2"
 )
 
 const testSecret = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -158,6 +161,88 @@ func TestOAuthAccountErrorMessageHidesInternalFailures(t *testing.T) {
 				t.Fatalf("message = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFetchGitHubProfileUsesVerifiedPrimaryEmail(t *testing.T) {
+	var sawAuth atomic.Bool
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer token" {
+			sawAuth.Store(true)
+		}
+		if r.Header.Get("Accept") != "application/vnd.github+json" {
+			t.Errorf("accept header = %q", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":42,"login":"octo","name":""}`))
+		case "/emails":
+			_, _ = w.Write([]byte(`[
+				{"email":"secondary@example.com","primary":false,"verified":true},
+				{"email":"PRIMARY@Example.COM","primary":true,"verified":true}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer provider.Close()
+	restoreGitHubURLs(t, provider.URL)
+
+	s := newTestServer(t)
+	profile, err := s.fetchGitHubProfile(context.Background(), testGitHubProviderConfig(), &oauth2.Token{
+		AccessToken: "token",
+		TokenType:   "Bearer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawAuth.Load() {
+		t.Fatal("provider did not receive bearer token")
+	}
+	if profile.Provider != "github" || profile.ProviderUserID != "42" || profile.Email != "primary@example.com" || !profile.EmailVerified || profile.Name != "octo" {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestFetchGitHubProfileRejectsOversizedProviderJSON(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Repeat(" ", oauthJSONBodyLimit+1)))
+	}))
+	defer provider.Close()
+	restoreGitHubURLs(t, provider.URL)
+
+	s := newTestServer(t)
+	_, err := s.fetchGitHubProfile(context.Background(), testGitHubProviderConfig(), &oauth2.Token{
+		AccessToken: "token",
+		TokenType:   "Bearer",
+	})
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("error = %v, want oversized response error", err)
+	}
+}
+
+func restoreGitHubURLs(t *testing.T, base string) {
+	t.Helper()
+	oldUserURL, oldEmailsURL := githubUserURL, githubEmailsURL
+	githubUserURL = base + "/user"
+	githubEmailsURL = base + "/emails"
+	t.Cleanup(func() {
+		githubUserURL = oldUserURL
+		githubEmailsURL = oldEmailsURL
+	})
+}
+
+func testGitHubProviderConfig() *oauthProviderConfig {
+	return &oauthProviderConfig{
+		authProvider: authProvider{Key: "github", Name: "GitHub"},
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "http://unused.example/auth",
+			TokenURL: "http://unused.example/token",
+		},
 	}
 }
 
