@@ -11,6 +11,9 @@ import (
 // --- list ---
 
 func cmdList(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: peek list")
+	}
 	cfg, err := LoadConfig()
 	if err != nil {
 		return err
@@ -89,8 +92,13 @@ func cmdPassword(args []string) error {
 		case "--clear":
 			clear = true
 		default:
-			if slug == "" {
+			switch {
+			case strings.HasPrefix(args[i], "-"):
+				return fmt.Errorf("unknown flag: %s", args[i])
+			case slug == "":
 				slug = args[i]
+			default:
+				return fmt.Errorf("unexpected argument: %s", args[i])
 			}
 		}
 	}

@@ -18,6 +18,9 @@ func cmdConfig(args []string) error {
 	case "set":
 		return configSet(args[1:])
 	case "show":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: peek config show")
+		}
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err

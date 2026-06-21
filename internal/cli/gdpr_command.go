@@ -38,6 +38,9 @@ func cmdExport(args []string) error {
 // --- delete-all (upload data deletion) ---
 
 func cmdDeleteAll(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: peek delete-all")
+	}
 	cfg, err := LoadConfig()
 	if err != nil {
 		return err
