@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -139,7 +140,9 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
-	_ = s.storage.Delete(r.Context(), slug)
+	if err := s.storage.Delete(r.Context(), slug); err != nil {
+		slog.Warn("api upload storage cleanup failed", "slug", slug, "err", err)
+	}
 	jsonOK(w, map[string]any{"deleted": slug})
 }
 
@@ -200,9 +203,12 @@ func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) 
 	deleted := 0
 	for _, u := range uploads {
 		if err := s.store.DeleteUpload(u.ID); err != nil {
+			slog.Warn("api upload delete_all db delete failed", "slug", u.Slug, "err", err)
 			continue
 		}
-		_ = s.storage.Delete(r.Context(), u.Slug)
+		if err := s.storage.Delete(r.Context(), u.Slug); err != nil {
+			slog.Warn("api upload delete_all storage cleanup failed", "slug", u.Slug, "err", err)
+		}
 		deleted++
 	}
 	s.auditRequest(r, owner.Name, "upload.delete_all", "count="+strconv.Itoa(deleted))
