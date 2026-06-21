@@ -1,6 +1,8 @@
 package peekd
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,6 +28,42 @@ func TestHealthcheckURL(t *testing.T) {
 				t.Fatalf("healthcheckURL(%q) = %q, want %q", tt.addr, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunHealthcheckReturnsSuccessForHealthyServer(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	if got := runHealthcheck([]string{"--addr", ts.URL}); got != 0 {
+		t.Fatalf("runHealthcheck = %d, want 0", got)
+	}
+}
+
+func TestRunHealthcheckReturnsFailureForUnhealthyServer(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	}))
+	defer ts.Close()
+
+	if got := runHealthcheck([]string{"--addr", ts.URL}); got != 1 {
+		t.Fatalf("runHealthcheck = %d, want 1", got)
+	}
+}
+
+func TestRunHealthcheckReturnsUsageForBadArgs(t *testing.T) {
+	if got := runHealthcheck([]string{"--bad"}); got != 2 {
+		t.Fatalf("runHealthcheck = %d, want 2", got)
 	}
 }
 
