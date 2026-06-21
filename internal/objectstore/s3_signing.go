@@ -5,15 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 )
 
-func (s *S3Storage) signRequest(req *http.Request, key string, body io.Reader) {
+func (s *S3Storage) signRequest(req *http.Request, key string, payload []byte) {
 	t := time.Now().UTC()
 	dateShort := t.Format("20060102")
 	dateLong := t.Format("20060102T150405Z")
@@ -22,7 +20,7 @@ func (s *S3Storage) signRequest(req *http.Request, key string, body io.Reader) {
 
 	req.Header.Set("Host", host)
 	req.Header.Set("X-Amz-Date", dateLong)
-	req.Header.Set("X-Amz-Content-SHA256", s.bodyHash(body))
+	req.Header.Set("X-Amz-Content-SHA256", hashBytes(payload))
 
 	canonicalHeaders, signedHeaders := s.canonicalHeaders(req)
 	canonicalRequest := strings.Join([]string{
@@ -70,18 +68,6 @@ func (s *S3Storage) canonicalHeaders(req *http.Request) (string, string) {
 	return strings.Join(canonLines, ""), strings.Join(names, ";")
 }
 
-func (s *S3Storage) bodyHash(body io.Reader) string {
-	if body == nil {
-		return hashString("")
-	}
-	data, err := io.ReadAll(body)
-	if err != nil {
-		slog.Error("s3 body hash", "err", err)
-		return hashString("")
-	}
-	return hashString(string(data))
-}
-
 func (s *S3Storage) deriveSigningKey(dateShort string) []byte {
 	kDate := s3hmacSha256([]byte("AWS4"+s.secretKey()), []byte(dateShort))
 	kRegion := s3hmacSha256(kDate, []byte(s.region()))
@@ -96,6 +82,10 @@ func s3hmacSha256(key, data []byte) []byte {
 }
 
 func hashString(s string) string {
-	h := sha256.Sum256([]byte(s))
+	return hashBytes([]byte(s))
+}
+
+func hashBytes(b []byte) string {
+	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }

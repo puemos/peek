@@ -17,7 +17,11 @@ type S3Storage struct {
 }
 
 func NewS3Storage(allowPrivateEndpoint bool, getSetting func(string) string) *S3Storage {
-	return &S3Storage{allowPrivateEndpoint: allowPrivateEndpoint, getSetting: getSetting}
+	return &S3Storage{
+		allowPrivateEndpoint: allowPrivateEndpoint,
+		getSetting:           getSetting,
+		client:               newS3HTTPClient(allowPrivateEndpoint),
+	}
 }
 
 func (s *S3Storage) endpoint() string { return s.getSetting("s3_endpoint") }
@@ -75,8 +79,7 @@ func (s *S3Storage) httpClient() *http.Client {
 	if s.client != nil {
 		return s.client
 	}
-	s.client = newS3HTTPClient(s.allowPrivateEndpoint)
-	return s.client
+	return newS3HTTPClient(s.allowPrivateEndpoint)
 }
 
 func (s *S3Storage) putObject(ctx context.Context, key string, data []byte) error {
@@ -86,15 +89,14 @@ func (s *S3Storage) putObject(ctx context.Context, key string, data []byte) erro
 		return err
 	}
 	req.Header.Set("Content-Type", "text/html")
-	s.signRequest(req, key, strings.NewReader(string(data)))
+	s.signRequest(req, key, data)
 	resp, err := s.httpClient().Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("s3 put %s: %s (%s)", key, resp.Status, strings.TrimSpace(string(body)))
+		return fmt.Errorf("s3 put %s: %s (%s)", key, resp.Status, readS3ErrorBody(resp.Body))
 	}
 	return nil
 }
@@ -115,9 +117,9 @@ func (s *S3Storage) getObject(ctx context.Context, key string) (*http.Response, 
 		return nil, os.ErrNotExist
 	}
 	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		body := readS3ErrorBody(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("s3 get %s: %s (%s)", key, resp.Status, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("s3 get %s: %s (%s)", key, resp.Status, body)
 	}
 	return resp, nil
 }
@@ -138,8 +140,15 @@ func (s *S3Storage) deleteObject(ctx context.Context, key string) error {
 		return nil
 	}
 	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("s3 delete %s: %s (%s)", key, resp.Status, strings.TrimSpace(string(body)))
+		return fmt.Errorf("s3 delete %s: %s (%s)", key, resp.Status, readS3ErrorBody(resp.Body))
 	}
 	return nil
+}
+
+func readS3ErrorBody(body io.Reader) string {
+	data, err := io.ReadAll(io.LimitReader(body, 1024))
+	if err != nil {
+		return "read response body: " + err.Error()
+	}
+	return strings.TrimSpace(string(data))
 }

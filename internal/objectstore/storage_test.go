@@ -1,7 +1,10 @@
 package objectstore
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
@@ -130,5 +133,50 @@ func TestS3HTTPClientAllowsPrivateDialWithOptIn(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestNewS3StorageInitializesHTTPClient(t *testing.T) {
+	storage := NewS3Storage(false, func(string) string { return "" })
+	if storage.client == nil {
+		t.Fatal("expected S3 storage to initialize its HTTP client")
+	}
+	if got := storage.httpClient(); got != storage.client {
+		t.Fatal("httpClient did not return the initialized client")
+	}
+}
+
+func TestS3SignRequestHashesPayloadBytes(t *testing.T) {
+	payload := []byte{0, 1, 2, '<', 'h', 't', 'm', 'l', '>'}
+	storage := NewS3Storage(false, func(key string) string {
+		switch key {
+		case "s3_region":
+			return "us-east-1"
+		case "s3_access_key":
+			return "access"
+		case "s3_secret_key":
+			return "secret"
+		default:
+			return ""
+		}
+	})
+	req, err := http.NewRequest(http.MethodPut, "https://s3.example.test/bucket/uploads/page.html", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "text/html")
+
+	storage.signRequest(req, "uploads/page.html", payload)
+
+	sum := sha256.Sum256(payload)
+	if got, want := req.Header.Get("X-Amz-Content-SHA256"), hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("payload hash = %q, want %q", got, want)
+	}
+	gotBody, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("read request body: %v", err)
+	}
+	if !bytes.Equal(gotBody, payload) {
+		t.Fatalf("request body = %q, want %q", gotBody, payload)
 	}
 }
