@@ -222,6 +222,10 @@ Operational endpoints:
 
 Protect `/metrics` at your proxy if the server is reachable from untrusted networks.
 
+## Architecture
+
+The repository is intentionally split into narrow internal packages: `internal/server` owns HTTP routing and request handling, `internal/db` owns SQLite persistence, `internal/objectstore` owns file and S3 storage backends, `internal/web` owns server-side templates and view models, `internal/peekd` owns daemon runtime/flags/backup/healthcheck orchestration, and `internal/cli` owns the terminal client. See [docs/architecture.md](docs/architecture.md) for the package map and local quality gates.
+
 ## Web GUI
 
 A browser dashboard at `/login` lets non-technical users upload files or paste HTML, list/delete uploads, set passwords, and view stats. First run starts at a one-time `/setup` URL that creates the initial local admin account. Admins can then enable Google and/or GitHub OAuth from Settings by entering each provider's web client ID and secret. Configure provider callback URLs as:

@@ -23,7 +23,7 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Coverage
         run: |
-          go test -coverprofile=coverage.out ./... 2>/dev/null || true
+          go test -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out | tail -1
       - name: Vulnerability scan
         run: |
