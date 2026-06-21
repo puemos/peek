@@ -63,12 +63,13 @@ func (fs *FileStorage) Delete(_ context.Context, slug string) error {
 }
 
 type S3Storage struct {
-	getSetting func(string) string
-	client     *http.Client
+	getSetting           func(string) string
+	allowPrivateEndpoint bool
+	client               *http.Client
 }
 
-func NewS3Storage(secret string, getSetting func(string) string) *S3Storage {
-	return &S3Storage{getSetting: func(key string) string {
+func NewS3Storage(secret string, allowPrivateEndpoint bool, getSetting func(string) string) *S3Storage {
+	return &S3Storage{allowPrivateEndpoint: allowPrivateEndpoint, getSetting: func(key string) string {
 		v := getSetting(key)
 		if v == "" {
 			return ""
@@ -99,10 +100,10 @@ func (s *S3Storage) objectKey(slug string) string {
 	return "uploads/" + slug + ".html"
 }
 
-// validateS3Endpoint checks that the endpoint URL is safe — HTTPS (or localhost
-// for dev), not pointing at private/link-local/metadata IPs. This prevents
-// SSRF via the admin-configurable S3 endpoint.
-func validateS3Endpoint(endpoint string) error {
+// validateS3Endpoint checks that the endpoint URL is safe by default: HTTPS
+// only, not pointing at private/link-local/metadata IPs. Private/dev endpoints
+// such as MinIO require an explicit allowPrivateEndpoint opt-in.
+func validateS3Endpoint(endpoint string, allowPrivateEndpoint bool) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid endpoint URL: %w", err)
@@ -112,17 +113,18 @@ func validateS3Endpoint(endpoint string) error {
 		return errors.New("endpoint missing host")
 	}
 
-	// Allow http only for localhost (development); require https otherwise.
-	isLocal := host == "localhost" || host == "127.0.0.1" || host == "::1"
-	if u.Scheme == "http" && !isLocal {
-		return errors.New("S3 endpoint must use HTTPS (http only allowed for localhost)")
-	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return errors.New("S3 endpoint must use http or https scheme")
 	}
+	if u.Scheme == "http" && !allowPrivateEndpoint {
+		return errors.New("S3 endpoint must use HTTPS unless private endpoints are explicitly allowed")
+	}
+	if allowPrivateEndpoint {
+		return nil
+	}
 
 	// Resolve and check for private/metadata IPs (skip for hostnames that
-	// don't resolve — S3 endpoints may use virtual-hosted style).
+	// don't resolve here; the S3 transport validates the dialed endpoint again).
 	if ip := net.ParseIP(host); ip != nil {
 		if isPrivateOrMetadataIP(ip) {
 			return fmt.Errorf("S3 endpoint IP %s is private or link-local", ip)
@@ -183,8 +185,49 @@ func (s *S3Storage) httpClient() *http.Client {
 	if s.client != nil {
 		return s.client
 	}
-	s.client = &http.Client{Timeout: 30 * time.Second}
+	s.client = newS3HTTPClient(s.allowPrivateEndpoint)
 	return s.client
+}
+
+func newS3HTTPClient(allowPrivateEndpoint bool) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = safeS3DialContext(allowPrivateEndpoint)
+	return &http.Client{Timeout: 30 * time.Second, Transport: transport}
+}
+
+func safeS3DialContext(allowPrivateEndpoint bool) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("S3 endpoint %s resolved to no IPs", host)
+		}
+		if !allowPrivateEndpoint {
+			for _, ip := range ips {
+				if isPrivateOrMetadataIP(ip.IP) {
+					return nil, fmt.Errorf("S3 endpoint %s resolved to private or link-local IP %s", host, ip.IP)
+				}
+			}
+		}
+		for _, ip := range ips {
+			if network == "tcp4" && ip.IP.To4() == nil {
+				continue
+			}
+			if network == "tcp6" && ip.IP.To4() != nil {
+				continue
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
+		}
+		return nil, fmt.Errorf("S3 endpoint %s has no address for %s", host, network)
+	}
 }
 
 func (s *S3Storage) putObject(ctx context.Context, key string, data []byte) error {

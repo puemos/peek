@@ -361,3 +361,80 @@ func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
 		t.Fatalf("second CLI consume should fail, got %v", err)
 	}
 }
+
+func TestCreateUploadCheckedEnforcesQuotas(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("owner", "owner", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := s.GetToken("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits := UploadLimits{MaxTotalSize: 15, MaxUploadsPerOwner: 1, MaxStoragePerOwner: 12}
+	if err := s.CreateUploadChecked("one", tok.AccountID, tok.ID, "one.html", 10, "", limits); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if err := s.CreateUploadChecked("two", tok.AccountID, tok.ID, "two.html", 1, "", limits); !errors.Is(err, ErrOwnerUploadCountQuotaExceeded) {
+		t.Fatalf("expected owner count quota, got %v", err)
+	}
+
+	if err := s.CreateToken("second", "second", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tok2, err := s.GetToken("second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateUploadChecked("three", tok2.AccountID, tok2.ID, "three.html", 10, "", limits); !errors.Is(err, ErrTotalQuotaExceeded) {
+		t.Fatalf("expected total quota, got %v", err)
+	}
+}
+
+func TestCheckedAdminUpdatesPreserveLastAdmin(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("admin", "admin", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := s.GetToken("admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAccountAdminChecked(admin.AccountID, false); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("expected last admin error, got %v", err)
+	}
+	if err := s.SetAccountDisabledChecked(admin.AccountID, true); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("expected last admin disable error, got %v", err)
+	}
+
+	if err := s.CreateToken("admin2", "admin2", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAccountAdminChecked(admin.AccountID, false); err != nil {
+		t.Fatalf("demote with second admin: %v", err)
+	}
+}
+
+func TestDeleteTokenCheckedPreservesLastAdminAndAllowsExpiredDelete(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("admin", "admin", true, time.Now().Add(-time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := s.ListTokens()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := tokens[0]
+	if _, err := s.DeleteTokenChecked(admin.ID); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("expected last admin token error, got %v", err)
+	}
+	if err := s.CreateToken("admin2", "admin2", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteTokenChecked(admin.ID); err != nil {
+		t.Fatalf("delete expired admin token with another admin present: %v", err)
+	}
+}

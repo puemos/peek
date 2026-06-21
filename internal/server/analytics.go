@@ -1,14 +1,24 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/puemos/peek/internal/models"
 )
+
+type visitEvent struct {
+	UploadID int64
+	VID      string
+	Name     string
+	IPHash   string
+	UA       string
+}
 
 // visitorID returns the stable visitor id from the hn_vid cookie, setting a
 // fresh long-lived one if absent.
@@ -48,9 +58,30 @@ func (s *Server) recordVisit(r *http.Request, u *models.Upload, vid string) {
 	if len(ua) > 300 {
 		ua = ua[:300]
 	}
-	_ = s.store.RecordVisit(u.ID, vid, name, ipHash, ua)
-	if name != "" {
-		_ = s.store.UpsertVisitor(vid, name)
+	ev := visitEvent{UploadID: u.ID, VID: vid, Name: name, IPHash: ipHash, UA: ua}
+	select {
+	case s.visitQueue <- ev:
+	default:
+		slog.Warn("visit queue full; dropping analytics event", "upload_id", u.ID)
+	}
+}
+
+func (s *Server) startVisitWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-s.visitQueue:
+			if err := s.store.RecordVisit(ev.UploadID, ev.VID, ev.Name, ev.IPHash, ev.UA); err != nil {
+				slog.Warn("record visit failed", "upload_id", ev.UploadID, "err", err)
+				continue
+			}
+			if ev.Name != "" {
+				if err := s.store.UpsertVisitor(ev.VID, ev.Name); err != nil {
+					slog.Warn("upsert visitor failed", "upload_id", ev.UploadID, "err", err)
+				}
+			}
+		}
 	}
 }
 

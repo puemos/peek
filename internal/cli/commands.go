@@ -79,9 +79,11 @@ Usage:
   peek config set --host <url>          set host (use 'login' / --token-stdin for the token)
   peek config show
   peek upload <file.html> [--password <pw>] [--name <filename>]
+  peek upload <file.html> --password-stdin
   peek list
   peek delete <slug>
   peek password <slug> --set <pw>      protect a page
+  peek password <slug> --set-stdin     protect a page, reading password from stdin
   peek password <slug> --clear         remove protection
   peek stats <slug>
   peek comments <slug>                 list comments on one of your uploads
@@ -467,9 +469,10 @@ func configSet(args []string) error {
 
 func cmdUpload(args []string) error {
 	var (
-		file     string
-		password string
-		name     string
+		file          string
+		password      string
+		passwordStdin bool
+		name          string
 	)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -480,6 +483,8 @@ func cmdUpload(args []string) error {
 			}
 			password = args[i+1]
 			i++
+		case a == "--password-stdin":
+			passwordStdin = true
 		case a == "--name":
 			if i+1 >= len(args) {
 				return fmt.Errorf("--name requires a value")
@@ -497,6 +502,19 @@ func cmdUpload(args []string) error {
 	}
 	if file == "" {
 		return fmt.Errorf("usage: peek upload <file.html> [--password <pw>]")
+	}
+	if password != "" && passwordStdin {
+		return fmt.Errorf("use only one of --password or --password-stdin")
+	}
+	if passwordStdin {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		password = strings.TrimSpace(line)
+		if password == "" {
+			return fmt.Errorf("no password provided on stdin")
+		}
 	}
 
 	cfg, err := LoadConfig()
@@ -528,17 +546,24 @@ func cmdUpload(args []string) error {
 		if _, err := io.Copy(fw, f); err != nil {
 			return err
 		}
-		_ = mw.WriteField("password", password)
-		mw.Close()
+		if err := mw.WriteField("password", password); err != nil {
+			return err
+		}
+		if err := mw.Close(); err != nil {
+			return err
+		}
 		resp, err = c.req("POST", "/api/upload", &buf, mw.FormDataContentType())
+		if err != nil {
+			return err
+		}
 	} else {
 		if name == "" {
 			name = filepath.Base(file)
 		}
 		resp, err = c.req("POST", "/api/upload?filename="+url.QueryEscape(name), f, "text/html")
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	defer resp.Body.Close()
 	var out struct {
@@ -619,9 +644,10 @@ func cmdDelete(args []string) error {
 
 func cmdPassword(args []string) error {
 	var (
-		slug     string
-		password string
-		clear    bool
+		slug          string
+		password      string
+		passwordStdin bool
+		clear         bool
 	)
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -631,6 +657,8 @@ func cmdPassword(args []string) error {
 			}
 			password = args[i+1]
 			i++
+		case "--set-stdin":
+			passwordStdin = true
 		case "--clear":
 			clear = true
 		default:
@@ -640,10 +668,26 @@ func cmdPassword(args []string) error {
 		}
 	}
 	if slug == "" {
-		return fmt.Errorf("usage: peek password <slug> --set <pw>|--clear")
+		return fmt.Errorf("usage: peek password <slug> --set <pw>|--set-stdin|--clear")
+	}
+	if password != "" && passwordStdin {
+		return fmt.Errorf("use only one of --set or --set-stdin")
+	}
+	if clear && (password != "" || passwordStdin) {
+		return fmt.Errorf("use either --clear or a password setter")
+	}
+	if passwordStdin {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		password = strings.TrimSpace(line)
+		if password == "" {
+			return fmt.Errorf("no password provided on stdin")
+		}
 	}
 	if !clear && password == "" {
-		return fmt.Errorf("use --set <pw> or --clear")
+		return fmt.Errorf("use --set <pw>, --set-stdin, or --clear")
 	}
 	cfg, err := LoadConfig()
 	if err != nil {

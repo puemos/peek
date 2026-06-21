@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,15 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "healthcheck":
+			os.Exit(runHealthcheck(os.Args[2:]))
+		case "backup":
+			os.Exit(runBackup(os.Args[2:]))
+		}
+	}
+
 	addr := flag.String("addr", getenv("PEEK_ADDR", ":7700"), "listen address")
 	dataDir := flag.String("data", getenv("PEEK_DATA", "./data"), "data directory")
 	baseURL := flag.String("base-url", getenv("PEEK_BASE_URL", "http://localhost:7700"), "public base URL")
@@ -33,6 +43,7 @@ func main() {
 	s3Region := flag.String("s3-region", getenv("PEEK_S3_REGION", "us-east-1"), "S3 region")
 	s3AccessKey := flag.String("s3-access-key", getenv("PEEK_S3_ACCESS_KEY", ""), "S3 access key")
 	s3SecretKey := flag.String("s3-secret-key", getenv("PEEK_S3_SECRET_KEY", ""), "S3 secret key")
+	s3AllowPrivateEndpoint := flag.Bool("s3-allow-private-endpoint", getenvBool("PEEK_S3_ALLOW_PRIVATE_ENDPOINT"), "allow private/link-local S3 endpoint addresses for explicit dev deployments")
 
 	maxTotalSize := flag.Int64("max-total-size", getenvInt("PEEK_MAX_TOTAL_SIZE", 0), "max total storage bytes across all uploads (0 = unlimited)")
 	retentionDays := flag.Int("retention-days", getenvIntAsInt("PEEK_RETENTION_DAYS", 0), "auto-delete uploads older than N days (0 = off)")
@@ -51,38 +62,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Subcommand: healthcheck — used by Docker HEALTHCHECK (scratch image has no curl).
-	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		addr := *addr
-		if v := os.Getenv("PEEK_HEALTHCHECK_ADDR"); v != "" {
-			addr = v
-		}
-		client := &http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Get("http://" + addr + "/healthz")
-		if err != nil {
-			os.Exit(1)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
-
-	// Subcommand: backup — snapshot the SQLite DB to a file.
-	if len(os.Args) > 1 && os.Args[1] == "backup" {
-		backupPath := filepath.Join(abs, "peek-backup.db")
-		if len(os.Args) > 2 {
-			backupPath = os.Args[2]
-		}
-		if err := backupDatabase(abs, backupPath); err != nil {
-			fmt.Fprintf(os.Stderr, "backup failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("backup written to %s\n", backupPath)
-		return
-	}
-
 	// Structured JSON logging (parseable by log aggregators).
 	logLevel := slog.LevelInfo
 	if v := os.Getenv("PEEK_LOG_LEVEL"); v == "debug" {
@@ -99,12 +78,13 @@ func main() {
 		Secret:    *secret,
 		MaxUpload: *maxUpload,
 
-		Storage:     *storageFlag,
-		S3Endpoint:  *s3Endpoint,
-		S3Bucket:    *s3Bucket,
-		S3Region:    *s3Region,
-		S3AccessKey: *s3AccessKey,
-		S3SecretKey: *s3SecretKey,
+		Storage:                *storageFlag,
+		S3Endpoint:             *s3Endpoint,
+		S3Bucket:               *s3Bucket,
+		S3Region:               *s3Region,
+		S3AccessKey:            *s3AccessKey,
+		S3SecretKey:            *s3SecretKey,
+		S3AllowPrivateEndpoint: *s3AllowPrivateEndpoint,
 
 		MaxTotalSize:  *maxTotalSize,
 		RetentionDays: *retentionDays,
@@ -146,6 +126,71 @@ func main() {
 		slog.Error("store close", "err", err)
 	}
 	slog.Info("bye")
+}
+
+func runHealthcheck(args []string) int {
+	fs := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	addr := fs.String("addr", getenv("PEEK_HEALTHCHECK_ADDR", getenv("PEEK_ADDR", ":7700")), "healthcheck address")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(healthcheckURL(*addr))
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
+}
+
+func healthcheckURL(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return strings.TrimRight(addr, "/") + "/healthz"
+	}
+	if strings.HasPrefix(addr, ":") {
+		addr = "localhost" + addr
+	}
+	return "http://" + addr + "/healthz"
+}
+
+func runBackup(args []string) int {
+	dataDir, backupPath, err := backupArgs(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "backup: %v\n", err)
+		return 2
+	}
+	if err := backupDatabase(dataDir, backupPath); err != nil {
+		fmt.Fprintf(os.Stderr, "backup failed: %v\n", err)
+		return 1
+	}
+	fmt.Printf("backup written to %s\n", backupPath)
+	return 0
+}
+
+func backupArgs(args []string) (dataDir, backupPath string, err error) {
+	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	data := fs.String("data", getenv("PEEK_DATA", "./data"), "data directory")
+	if err := fs.Parse(args); err != nil {
+		return "", "", err
+	}
+	if fs.NArg() > 1 {
+		return "", "", fmt.Errorf("usage: peekd backup [--data <dir>] [path/to/backup.db]")
+	}
+	abs, err := filepath.Abs(*data)
+	if err != nil {
+		return "", "", fmt.Errorf("data dir: %w", err)
+	}
+	dest := filepath.Join(abs, "peek-backup.db")
+	if fs.NArg() == 1 {
+		dest = fs.Arg(0)
+	}
+	return abs, dest, nil
 }
 
 func getenv(k, d string) string {

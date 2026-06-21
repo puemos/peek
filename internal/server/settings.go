@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 )
 
@@ -73,7 +72,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if k == "s3_endpoint" && v != "" {
-			if err := validateS3Endpoint(v); err != nil {
+			if err := validateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
 				jsonError(w, http.StatusBadRequest, "invalid S3 endpoint: "+err.Error())
 				return
 			}
@@ -112,9 +111,15 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 		v := r.FormValue(k)
 		if meta.IsBool {
 			if v != "" {
-				_ = s.encryptedSetSetting(k, "true")
+				if err := s.encryptedSetSetting(k, "true"); err != nil {
+					http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+					return
+				}
 			} else {
-				_ = s.encryptedSetSetting(k, "")
+				if err := s.encryptedSetSetting(k, ""); err != nil {
+					http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+					return
+				}
 			}
 			continue
 		}
@@ -122,15 +127,21 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 			if meta.IsSecret {
 				continue
 			}
-			_ = s.encryptedSetSetting(k, v)
+			if err := s.encryptedSetSetting(k, v); err != nil {
+				http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+				return
+			}
 		} else {
 			if k == "s3_endpoint" {
-				if err := validateS3Endpoint(v); err != nil {
+				if err := validateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
 					http.Redirect(w, r, "/dashboard?err=invalid+s3+endpoint:+ "+url.PathEscape(err.Error()), http.StatusSeeOther)
 					return
 				}
 			}
-			_ = s.encryptedSetSetting(k, v)
+			if err := s.encryptedSetSetting(k, v); err != nil {
+				http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+				return
+			}
 		}
 	}
 	s.auditRequest(r, owner.Name, "settings.update", "via dashboard")
@@ -148,39 +159,6 @@ func (s *Server) dashboardSettingsMap() map[string]string {
 		}
 	}
 	return raw
-}
-
-func settingsToInt64(raw map[string]string, key string, def int64) int64 {
-	v, ok := raw[key]
-	if !ok || v == "" {
-		return def
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-func settingsToInt(raw map[string]string, key string, def int) int {
-	v, ok := raw[key]
-	if !ok || v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-func (s *Server) settingsSummary() map[string]any {
-	raw := s.dashboardSettingsMap()
-	return map[string]any{
-		"MaxUpload":     humanSize(settingsToInt64(raw, "max_upload", 2<<20)),
-		"MaxTotalSize":  humanSize(settingsToInt64(raw, "max_total_size", 0)),
-		"RetentionDays": settingsToInt(raw, "retention_days", 0),
-	}
 }
 
 func dashboardSettingsRows(raw map[string]string) []settingsRow {

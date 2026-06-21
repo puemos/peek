@@ -166,7 +166,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	vid := s.visitorID(w, r)
-	go s.recordVisit(r, u, vid)
+	s.recordVisit(r, u, vid)
 
 	rawURL := "/raw/" + slug + "?t=" + makeViewToken(s.secret, slug, vid) + "&v=" + vid
 	d := pageData{

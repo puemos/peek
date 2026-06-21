@@ -16,6 +16,10 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	s.serveAsset(w, r, "assets/app.js", "text/javascript; charset=utf-8")
 }
 
+func (s *Server) handleDashboardJS(w http.ResponseWriter, r *http.Request) {
+	s.serveAsset(w, r, "assets/dashboard.js", "text/javascript; charset=utf-8")
+}
+
 func (s *Server) handleStyle(w http.ResponseWriter, r *http.Request) {
 	s.serveAsset(w, r, "assets/style.css", "text/css; charset=utf-8")
 }

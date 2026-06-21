@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -22,9 +23,8 @@ const (
 
 // dashboardCSP is the Content-Security-Policy for the management UI.
 // It restricts all resources to same-origin, with no inline scripts/styles
-// beyond what the templates use (none — all JS/CSS is served from /app.js,
-// /style.css, /dashboard.css).
-const dashboardCSP = "default-src 'self'; style-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+// beyond what the templates use (none; all JS/CSS is served as static assets).
+const dashboardCSP = "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
 
 // --- templates ---
 
@@ -131,7 +131,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
   <div class="hn-flash hn-flash-ok">
     <span>Uploaded! Share link:</span>
     <code>{{.UploadSuccessURL}}</code>
-    <button type="button" onclick="hnCopyLink(this, {{.UploadSuccessURLJSON}})" class="hn-flash-copy">Copy</button>
+    <button type="button" data-url="{{.UploadSuccessURL}}" class="hn-flash-copy hn-copy-absolute">Copy</button>
   </div>
   {{end}}
   {{if .UploadError}}
@@ -143,8 +143,8 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
     <form method="POST" action="/dashboard/upload" enctype="multipart/form-data" class="hn-upload-form">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
       <div class="hn-tabs">
-        <label><input type="radio" name="mode" value="file" checked onchange="hnToggle(this)"> Choose file</label>
-        <label><input type="radio" name="mode" value="paste" onchange="hnToggle(this)"> Paste HTML</label>
+        <label><input type="radio" name="mode" value="file" checked> Choose file</label>
+        <label><input type="radio" name="mode" value="paste"> Paste HTML</label>
       </div>
       <div id="hn-file-input">
         <label class="hn-file-drop">
@@ -177,10 +177,10 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
           <td class="hn-muted-cell">{{.SizeHuman}}</td>
           <td>{{if .Protected}}<span class="hn-tag hn-tag-on">protected</span>{{else}}<span class="hn-tag">public</span>{{end}}</td>
           <td class="hn-muted-cell">{{.CreatedHuman}}</td>
-          <td><a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" onclick="hnCopyLink(this, &quot;/p/{{.Slug}}&quot;)" class="hn-copy-btn" title="Copy link">copy</button></td>
+          <td><a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative" title="Copy link">copy</button></td>
           <td class="hn-actions">
             <a href="/dashboard/stats/{{.Slug}}" class="hn-btn-sm">stats</a>
-            <form method="POST" action="/dashboard/delete/{{.Slug}}" onsubmit="return confirm('Delete {{.Filename}}? This cannot be undone.')">
+            <form method="POST" action="/dashboard/delete/{{.Slug}}" data-confirm="Delete {{.Filename}}? This cannot be undone.">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <button type="submit" class="hn-btn-sm hn-btn-danger">delete</button>
             </form>
@@ -216,7 +216,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
           <td>{{.Email}}</td>
           <td><span class="hn-tag {{if eq .Status "pending"}}hn-tag-on{{end}}">{{.Status}}</span></td>
           <td class="hn-muted-cell">{{.Expires}}</td>
-          <td>{{if .Link}}<code>{{.Link}}</code> <button type="button" data-url="{{.Link}}" onclick="hnCopyAbsolute(this, this.dataset.url)" class="hn-copy-btn">copy</button>{{else}}<span class="hn-muted-cell">{{.Status}}</span>{{end}}</td>
+          <td>{{if .Link}}<code>{{.Link}}</code> <button type="button" data-url="{{.Link}}" class="hn-copy-btn hn-copy-absolute">copy</button>{{else}}<span class="hn-muted-cell">{{.Status}}</span>{{end}}</td>
           <td class="hn-actions">
             {{if .CanRevoke}}
             <form method="POST" action="/dashboard/invites/revoke/{{.ID}}">
@@ -286,11 +286,7 @@ var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype htm
   </section>
   {{end}}
 </main>
-<script>
-function hnToggle(el){var f=document.getElementById('hn-file-input'),p=document.getElementById('hn-paste-input');if(el.value==='file'){f.hidden=false;p.hidden=true;}else{f.hidden=true;p.hidden=false;}}
-function hnCopyLink(btn,url){navigator.clipboard.writeText(location.origin+url).then(function(){btn.textContent='copied!';setTimeout(function(){btn.textContent='copy';},1500);});}
-function hnCopyAbsolute(btn,url){navigator.clipboard.writeText(url).then(function(){btn.textContent='copied!';setTimeout(function(){btn.textContent='copy';},1500);});}
-</script>
+<script src="/dashboard.js"></script>
 </body>
 </html>`))
 
@@ -316,7 +312,7 @@ var statsTmpl = template.Must(template.New("stats").Parse(`<!doctype html>
       <div class="hn-stat"><span class="hn-stat-num">{{.TotalVisits}}</span><span class="hn-stat-label">total visits</span></div>
       <div class="hn-stat"><span class="hn-stat-num">{{.UniqueVisitors}}</span><span class="hn-stat-label">unique visitors</span></div>
     </div>
-    <p class="hn-muted">Share link: <a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" onclick="hnCopyLink(this, &quot;/p/{{.Slug}}&quot;)" class="hn-copy-btn">copy</button></p>
+    <p class="hn-muted">Share link: <a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative">copy</button></p>
   </section>
   <section class="hn-card">
     <h3>Recent visits</h3>
@@ -341,9 +337,7 @@ var statsTmpl = template.Must(template.New("stats").Parse(`<!doctype html>
     {{end}}
   </section>
 </main>
-<script>
-function hnCopyLink(btn,url){navigator.clipboard.writeText(location.origin+url).then(function(){btn.textContent='copied!';setTimeout(function(){btn.textContent='copy';},1500);});}
-</script>
+<script src="/dashboard.js"></script>
 </body>
 </html>`))
 
@@ -389,18 +383,17 @@ type accountDashRow struct {
 }
 
 type dashData struct {
-	CSRF                 string
-	User                 string
-	IsAdmin              bool
-	Settings             map[string]string
-	SettingsMeta         []settingsRow
-	Invites              []inviteDashRow
-	Accounts             []accountDashRow
-	Uploads              []dashUpload
-	UploadError          string
-	UploadSuccess        bool
-	UploadSuccessURL     string
-	UploadSuccessURLJSON template.JS
+	CSRF             string
+	User             string
+	IsAdmin          bool
+	Settings         map[string]string
+	SettingsMeta     []settingsRow
+	Invites          []inviteDashRow
+	Accounts         []accountDashRow
+	Uploads          []dashUpload
+	UploadError      string
+	UploadSuccess    bool
+	UploadSuccessURL string
 }
 
 type statsData struct {
@@ -425,6 +418,10 @@ type loginData struct {
 
 func noCache(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+}
+
+func dashboardError(w http.ResponseWriter, r *http.Request, msg string) {
+	http.Redirect(w, r, "/dashboard?err="+url.QueryEscape(msg), http.StatusSeeOther)
 }
 
 // --- handlers ---
@@ -653,7 +650,6 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if url := r.URL.Query().Get("ok"); url != "" {
 		dashData_.UploadSuccess = true
 		dashData_.UploadSuccessURL = url
-		dashData_.UploadSuccessURLJSON = template.JS("\"" + url + "\"")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	dashboardTmpl.Execute(w, dashData_)
@@ -710,84 +706,24 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if len(data) == 0 {
-		http.Redirect(w, r, "/dashboard?err=empty+content", http.StatusSeeOther)
-		return
-	}
-	if !looksLikeHTML(data) {
-		http.Redirect(w, r, "/dashboard?err=file+does+not+look+like+HTML", http.StatusSeeOther)
-		return
-	}
-
-	maxTotalSize := s.settingInt64("max_total_size", 0)
-	if maxTotalSize > 0 {
-		currentTotal, err := s.store.SumUploadSizes()
-		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=db+error", http.StatusSeeOther)
-			return
-		}
-		if currentTotal+int64(len(data)) > maxTotalSize {
-			http.Redirect(w, r, "/dashboard?err=total+storage+quota+exceeded", http.StatusSeeOther)
-			return
-		}
-	}
-
-	// Per-token quotas (0 = unlimited).
-	maxUploadsPerToken := s.settingInt("max_uploads_per_token", 0)
-	if maxUploadsPerToken > 0 {
-		count, err := s.store.CountUploadsByOwner(owner.ID)
-		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=db+error", http.StatusSeeOther)
-			return
-		}
-		if count >= maxUploadsPerToken {
-			http.Redirect(w, r, "/dashboard?err=upload+count+quota+exceeded", http.StatusSeeOther)
-			return
-		}
-	}
-	maxStoragePerToken := s.settingInt64("max_storage_per_token", 0)
-	if maxStoragePerToken > 0 {
-		ownerTotal, err := s.store.SumUploadSizesByOwner(owner.ID)
-		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=db+error", http.StatusSeeOther)
-			return
-		}
-		if ownerTotal+int64(len(data)) > maxStoragePerToken {
-			http.Redirect(w, r, "/dashboard?err=per-token+storage+quota+exceeded", http.StatusSeeOther)
-			return
-		}
-	}
-
-	slug, err := generateSlug(s.store)
+	up, err := s.uploadService().Create(r.Context(), uploadCreateInput{
+		OwnerAccountID: owner.ID,
+		Filename:       filename,
+		Password:       password,
+		Data:           data,
+		Limits:         s.uploadLimits(),
+	})
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=internal+error", http.StatusSeeOther)
-		return
-	}
-	if err := s.storage.Save(r.Context(), slug, data); err != nil {
-		http.Redirect(w, r, "/dashboard?err=storage+failed", http.StatusSeeOther)
-		return
-	}
-	pwHash := ""
-	if password != "" {
-		if !validatePasswordLength(password) {
-			http.Redirect(w, r, "/dashboard?err=password+must+be+72+characters+or+fewer", http.StatusSeeOther)
-			return
+		if ue, ok := err.(*uploadError); ok {
+			dashboardError(w, r, ue.Message)
+		} else {
+			dashboardError(w, r, "upload failed")
 		}
-		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=hash+failed", http.StatusSeeOther)
-			return
-		}
-		pwHash = string(h)
-	}
-	if err := s.store.CreateUpload(slug, owner.ID, 0, filename, int64(len(data)), pwHash); err != nil {
-		_ = s.storage.Delete(r.Context(), slug)
-		http.Redirect(w, r, "/dashboard?err=db+failed", http.StatusSeeOther)
 		return
 	}
-	s.auditRequest(r, owner.Name, "upload.create", "slug="+slug+" file="+filename+" size="+strconv.Itoa(len(data)))
-	url := s.baseURL + "/p/" + slug
-	http.Redirect(w, r, "/dashboard?ok="+url, http.StatusSeeOther)
+	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
+	shareURL := up.URL
+	http.Redirect(w, r, "/dashboard?ok="+url.QueryEscape(shareURL), http.StatusSeeOther)
 }
 
 func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {

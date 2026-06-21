@@ -35,6 +35,19 @@ func isHashed(s string) bool {
 	return true
 }
 
+var (
+	ErrTotalQuotaExceeded            = errors.New("total storage quota exceeded")
+	ErrOwnerUploadCountQuotaExceeded = errors.New("owner upload count quota exceeded")
+	ErrOwnerStorageQuotaExceeded     = errors.New("owner storage quota exceeded")
+	ErrLastAdmin                     = errors.New("cannot remove or disable the last active admin")
+)
+
+type UploadLimits struct {
+	MaxTotalSize       int64
+	MaxUploadsPerOwner int
+	MaxStoragePerOwner int64
+}
+
 const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,6 +180,12 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = db.Close()
+		}
+	}()
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
@@ -187,6 +206,7 @@ func Open(path string) (*Store, error) {
 	if _, err := store.Exec(`CREATE INDEX IF NOT EXISTS idx_uploads_owner_account ON uploads(owner_account_id)`); err != nil {
 		return nil, err
 	}
+	closeOnError = false
 	return store, nil
 }
 
@@ -227,7 +247,9 @@ func (s *Store) runMigrations() error {
 		return err
 	}
 	// Mark migration 1 as applied if not already.
-	s.markMigrationApplied(1)
+	if err := s.markMigrationApplied(1); err != nil {
+		return err
+	}
 
 	for _, m := range migrations {
 		if s.isMigrationApplied(m.id) {
@@ -246,7 +268,9 @@ func (s *Store) runMigrations() error {
 				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
 			}
 		}
-		s.markMigrationApplied(m.id)
+		if err := s.markMigrationApplied(m.id); err != nil {
+			return fmt.Errorf("mark migration %d (%s): %w", m.id, m.desc, err)
+		}
 	}
 	return nil
 }
@@ -257,9 +281,10 @@ func (s *Store) isMigrationApplied(id int) bool {
 	return err == nil && n > 0
 }
 
-func (s *Store) markMigrationApplied(id int) {
-	_, _ = s.Exec(`INSERT OR IGNORE INTO schema_migrations(id, applied_at) VALUES(?, ?)`,
+func (s *Store) markMigrationApplied(id int) error {
+	_, err := s.Exec(`INSERT OR IGNORE INTO schema_migrations(id, applied_at) VALUES(?, ?)`,
 		id, time.Now().Unix())
+	return err
 }
 
 // migrateTokenExpiry adds the expires_at column to the tokens table for
@@ -267,8 +292,10 @@ func (s *Store) markMigrationApplied(id int) {
 func (s *Store) migrateTokenExpiry() error {
 	_, err := s.Exec(`ALTER TABLE tokens ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0`)
 	if err != nil {
-		// Column already exists — ignore the error.
-		return nil
+		if isDuplicateColumnError(err) {
+			return nil
+		}
+		return err
 	}
 	return nil
 }
@@ -278,10 +305,16 @@ func (s *Store) migrateTokenExpiry() error {
 func (s *Store) migrateAccountPasswordHash() error {
 	_, err := s.Exec(`ALTER TABLE accounts ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`)
 	if err != nil {
-		// Column already exists — ignore the error.
-		return nil
+		if isDuplicateColumnError(err) {
+			return nil
+		}
+		return err
 	}
 	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "duplicate column")
 }
 
 // migrateTokenHashes upgrades any legacy plaintext token rows to hashes, so an
@@ -370,7 +403,7 @@ func (s *Store) migrateAccounts() error {
 	return nil
 }
 
-func (s *Store) migrateUploadsOwner() error {
+func (s *Store) migrateUploadsOwner() (err error) {
 	hasOwnerAccount, _, err := s.columnInfo("uploads", "owner_account_id")
 	if err != nil {
 		return err
@@ -386,6 +419,11 @@ func (s *Store) migrateUploadsOwner() error {
 	if _, err := s.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
 		return err
 	}
+	defer func() {
+		if _, onErr := s.Exec(`PRAGMA foreign_keys=ON`); err == nil && onErr != nil {
+			err = onErr
+		}
+	}()
 	tx, err := s.Begin()
 	if err != nil {
 		return err
@@ -423,9 +461,6 @@ func (s *Store) migrateUploadsOwner() error {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return err
-	}
-	if _, err := s.Exec(`PRAGMA foreign_keys=ON`); err != nil {
 		return err
 	}
 	return nil
@@ -549,14 +584,102 @@ func (s *Store) SetAccountAdmin(id int64, isAdmin bool) error {
 	return err
 }
 
+func (s *Store) SetAccountAdminChecked(id int64, isAdmin bool) error {
+	tx, err := s.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if !isAdmin {
+		targetAdmin, targetDisabled, err := accountAdminState(tx, id)
+		if err != nil {
+			return err
+		}
+		if targetAdmin && !targetDisabled {
+			n, err := countActiveAdmins(tx)
+			if err != nil {
+				return err
+			}
+			if n <= 1 {
+				return ErrLastAdmin
+			}
+		}
+	}
+	res, err := tx.Exec(`UPDATE accounts SET is_admin=?, updated_at=? WHERE id=?`, boolToInt(isAdmin), time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func (s *Store) SetAccountDisabled(id int64, disabled bool) error {
 	_, err := s.Exec(`UPDATE accounts SET disabled=?, updated_at=? WHERE id=?`, boolToInt(disabled), time.Now().Unix(), id)
 	return err
 }
 
+func (s *Store) SetAccountDisabledChecked(id int64, disabled bool) error {
+	tx, err := s.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if disabled {
+		targetAdmin, targetDisabled, err := accountAdminState(tx, id)
+		if err != nil {
+			return err
+		}
+		if targetAdmin && !targetDisabled {
+			n, err := countActiveAdmins(tx)
+			if err != nil {
+				return err
+			}
+			if n <= 1 {
+				return ErrLastAdmin
+			}
+		}
+	}
+	res, err := tx.Exec(`UPDATE accounts SET disabled=?, updated_at=? WHERE id=?`, boolToInt(disabled), time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func (s *Store) CountAdminAccounts() (int, error) {
 	var n int
 	err := s.QueryRow(`SELECT COUNT(*) FROM accounts WHERE is_admin=1 AND disabled=0`).Scan(&n)
+	return n, err
+}
+
+func accountAdminState(q interface {
+	QueryRow(query string, args ...any) *sql.Row
+}, id int64) (isAdmin, disabled bool, err error) {
+	var adminInt, disabledInt int64
+	err = q.QueryRow(`SELECT is_admin, disabled FROM accounts WHERE id=?`, id).Scan(&adminInt, &disabledInt)
+	return adminInt == 1, disabledInt == 1, err
+}
+
+func countActiveAdmins(q interface {
+	QueryRow(query string, args ...any) *sql.Row
+}) (int, error) {
+	var n int
+	err := q.QueryRow(`SELECT COUNT(*) FROM accounts WHERE is_admin=1 AND disabled=0`).Scan(&n)
 	return n, err
 }
 
@@ -633,9 +756,65 @@ func (s *Store) DeleteToken(id int64) error {
 	return err
 }
 
+func (s *Store) DeleteTokenChecked(id int64) (*models.Token, error) {
+	tx, err := s.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	t := &models.Token{}
+	var isAdmin, disabled, ts, exp int64
+	var email sql.NullString
+	err = tx.QueryRow(`SELECT tk.id,tk.account_id,tk.token,a.name,a.email,a.is_admin,a.disabled,tk.created_at,tk.expires_at
+		FROM tokens tk JOIN accounts a ON a.id=tk.account_id WHERE tk.id=?`, id).
+		Scan(&t.ID, &t.AccountID, &t.Token, &t.Name, &email, &isAdmin, &disabled, &ts, &exp)
+	if err != nil {
+		return nil, err
+	}
+	t.Email = email.String
+	t.IsAdmin = isAdmin == 1
+	t.Disabled = disabled == 1
+	t.CreatedAt = time.Unix(ts, 0)
+	t.ExpiresAt = exp
+
+	if t.IsAdmin && !t.Disabled {
+		n, err := countActiveAdminTokens(tx)
+		if err != nil {
+			return nil, err
+		}
+		if n <= 1 {
+			return nil, ErrLastAdmin
+		}
+	}
+	res, err := tx.Exec(`DELETE FROM tokens WHERE id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, sql.ErrNoRows
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
 func (s *Store) CountAdminTokens() (int, error) {
 	var n int
 	err := s.QueryRow(`SELECT COUNT(*) FROM tokens tk JOIN accounts a ON a.id=tk.account_id WHERE a.is_admin=1 AND a.disabled=0`).Scan(&n)
+	return n, err
+}
+
+func countActiveAdminTokens(q interface {
+	QueryRow(query string, args ...any) *sql.Row
+}) (int, error) {
+	var n int
+	err := q.QueryRow(`SELECT COUNT(*) FROM tokens tk JOIN accounts a ON a.id=tk.account_id WHERE a.is_admin=1 AND a.disabled=0`).Scan(&n)
 	return n, err
 }
 
@@ -678,6 +857,52 @@ func (s *Store) CreateUpload(slug string, ownerAccountID, ownerTokenID int64, fi
 	_, err := s.Exec(`INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
 		slug, ownerAccountID, tokenArg, filename, size, passwordHash, time.Now().Unix())
 	return err
+}
+
+func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits UploadLimits) error {
+	tx, err := s.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if limits.MaxTotalSize > 0 {
+		var total int64
+		if err := tx.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads`).Scan(&total); err != nil {
+			return err
+		}
+		if total+size > limits.MaxTotalSize {
+			return ErrTotalQuotaExceeded
+		}
+	}
+	if limits.MaxUploadsPerOwner > 0 {
+		var count int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM uploads WHERE owner_account_id=?`, ownerAccountID).Scan(&count); err != nil {
+			return err
+		}
+		if count >= limits.MaxUploadsPerOwner {
+			return ErrOwnerUploadCountQuotaExceeded
+		}
+	}
+	if limits.MaxStoragePerOwner > 0 {
+		var total int64
+		if err := tx.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner_account_id=?`, ownerAccountID).Scan(&total); err != nil {
+			return err
+		}
+		if total+size > limits.MaxStoragePerOwner {
+			return ErrOwnerStorageQuotaExceeded
+		}
+	}
+
+	var tokenArg any
+	if ownerTokenID > 0 {
+		tokenArg = ownerTokenID
+	}
+	if _, err := tx.Exec(`INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
+		slug, ownerAccountID, tokenArg, filename, size, passwordHash, time.Now().Unix()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) GetUpload(slug string) (*models.Upload, error) {

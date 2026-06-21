@@ -1,7 +1,9 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -10,6 +12,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/models"
 )
 
@@ -64,86 +67,25 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if len(data) == 0 {
-		jsonError(w, http.StatusBadRequest, "empty file")
-		return
-	}
-	if !looksLikeHTML(data) {
-		jsonError(w, http.StatusUnsupportedMediaType, "file does not look like HTML")
-		return
-	}
-
-	maxTotalSize := s.settingInt64("max_total_size", 0)
-	if maxTotalSize > 0 {
-		currentTotal, err := s.store.SumUploadSizes()
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, "db error")
-			return
-		}
-		if currentTotal+int64(len(data)) > maxTotalSize {
-			jsonError(w, http.StatusRequestEntityTooLarge, "total storage quota exceeded")
-			return
-		}
-	}
-
-	// Per-owner quotas (0 = unlimited). The setting names keep legacy API
-	// compatibility, but OAuth and token users are both grouped by account.
-	maxUploadsPerToken := s.settingInt("max_uploads_per_token", 0)
-	if maxUploadsPerToken > 0 {
-		count, err := s.store.CountUploadsByOwner(owner.AccountID)
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, "db error")
-			return
-		}
-		if count >= maxUploadsPerToken {
-			jsonError(w, http.StatusRequestEntityTooLarge, "per-token upload count quota exceeded")
-			return
-		}
-	}
-	maxStoragePerToken := s.settingInt64("max_storage_per_token", 0)
-	if maxStoragePerToken > 0 {
-		ownerTotal, err := s.store.SumUploadSizesByOwner(owner.AccountID)
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, "db error")
-			return
-		}
-		if ownerTotal+int64(len(data)) > maxStoragePerToken {
-			jsonError(w, http.StatusRequestEntityTooLarge, "per-token storage quota exceeded")
-			return
-		}
-	}
-
-	slug, err := generateSlug(s.store)
+	up, err := s.uploadService().Create(r.Context(), uploadCreateInput{
+		OwnerAccountID: owner.AccountID,
+		OwnerTokenID:   owner.ID,
+		Filename:       filename,
+		Password:       password,
+		Data:           data,
+		Limits:         s.uploadLimits(),
+	})
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "slug generation failed")
-		return
-	}
-	if err := s.storage.Save(r.Context(), slug, data); err != nil {
-		jsonError(w, http.StatusInternalServerError, "storage failed")
-		return
-	}
-
-	pwHash := ""
-	if password != "" {
-		if !validatePasswordLength(password) {
-			jsonError(w, http.StatusBadRequest, "password must be 72 characters or fewer")
-			return
+		if ue, ok := err.(*uploadError); ok {
+			jsonError(w, ue.Status, ue.Message)
+		} else {
+			jsonError(w, http.StatusInternalServerError, "upload failed")
 		}
-		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, "hash failed")
-			return
-		}
-		pwHash = string(h)
-	}
-	if err := s.store.CreateUpload(slug, owner.AccountID, owner.ID, filename, int64(len(data)), pwHash); err != nil {
-		_ = s.storage.Delete(r.Context(), slug)
-		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
-	s.auditRequest(r, owner.Name, "upload.create", "slug="+slug+" file="+filename+" size="+strconv.Itoa(len(data)))
+	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
 
-	jsonOK(w, uploadResp{Slug: slug, URL: s.baseURL + "/p/" + slug})
+	jsonOK(w, uploadResp{Slug: up.Slug, URL: up.URL})
 }
 
 func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
@@ -455,23 +397,16 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "bad token id")
 		return
 	}
-	t, err := s.store.GetTokenByID(id)
-	if err != nil {
+	t, err := s.store.DeleteTokenChecked(id)
+	if errors.Is(err, sql.ErrNoRows) {
 		jsonError(w, http.StatusNotFound, "token not found")
 		return
 	}
-	if t.IsAdmin {
-		n, err := s.store.CountAdminTokens()
-		if err != nil {
-			jsonError(w, http.StatusInternalServerError, "db error")
-			return
-		}
-		if n <= 1 {
-			jsonError(w, http.StatusBadRequest, "cannot revoke the last admin token")
-			return
-		}
+	if errors.Is(err, db.ErrLastAdmin) {
+		jsonError(w, http.StatusBadRequest, "cannot revoke the last admin token")
+		return
 	}
-	if err := s.store.DeleteToken(id); err != nil {
+	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}

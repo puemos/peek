@@ -70,7 +70,7 @@ docker run -d --name peek -p 7700:7700 \
   ghcr.io/puemos/peek:latest
 ```
 
-The `/data` volume holds the SQLite database, uploads, and the signing key — keep it to persist state across restarts. On first run, Peek prints a one-time setup URL. Open it, create the first admin account, then sign in normally. Configure via env vars: `PEEK_ADDR` (default `:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`, `PEEK_MAX_UPLOAD`, `PEEK_SECRET` (for shared-secret deployments and encrypted settings), `PEEK_LOG_LEVEL` (`debug`/`info`/`warn`), `PEEK_MAX_TOTAL_SIZE`, `PEEK_RETENTION_DAYS`, `PEEK_TRUSTED_PROXY`, and the S3 vars listed below. The container runs as a nonroot user (uid `65532`) and includes a `HEALTHCHECK`. If you bind-mount a host directory instead of a named volume, make sure that path is writable by uid `65532`.
+The `/data` volume holds the SQLite database, uploads, and the signing key — keep it to persist state across restarts. On first run, Peek prints a one-time setup URL. Open it, create the first admin account, then sign in normally. Configure via env vars: `PEEK_ADDR` (default `:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`, `PEEK_MAX_UPLOAD`, `PEEK_SECRET` (for shared-secret deployments and encrypted settings), `PEEK_LOG_LEVEL` (`debug`/`info`/`warn`), `PEEK_MAX_TOTAL_SIZE`, `PEEK_RETENTION_DAYS`, `PEEK_TRUSTED_PROXY`, and the S3 vars listed below. Set `PEEK_S3_ALLOW_PRIVATE_ENDPOINT=true` only for explicit dev/private S3-compatible endpoints such as the local MinIO compose profile. The container runs as a nonroot user (uid `65532`) and includes a `HEALTHCHECK`. If you bind-mount a host directory instead of a named volume, make sure that path is writable by uid `65532`.
 
 For a local Docker Compose stack:
 
@@ -131,11 +131,11 @@ peek login [--host <url>]              browser login when available; token fallb
 peek login --token-stdin               read an access token from stdin
 peek login --token-file <path>         read an access token from a file
 peek config show                       show current host + masked token
-peek upload <file.html> [--password <pw>] [--name <filename>]
+peek upload <file.html> [--password <pw> | --password-stdin] [--name <filename>]
 peek list
 peek delete <slug>
 peek delete-all                        delete all your uploads (GDPR)
-peek password <slug> --set <pw> | --clear
+peek password <slug> --set <pw> | --set-stdin | --clear
 peek stats <slug>
 peek comments <slug>                   list comments on one of your uploads
 peek export <slug>                     export all data for an upload (GDPR)
@@ -167,6 +167,7 @@ peek version                           show version
 | `--s3-region`      | `PEEK_S3_REGION`      | `us-east-1`             | S3 region                                                                                               |
 | `--s3-access-key`  | `PEEK_S3_ACCESS_KEY`  | _(empty)_               | S3 access key                                                                                           |
 | `--s3-secret-key`  | `PEEK_S3_SECRET_KEY`  | _(empty)_               | S3 secret key, encrypted in settings after initialization                                               |
+| `--s3-allow-private-endpoint` | `PEEK_S3_ALLOW_PRIVATE_ENDPOINT` | `false` | Allow private/link-local S3 endpoints for explicit dev deployments such as local MinIO.                  |
 
 `peekd --version` prints the server version. `PEEK_DATA=./data peekd backup [path/to/backup.db]` writes a consistent SQLite snapshot using `VACUUM INTO`. `peekd healthcheck` checks `/healthz`; set `PEEK_HEALTHCHECK_ADDR=host:port` when the probe should target a specific address.
 

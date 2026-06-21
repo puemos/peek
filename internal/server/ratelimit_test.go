@@ -23,8 +23,11 @@ func TestLimiterAllowsUpToMax(t *testing.T) {
 
 func TestLimiterResetsAfterWindow(t *testing.T) {
 	l := newLimiter(2, 50*time.Millisecond)
-	if !l.allow("k") || !l.allow("k") {
-		t.Fatalf("first two requests should be allowed")
+	if !l.allow("k") {
+		t.Fatalf("first request should be allowed")
+	}
+	if !l.allow("k") {
+		t.Fatalf("second request should be allowed")
 	}
 	if l.allow("k") {
 		t.Fatalf("third request should be rejected before window reset")

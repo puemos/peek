@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/puemos/peek/internal/db"
@@ -32,12 +33,13 @@ type Config struct {
 	Secret    string
 	MaxUpload int64
 
-	Storage     string
-	S3Endpoint  string
-	S3Bucket    string
-	S3Region    string
-	S3AccessKey string
-	S3SecretKey string
+	Storage                string
+	S3Endpoint             string
+	S3Bucket               string
+	S3Region               string
+	S3AccessKey            string
+	S3SecretKey            string
+	S3AllowPrivateEndpoint bool
 
 	MaxTotalSize  int64
 	RetentionDays int
@@ -53,6 +55,10 @@ type Server struct {
 	storage Storage
 	secure  bool
 
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
 	loginLimiter    *limiter
 	commentLimiter  *limiter
 	uploadLimiter   *limiter
@@ -60,7 +66,9 @@ type Server struct {
 	globalLimiter   *limiter
 	cliLoginLimiter *limiter
 
-	trustedProxy bool
+	trustedProxy           bool
+	s3AllowPrivateEndpoint bool
+	visitQueue             chan visitEvent
 }
 
 func New(cfg Config) (*Server, error) {
@@ -83,6 +91,12 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	closeStoreOnError := true
+	defer func() {
+		if closeStoreOnError {
+			_ = store.Close()
+		}
+	}()
 
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	if _, err := bootstrapSetup(store, cfg.DataDir, baseURL); err != nil {
@@ -108,7 +122,12 @@ func New(cfg Config) (*Server, error) {
 
 	var st Storage
 	if storageBackend == "s3" {
-		st = NewS3Storage(secret, func(key string) string {
+		if endpoint, err := store.GetSetting("s3_endpoint"); err == nil && endpoint != "" {
+			if err := validateS3Endpoint(endpoint, cfg.S3AllowPrivateEndpoint); err != nil {
+				return nil, err
+			}
+		}
+		st = NewS3Storage(secret, cfg.S3AllowPrivateEndpoint, func(key string) string {
 			v, _ := store.GetSetting(key)
 			return v
 		})
@@ -127,28 +146,42 @@ func New(cfg Config) (*Server, error) {
 		slog.Warn("base URL is not https — tokens and cookies sent in clear. Use a TLS reverse proxy.", "base_url", baseURL)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	srv := &Server{
-		store:           store,
-		secret:          secret,
-		baseURL:         baseURL,
-		dataDir:         cfg.DataDir,
-		storage:         st,
-		secure:          secure,
-		loginLimiter:    newLimiter(10, time.Minute),
-		commentLimiter:  newLimiter(30, time.Minute),
-		uploadLimiter:   newLimiter(20, time.Minute),
-		passwordLimiter: newLimiter(10, time.Minute),
-		globalLimiter:   newLimiter(300, time.Minute),
-		cliLoginLimiter: newLimiter(120, time.Minute),
-		trustedProxy:    cfg.TrustedProxy,
+		store:                  store,
+		secret:                 secret,
+		baseURL:                baseURL,
+		dataDir:                cfg.DataDir,
+		storage:                st,
+		secure:                 secure,
+		ctx:                    ctx,
+		cancel:                 cancel,
+		loginLimiter:           newLimiter(10, time.Minute),
+		commentLimiter:         newLimiter(30, time.Minute),
+		uploadLimiter:          newLimiter(20, time.Minute),
+		passwordLimiter:        newLimiter(10, time.Minute),
+		globalLimiter:          newLimiter(300, time.Minute),
+		cliLoginLimiter:        newLimiter(120, time.Minute),
+		trustedProxy:           cfg.TrustedProxy,
+		s3AllowPrivateEndpoint: cfg.S3AllowPrivateEndpoint,
+		visitQueue:             make(chan visitEvent, 256),
 	}
 
 	if !cfg.TrustedProxy && !isLocalBaseURL(baseURL) {
 		slog.Warn("trusted-proxy not set — X-Forwarded-For will be ignored. Enable if behind a reverse proxy.")
 	}
 
-	go srv.startRetentionCleanup()
+	srv.wg.Add(2)
+	go func() {
+		defer srv.wg.Done()
+		srv.startRetentionCleanup(ctx)
+	}()
+	go func() {
+		defer srv.wg.Done()
+		srv.startVisitWorker(ctx)
+	}()
 
+	closeStoreOnError = false
 	return srv, nil
 }
 
@@ -253,21 +286,6 @@ func (s *Server) clearSetupCode() {
 	_ = os.Remove(setupCodePath(s.dataDir))
 }
 
-func (s *Server) ensureSetupCode() (string, error) {
-	if !s.setupRequired() {
-		return "", nil
-	}
-	code := s.readSetupCode()
-	if code != "" {
-		return code, nil
-	}
-	code, err := randID(24)
-	if err != nil {
-		return "", err
-	}
-	return code, os.WriteFile(setupCodePath(s.dataDir), []byte(code+"\n"), 0o600)
-}
-
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -299,6 +317,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /raw/{slug}", s.handleRaw)
 	mux.HandleFunc("GET /bridge.js", s.handleBridge)
 	mux.HandleFunc("GET /app.js", s.handleApp)
+	mux.HandleFunc("GET /dashboard.js", s.handleDashboardJS)
 	mux.HandleFunc("GET /style.css", s.handleStyle)
 	mux.HandleFunc("GET /dashboard.css", s.handleDashboardCSS)
 	mux.HandleFunc("GET /", s.handleIndex)
@@ -454,13 +473,22 @@ func initDefaultSettings(store *db.Store, secret string, maxUpload, maxTotalSize
 		}
 		return store.SetSetting(key, val)
 	}
-	_ = upsert("auth_token_login_enabled", "true")
-	_ = upsert("max_upload", strconv.FormatInt(maxUpload, 10))
-	_ = upsert("max_total_size", strconv.FormatInt(maxTotalSize, 10))
-	_ = upsert("retention_days", strconv.Itoa(retentionDays))
+	defaults := map[string]string{
+		"auth_token_login_enabled": "true",
+		"max_upload":               strconv.FormatInt(maxUpload, 10),
+		"max_total_size":           strconv.FormatInt(maxTotalSize, 10),
+		"retention_days":           strconv.Itoa(retentionDays),
+	}
+	for k, v := range defaults {
+		if err := upsert(k, v); err != nil {
+			return err
+		}
+	}
 	for k, v := range s3Defaults {
 		if v != "" {
-			_ = upsert(k, v)
+			if err := upsert(k, v); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -532,6 +560,10 @@ func (s *Server) encryptedGetAllSettings() (map[string]string, error) {
 
 // Close releases server resources (database connections, etc.).
 func (s *Server) Close() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.wg.Wait()
 	if s.store != nil {
 		return s.store.Close()
 	}
@@ -551,19 +583,24 @@ func (s *Server) auditRequest(r *http.Request, actor, action, detail string) {
 	_ = s.store.AddAuditLog(actor, action, detail, ip)
 }
 
-func (s *Server) startRetentionCleanup() {
+func (s *Server) startRetentionCleanup(ctx context.Context) {
 	retentionDays := s.settingInt("retention_days", 0)
 	if retentionDays <= 0 {
 		return
 	}
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
-		s.cleanupExpired()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.cleanupExpired(ctx)
+		}
 	}
 }
 
-func (s *Server) cleanupExpired() {
+func (s *Server) cleanupExpired(ctx context.Context) {
 	retentionDays := s.settingInt("retention_days", 0)
 	if retentionDays <= 0 {
 		return
@@ -575,7 +612,7 @@ func (s *Server) cleanupExpired() {
 		return
 	}
 	for _, u := range uploads {
-		if err := s.storage.Delete(context.Background(), u.Slug); err != nil {
+		if err := s.storage.Delete(ctx, u.Slug); err != nil {
 			slog.Error("retention cleanup: storage delete", "slug", u.Slug, "err", err)
 		}
 		if err := s.store.DeleteUpload(u.ID); err != nil {

@@ -1,10 +1,13 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/puemos/peek/internal/db"
 )
 
 const inviteTTL = 7 * 24 * time.Hour
@@ -96,21 +99,11 @@ func (s *Server) handleDashboardUserAdmin(w http.ResponseWriter, r *http.Request
 		return
 	}
 	makeAdmin := r.FormValue("admin") == "true"
-	if !makeAdmin {
-		target, err := s.store.GetAccountByID(id)
-		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=user+not+found", http.StatusSeeOther)
+	if err := s.store.SetAccountAdminChecked(id, makeAdmin); err != nil {
+		if errors.Is(err, db.ErrLastAdmin) {
+			http.Redirect(w, r, "/dashboard?err=cannot+remove+last+admin", http.StatusSeeOther)
 			return
 		}
-		if target.IsAdmin {
-			n, err := s.store.CountAdminAccounts()
-			if err != nil || n <= 1 {
-				http.Redirect(w, r, "/dashboard?err=cannot+remove+last+admin", http.StatusSeeOther)
-				return
-			}
-		}
-	}
-	if err := s.store.SetAccountAdmin(id, makeAdmin); err != nil {
 		http.Redirect(w, r, "/dashboard?err=user+update+failed", http.StatusSeeOther)
 		return
 	}
@@ -134,21 +127,11 @@ func (s *Server) handleDashboardUserDisabled(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	disabled := r.FormValue("disabled") == "true"
-	if disabled {
-		target, err := s.store.GetAccountByID(id)
-		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=user+not+found", http.StatusSeeOther)
+	if err := s.store.SetAccountDisabledChecked(id, disabled); err != nil {
+		if errors.Is(err, db.ErrLastAdmin) {
+			http.Redirect(w, r, "/dashboard?err=cannot+disable+last+admin", http.StatusSeeOther)
 			return
 		}
-		if target.IsAdmin {
-			n, err := s.store.CountAdminAccounts()
-			if err != nil || n <= 1 {
-				http.Redirect(w, r, "/dashboard?err=cannot+disable+last+admin", http.StatusSeeOther)
-				return
-			}
-		}
-	}
-	if err := s.store.SetAccountDisabled(id, disabled); err != nil {
 		http.Redirect(w, r, "/dashboard?err=user+update+failed", http.StatusSeeOther)
 		return
 	}
