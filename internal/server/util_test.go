@@ -66,7 +66,7 @@ func TestGenerateSlugUniqueness(t *testing.T) {
 			t.Fatalf("expected non-empty slug, got %q", slug)
 		}
 	})
-	 t.Run("retries then free", func(t *testing.T) {
+	t.Run("retries then free", func(t *testing.T) {
 		mock := &mockSlugChecker{counter: 0, returnErrorAfter: 3}
 		slug, err := generateSlug(mock)
 		if err != nil {
