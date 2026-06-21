@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -49,6 +50,34 @@ func TestDecodeRespReportsErrorBodyReadFailure(t *testing.T) {
 	err := decodeResp(resp, nil)
 	if err == nil || !strings.Contains(err.Error(), "read error response") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestLoadConfigReturnsEmptyWhenConfigIsMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Host != "" || cfg.Token != "" {
+		t.Fatalf("config = %+v, want empty", cfg)
+	}
+}
+
+func TestLoadConfigReportsConfigReadFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	path, err := configPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadConfig()
+	if err == nil {
+		t.Fatal("expected config read failure")
 	}
 }
 

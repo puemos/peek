@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +37,10 @@ func LoadConfig() (*Config, error) {
 	}
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return &Config{}, nil
+		if errors.Is(err, os.ErrNotExist) {
+			return &Config{}, nil
+		}
+		return nil, err
 	}
 	var c Config
 	if err := json.Unmarshal(b, &c); err != nil {
