@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,43 @@ func TestAssetURLIncludesContentHash(t *testing.T) {
 	}
 	if got == AssetURL("missing.js") {
 		t.Fatalf("known and missing asset URLs should differ")
+	}
+}
+
+func TestAssetManifestCoversEmbeddedAssets(t *testing.T) {
+	entries, err := assetsFS.ReadDir("assets")
+	if err != nil {
+		t.Fatalf("read embedded assets: %v", err)
+	}
+	embedded := map[string]bool{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		embedded[entry.Name()] = true
+	}
+
+	for name, asset := range assetManifest {
+		if !embedded[name] {
+			t.Fatalf("manifest includes %q, but no embedded asset with that name exists", name)
+		}
+		if path.Base(asset.path) != name {
+			t.Fatalf("manifest key %q points at %q", name, asset.path)
+		}
+		if asset.contentType == "" {
+			t.Fatalf("manifest asset %q has no content type", name)
+		}
+		if asset.hash == "" {
+			t.Fatalf("manifest asset %q has no content hash", name)
+		}
+		if _, err := assetsFS.ReadFile(asset.path); err != nil {
+			t.Fatalf("manifest asset %q cannot be read from %q: %v", name, asset.path, err)
+		}
+		delete(embedded, name)
+	}
+
+	for name := range embedded {
+		t.Fatalf("embedded asset %q is not exposed through assetManifest", name)
 	}
 }
 

@@ -14,6 +14,12 @@ Keep HTTP orchestration in `internal/server`, upload creation rules in `internal
 
 When adding behavior, put the invariant in the package that owns it and test it there. Handlers should translate HTTP concerns into package calls; they should not become the place where storage, persistence, rendering, and validation rules are reimplemented.
 
+## Rendering And Assets
+
+Server-rendered HTML lives in `internal/web/templates/*.gohtml`. Browser CSS and JavaScript used by the app live in `internal/web/assets` and are embedded directly with Go `embed`; there is no bundler or generated app-asset step. If you add a CSS or JS file, add it to `assetManifest` in `internal/web/assets.go` so templates can reference it through `{{asset "name.ext"}}` and immutable cache URLs keep working. The web package tests verify that every embedded asset is represented in the manifest.
+
+The `assets/` directory at the repository root is only README/demo media. `pnpm gen-assets` refreshes the MP4 demo video for project documentation; it does not build the embedded dashboard/viewer assets.
+
 ## Quality Gates
 
 Install the toolchain with:
