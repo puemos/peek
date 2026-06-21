@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/puemos/peek/internal/db"
@@ -212,5 +213,53 @@ func TestParseServeConfigAcceptsCaseInsensitiveBoolEnv(t *testing.T) {
 	}
 	if !cfg.TrustedProxy || !cfg.S3AllowPrivateEndpoint {
 		t.Fatalf("bool config = %+v", cfg)
+	}
+}
+
+func TestParseServeConfigRejectsInvalidOperationalConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "relative base url",
+			args: []string{"--base-url", "localhost:7700"},
+			want: "base-url must be an absolute http or https URL",
+		},
+		{
+			name: "unsupported base url scheme",
+			args: []string{"--base-url", "ftp://peek.example.test"},
+			want: "base-url must use http or https",
+		},
+		{
+			name: "zero upload limit",
+			args: []string{"--max-upload", "0"},
+			want: "max-upload must be greater than zero",
+		},
+		{
+			name: "negative total quota",
+			args: []string{"--max-total-size", "-1"},
+			want: "max-total-size must be zero or greater",
+		},
+		{
+			name: "negative retention",
+			args: []string{"--retention-days", "-1"},
+			want: "retention-days must be zero or greater",
+		},
+		{
+			name: "unknown storage backend",
+			args: []string{"--storage", "postgres"},
+			want: "storage must be file or s3",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append([]string{"--data", t.TempDir()}, tt.args...)
+			_, _, err := parseServeConfig(args)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

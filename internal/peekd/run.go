@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -107,6 +108,9 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 	if *showVersion {
 		return serveConfig{}, true, nil
 	}
+	if err := validateServeConfig(*baseURL, *maxUpload, *storageFlag, *maxTotalSize, *retentionDays); err != nil {
+		return serveConfig{}, false, err
+	}
 
 	abs, err := filepath.Abs(*dataDir)
 	if err != nil {
@@ -131,6 +135,29 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 		RetentionDays: *retentionDays,
 		TrustedProxy:  *trustedProxy,
 	}, false, nil
+}
+
+func validateServeConfig(baseURL string, maxUpload int64, storage string, maxTotalSize int64, retentionDays int) error {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("base-url must be an absolute http or https URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("base-url must use http or https")
+	}
+	if maxUpload <= 0 {
+		return fmt.Errorf("max-upload must be greater than zero")
+	}
+	if maxTotalSize < 0 {
+		return fmt.Errorf("max-total-size must be zero or greater")
+	}
+	if retentionDays < 0 {
+		return fmt.Errorf("retention-days must be zero or greater")
+	}
+	if storage != "file" && storage != "s3" {
+		return fmt.Errorf("storage must be file or s3")
+	}
+	return nil
 }
 
 func runServe(cfg serveConfig) int {
