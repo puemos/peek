@@ -44,6 +44,12 @@ func TestLogoutRejectsInvalidCSRFWithoutClearingSession(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d", rec.Code)
 	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "Your logout request could not be verified.") {
+		t.Fatalf("logout did not render web error: %s", rec.Body.String())
+	}
 	if got := rec.Result().Cookies(); hasCookie(got, sessionCookie) {
 		t.Fatalf("invalid logout cleared session cookie: %+v", got)
 	}

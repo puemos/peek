@@ -131,7 +131,7 @@ func (s *Server) renderLoginForm(w http.ResponseWriter, status int, errMsg strin
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid session", http.StatusBadRequest)
+		s.renderWebError(w, http.StatusBadRequest, "Invalid session", "Your logout request could not be verified.")
 		return
 	}
 	validCSRF, err := s.validateCSRF(r, w, r.FormValue("csrf"))
@@ -140,7 +140,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validCSRF {
-		http.Error(w, "invalid session", http.StatusBadRequest)
+		s.renderWebError(w, http.StatusBadRequest, "Invalid session", "Your logout request could not be verified.")
 		return
 	}
 	s.setCookie(w, &http.Cookie{

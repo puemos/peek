@@ -18,7 +18,7 @@ func (s *Server) handleInviteLink(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.PathValue("token"))
 	inv, err := s.store.GetInviteByToken(raw)
 	if err != nil || !invitePending(inv) {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Invite not found", "This invite link is invalid, expired, or already used.")
 		return
 	}
 	s.setCookie(w, &http.Cookie{

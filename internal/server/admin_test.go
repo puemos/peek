@@ -13,7 +13,27 @@ import (
 	"time"
 
 	"github.com/puemos/peek/internal/db"
+	webui "github.com/puemos/peek/internal/web"
 )
+
+func TestInviteLinkMissingTokenRendersWebError(t *testing.T) {
+	s, _, _ := newAdminTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/invite/missing", nil)
+	req.SetPathValue("token", "missing")
+	rec := httptest.NewRecorder()
+
+	s.handleInviteLink(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "Invite not found") {
+		t.Fatalf("invite error did not render web page: %s", rec.Body.String())
+	}
+}
 
 func TestDashboardRevokeInviteRejectsMissingInvite(t *testing.T) {
 	s, _, accountID := newAdminTestServer(t)
@@ -87,7 +107,11 @@ func newAdminTestServer(t *testing.T) (*Server, *db.Store, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Server{store: store, secret: strings.Repeat("0", 64)}, store, account.ID
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Server{store: store, renderer: renderer, secret: strings.Repeat("0", 64)}, store, account.ID
 }
 
 func dashboardInviteRequest(s *Server, accountID int64, id string) *http.Request {
