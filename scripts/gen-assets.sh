@@ -35,6 +35,7 @@ command -v go >/dev/null || { echo "error: go not found"; exit 1; }
 command -v node >/dev/null || { echo "error: node not found"; exit 1; }
 command -v ffmpeg >/dev/null || { echo "error: ffmpeg not found"; exit 1; }
 command -v ffprobe >/dev/null || { echo "error: ffprobe not found"; exit 1; }
+command -v sqlite3 >/dev/null || { echo "error: sqlite3 not found"; exit 1; }
 node -e "import('playwright-core')" >/dev/null 2>&1 || { echo "error: Playwright not installed; run: pnpm install"; exit 1; }
 if [ -z "${CHROME:-}" ]; then
   for c in \
@@ -110,6 +111,20 @@ SLUG=$(printf '%s' "$UP" | sed -n 's/.*"slug":"\([^"]*\)".*/\1/p')
 printf '<!doctype html><h1>Release checklist</h1><p>v2 freeze tasks.</p>' | \
   api --data-binary @- -H "Content-Type: text/html" \
   "http://localhost:$PORT/api/upload?filename=release-checklist" >/dev/null
+
+echo "› seeding fake page views for sparkline"
+UPLOAD_ID=$(sqlite3 "$DATA/peek.db" "SELECT id FROM uploads WHERE slug='$SLUG'")
+NOW=$(date +%s)
+{
+  for d in 0 1 2 3 4 5 6; do
+    DAY=$((NOW - (6 - d) * 86400))
+    N=$(( (d + 1) * 2 ))
+    for v in $(seq 1 $N); do
+      TS=$((DAY + v * 3600 + RANDOM % 7200))
+      echo "INSERT INTO visits(upload_id,visitor_cookie,ip,user_agent,visited_at) VALUES($UPLOAD_ID,'demo-$((RANDOM%20))','','',$TS);"
+    done
+  done
+} | sqlite3 "$DATA/peek.db"
 
 echo "› recording demo"
 BASE="http://localhost:$PORT" SLUG="$SLUG" VIDEO_RAW="$RAW_VIDEO" \

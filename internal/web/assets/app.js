@@ -35,7 +35,13 @@
     nameModal: $("hn-name-modal"),
     nameForm: $("hn-name-form"),
     nameModalInput: $("hn-name-input"),
-    nameSkip: $("hn-name-skip")
+    nameSkip: $("hn-name-skip"),
+    viewsBtn: $("hn-views-btn"),
+    viewsCount: $("hn-views-count"),
+    sparkline: $("hn-sparkline"),
+    sparklineSVG: $("hn-sparkline-svg"),
+    sparklineTotal: document.querySelector(".hn-sparkline-total"),
+    sparklineUnique: document.querySelector(".hn-sparkline-unique")
   };
 
   var state = {
@@ -43,7 +49,9 @@
     pendingPick: null,
     commentsLoaded: false,
     comments: [],
-    nameMemory: ""
+    nameMemory: "",
+    viewsData: null,
+    sparklineOpen: false
   };
 
   if (!SLUG || !els.frame || !els.commentBtn || !els.composerForm) {
@@ -405,6 +413,77 @@
     });
   }
 
+  function loadViews() {
+    api("GET", "/api/uploads/" + SLUG + "/views").then(function (d) {
+      state.viewsData = d;
+      els.viewsCount.textContent = d.total;
+      els.viewsCount.classList.toggle("hn-badge-zero", d.total === 0);
+    }).catch(function () {
+      els.viewsCount.textContent = "—";
+    });
+  }
+
+  function renderSparkline(data) {
+    var buckets = data.buckets || [];
+    if (!buckets.length) return;
+    var svg = els.sparklineSVG;
+    var w = 168, h = 48, pad = 4;
+    var maxN = 0;
+    for (var i = 0; i < buckets.length; i++) {
+      if (buckets[i].n > maxN) maxN = buckets[i].n;
+    }
+    if (maxN === 0) maxN = 1;
+    var points = [];
+    for (var i = 0; i < buckets.length; i++) {
+      var x = pad + (i / (buckets.length - 1 || 1)) * (w - pad * 2);
+      var y = h - pad - ((buckets[i].n / maxN) * (h - pad * 2));
+      points.push({ x: x, y: y });
+    }
+
+    var areaTopY = h - pad;
+    var areaD = "M" + points[0].x + "," + points[0].y;
+    for (var i = 1; i < points.length; i++) areaD += " L" + points[i].x + "," + points[i].y;
+    areaD += " L" + (w - pad) + "," + areaTopY + " L" + pad + "," + areaTopY + " Z";
+
+    var lineD = "";
+    for (var i = 0; i < points.length; i++) {
+      lineD += (i === 0 ? "M" : " L") + points[i].x + "," + points[i].y;
+    }
+
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    var ns = "http://www.w3.org/2000/svg";
+    function svgEl(tag, attrs) {
+      var el = document.createElementNS(ns, tag);
+      for (var k in attrs) el.setAttribute(k, attrs[k]);
+      return el;
+    }
+
+    var area = svgEl("path", { class: "hn-sparkline-area", d: areaD });
+    var line = svgEl("path", { class: "hn-sparkline-line", d: lineD });
+    var last = points[points.length - 1];
+    var dot = svgEl("circle", { class: "hn-sparkline-dot", cx: String(last.x), cy: String(last.y), r: "2.5" });
+
+    svg.appendChild(area);
+    svg.appendChild(line);
+    svg.appendChild(dot);
+
+    els.sparklineTotal.textContent = data.total + " views";
+    els.sparklineUnique.textContent = data.unique + " unique";
+  }
+
+  function toggleSparkline() {
+    if (!state.viewsData) return;
+    if (state.sparklineOpen) {
+      els.sparkline.hidden = true;
+      state.sparklineOpen = false;
+    } else {
+      renderSparkline(state.viewsData);
+      els.sparkline.hidden = false;
+      state.sparklineOpen = true;
+    }
+  }
+
   function openPanel() { els.panel.classList.add("hn-panel-open"); }
   function closePanel() {
     els.panel.classList.remove("hn-panel-open");
@@ -492,6 +571,10 @@
     else { openPanel(); setMode(false); }
   });
   els.panelClose.addEventListener("click", closePanel);
+  if (els.viewsBtn) els.viewsBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    toggleSparkline();
+  });
   if (els.exportBtn) els.exportBtn.addEventListener("click", function (e) {
     e.stopPropagation();
     toggleExportMenu();
@@ -507,6 +590,10 @@
   if (els.exportWrap) els.exportWrap.addEventListener("click", function (e) { e.stopPropagation(); });
   document.addEventListener("click", function (e) {
     if (els.exportWrap && !els.exportWrap.contains(e.target)) closeExportMenu();
+    if (state.sparklineOpen && els.viewsBtn && !els.viewsBtn.contains(e.target) && !els.sparkline.contains(e.target)) {
+      els.sparkline.hidden = true;
+      state.sparklineOpen = false;
+    }
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") closeExportMenu();
@@ -575,6 +662,7 @@
   // escape closes the name modal first, otherwise composer / mode / panel
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
+    if (state.sparklineOpen) { els.sparkline.hidden = true; state.sparklineOpen = false; return; }
     if (els.nameModal && !els.nameModal.hidden) { closeNameModal(); return; }
     hideComposer();
     setMode(false);
@@ -583,4 +671,5 @@
 
   els.frame.addEventListener("load", loadComments);
   loadComments();
+  loadViews();
 })();

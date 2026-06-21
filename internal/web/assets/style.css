@@ -315,3 +315,28 @@ html, body {
   text-align: left; font-size: 13px; color: var(--fg-subtle); line-height: 1.8;
 }
 .hn-welcome-box .hn-welcome-code code { color: var(--fg); font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace; font-size: 12px; }
+
+/* sparkline popover — anchored above the island */
+.hn-sparkline {
+  position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; width: 220px;
+  background: rgba(12,12,14,.94);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 0; border-radius: 16px;
+  box-shadow: 0 10px 36px -6px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.09), inset 0 1px 0 rgba(255,255,255,.08);
+  padding: 14px 14px 10px;
+  animation: hn-sparkline-in .18s ease;
+}
+.hn-sparkline[hidden] { display: none; }
+.hn-sparkline-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px; font-size: 12px; font-weight: 500;
+}
+.hn-sparkline-total { color: var(--fg); }
+.hn-sparkline-unique { color: var(--fg-muted); }
+#hn-sparkline-svg { display: block; width: 100%; height: 48px; }
+#hn-sparkline-svg .hn-sparkline-area { fill: var(--accent-soft); }
+#hn-sparkline-svg .hn-sparkline-line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#hn-sparkline-svg .hn-sparkline-dot { fill: var(--accent); }
+@keyframes hn-sparkline-in { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }

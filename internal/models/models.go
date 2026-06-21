@@ -105,3 +105,8 @@ type Stats struct {
 	UniqueVisitors int
 	Recent         []Visit
 }
+
+type VisitBucket struct {
+	Time  time.Time
+	Count int
+}

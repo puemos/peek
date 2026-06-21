@@ -26,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	// Page-side API (callable by the trusted parent page JS).
 	mux.HandleFunc("GET /api/uploads/{slug}/comments", s.handleListComments)
 	mux.HandleFunc("POST /api/uploads/{slug}/comments", s.handleAddComment)
+	mux.HandleFunc("GET /api/uploads/{slug}/views", s.handleViews)
 
 	// Pages & assets.
 	mux.HandleFunc("GET /p/{slug}", s.handlePage)
