@@ -62,6 +62,19 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
+type CleanupError struct {
+	Slug string
+	Err  error
+}
+
+func (e *CleanupError) Error() string {
+	return "cleanup storage object " + e.Slug + ": " + e.Err.Error()
+}
+
+func (e *CleanupError) Unwrap() error {
+	return e.Err
+}
+
 func newError(kind ErrorKind, message string) error {
 	return &Error{Kind: kind, Message: message}
 }
@@ -100,8 +113,11 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 		return nil, newError(KindStorageWrite, "storage failed")
 	}
 	if err := svc.Repository.CreateUploadChecked(slug, in.OwnerAccountID, in.OwnerTokenID, in.Filename, int64(len(in.Data)), pwHash, in.Limits); err != nil {
-		_ = svc.Storage.Delete(ctx, slug)
-		return nil, storeError(err)
+		uploadErr := storeError(err)
+		if cleanupErr := svc.Storage.Delete(ctx, slug); cleanupErr != nil {
+			return nil, errors.Join(uploadErr, &CleanupError{Slug: slug, Err: cleanupErr})
+		}
+		return nil, uploadErr
 	}
 
 	return &CreateResult{

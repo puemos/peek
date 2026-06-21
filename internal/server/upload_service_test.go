@@ -28,6 +28,15 @@ func TestUploadHTTPErrorMapsDomainKinds(t *testing.T) {
 			wantMsg:    "total storage quota exceeded",
 		},
 		{
+			name: "joined cleanup error",
+			err: errors.Join(
+				&uploads.Error{Kind: uploads.KindTotalQuotaExceeded, Message: "total storage quota exceeded"},
+				&uploads.CleanupError{Slug: "page", Err: errors.New("delete failed")},
+			),
+			wantStatus: http.StatusRequestEntityTooLarge,
+			wantMsg:    "total storage quota exceeded",
+		},
+		{
 			name:       "plain error",
 			err:        errors.New("boom"),
 			wantStatus: http.StatusInternalServerError,
