@@ -32,9 +32,28 @@ run = "go test ./..."
 description = "Run the unit test suite with the race detector"
 run = "go test -race -count=1 ./..."
 
+[tasks.coverage]
+description = "Run tests and print total coverage"
+run = """
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out | tail -1
+"""
+
+[tasks.govulncheck]
+description = "Run the Go vulnerability scanner"
+run = "go run golang.org/x/vuln/cmd/govulncheck@latest ./..."
+
+[tasks.staticcheck]
+description = "Run Staticcheck on all packages"
+run = "go run honnef.co/go/tools/cmd/staticcheck@latest ./..."
+
 [tasks.check]
 description = "Run the local quality gate used before commits"
 depends = ["fmt-check", "vet", "test", "build"]
+
+[tasks.check-full]
+description = "Run the full CI-equivalent local quality gate"
+depends = ["check", "race", "coverage", "govulncheck", "staticcheck"]
 
 [tasks.run]
 description = "Start the dev server on :7700 with a fresh data dir"

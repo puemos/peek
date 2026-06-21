@@ -30,7 +30,7 @@ Uploads are created through `internal/uploads.Service`, which coordinates HTML v
 
 ## Quality Gates
 
-Before committing behavior changes, run `mise run check`. For concurrency-sensitive changes, also run `mise run race`. CI runs vet, build, race-enabled tests, coverage generation, govulncheck, and staticcheck.
+Before committing behavior changes, run `mise run check`. For concurrency-sensitive changes, also run `mise run race`. Before opening a PR or after touching shared boundaries, run `mise run check-full`; it mirrors the CI quality gate with formatting, vet, build, tests, race tests, coverage, govulncheck, and staticcheck.
 
 ## Review Rules
 
