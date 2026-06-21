@@ -58,6 +58,7 @@ services:
       PEEK_S3_REGION: us-east-1
       PEEK_S3_ACCESS_KEY: minioadmin
       PEEK_S3_SECRET_KEY: minioadmin
+      PEEK_S3_ALLOW_PRIVATE_ENDPOINT: "true"
       PEEK_MAX_UPLOAD: "2097152"
       PEEK_MAX_TOTAL_SIZE: "0"
       PEEK_RETENTION_DAYS: "0"

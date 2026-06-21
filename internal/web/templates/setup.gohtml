@@ -1,0 +1,27 @@
+{{define "setup"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body>
+<div class="hn-welcome">
+  <div class="hn-gate-card">
+  <form method="POST" action="/setup" class="hn-gate-form">
+    <h2>Set up Peek</h2>
+    <p>Create the first admin account.</p>
+    <input type="email" name="email" placeholder="Admin email" required autofocus autocomplete="email">
+    <input type="text" name="name" placeholder="Name" autocomplete="name">
+    <input type="password" name="password" placeholder="Password" required autocomplete="new-password">
+    <input type="hidden" name="code" value="{{.Code}}">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Create admin</button>
+    {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
+  </form>
+  </div>
+</div>
+</body>
+</html>{{end}}

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/puemos/peek/internal/uploadquota"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -79,7 +81,7 @@ func TestCreateGetUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get token: %v", err)
 	}
-	if err := s.CreateUpload("slug1", tok.AccountID, tok.ID, "page.html", 42, ""); err != nil {
+	if err := s.CreateUploadChecked("slug1", tok.AccountID, tok.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("create upload: %v", err)
 	}
 	got, err := s.GetUpload("slug1")
@@ -98,6 +100,42 @@ func TestCreateGetUpload(t *testing.T) {
 	}
 }
 
+func TestUploadMutationsReportMissingRows(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.SetUploadPassword(999, "hash"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("set password on missing upload should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.DeleteUpload(999); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("delete missing upload should fail with sql.ErrNoRows, got %v", err)
+	}
+}
+
+func TestAccountAndTokenMutationsReportMissingRows(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.SetAccountAdmin(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("set admin on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.SetAccountAdminChecked(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checked set admin on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.SetAccountDisabled(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("set disabled on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.SetAccountDisabledChecked(999, false); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checked set disabled on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.DeleteToken(999); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("delete missing token should fail with sql.ErrNoRows, got %v", err)
+	}
+	if _, err := s.DeleteTokenChecked(999); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checked delete missing token should fail with sql.ErrNoRows, got %v", err)
+	}
+}
+
 func TestAddListComments(t *testing.T) {
 	s := openTestStore(t)
 	defer s.Close()
@@ -105,7 +143,7 @@ func TestAddListComments(t *testing.T) {
 		t.Fatalf("create token: %v", err)
 	}
 	tok, _ := s.GetToken("owner")
-	if err := s.CreateUpload("slug2", tok.AccountID, tok.ID, "page.html", 0, ""); err != nil {
+	if err := s.CreateUploadChecked("slug2", tok.AccountID, tok.ID, "page.html", 0, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("create upload: %v", err)
 	}
 	up, _ := s.GetUpload("slug2")
@@ -300,7 +338,7 @@ INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1
 	if up.OwnerAccountID != tok.AccountID || up.OwnerTokenID != tok.ID {
 		t.Fatalf("upload ownership not migrated: upload=%+v token=%+v", up, tok)
 	}
-	if err := store.CreateUpload("oauth", tok.AccountID, 0, "oauth.html", 5, ""); err != nil {
+	if err := store.CreateUploadChecked("oauth", tok.AccountID, 0, "oauth.html", 5, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("account-owned upload without token should be allowed: %v", err)
 	}
 	n, err := store.CountUploadsByOwner(tok.AccountID)
@@ -309,6 +347,24 @@ INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1
 	}
 	if n != 2 {
 		t.Fatalf("expected 2 account uploads, got %d", n)
+	}
+}
+
+func TestIsMigrationAppliedReportsMetadataReadFailure(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	applied, err := store.isMigrationApplied(1)
+	if err == nil {
+		t.Fatal("expected migration metadata read failure")
+	}
+	if applied {
+		t.Fatal("closed store should not report migration as applied")
 	}
 }
 
@@ -343,6 +399,20 @@ func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
 	if err := store.ConsumeInvite(inv.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second consume should fail, got %v", err)
 	}
+	if err := store.RevokeInvite(inv.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("revoking consumed invite should fail, got %v", err)
+	}
+
+	revoked, err := store.CreateInvite("raw-revoke", "ciphertext", "revoke@example.com", admin.AccountID, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RevokeInvite(revoked.ID); err != nil {
+		t.Fatalf("revoke invite: %v", err)
+	}
+	if err := store.RevokeInvite(revoked.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second revoke should fail, got %v", err)
+	}
 
 	if err := store.CreateCLILoginDevice("device", "ABCDEFGH", time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
@@ -354,10 +424,159 @@ func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
 	if err := store.ApproveCLILogin(device.ID, admin.AccountID); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.ApproveCLILogin(device.ID, admin.AccountID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI approve should fail, got %v", err)
+	}
+	if err := store.DenyCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("denying approved CLI login should fail, got %v", err)
+	}
+	if err := store.ExpireCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expiring approved CLI login should fail, got %v", err)
+	}
 	if err := store.ConsumeCLILogin(device.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ConsumeCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second CLI consume should fail, got %v", err)
+	}
+
+	if err := store.CreateCLILoginDevice("deny-device", "HJKLMNPQ", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	denyDevice, err := store.GetCLILoginByDevice("deny-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DenyCLILogin(denyDevice.ID); err != nil {
+		t.Fatalf("deny CLI login: %v", err)
+	}
+	if err := store.DenyCLILogin(denyDevice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI deny should fail, got %v", err)
+	}
+	if err := store.ApproveCLILogin(denyDevice.ID, admin.AccountID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("approving denied CLI login should fail, got %v", err)
+	}
+
+	if err := store.CreateCLILoginDevice("expire-device", "RSTUVWXY", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	expireDevice, err := store.GetCLILoginByDevice("expire-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ExpireCLILogin(expireDevice.ID); err != nil {
+		t.Fatalf("expire CLI login: %v", err)
+	}
+	if err := store.ExpireCLILogin(expireDevice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI expire should fail, got %v", err)
+	}
+	if err := store.ApproveCLILogin(expireDevice.ID, admin.AccountID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("approving expired CLI login should fail, got %v", err)
+	}
+}
+
+func TestCreateUploadCheckedEnforcesQuotas(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("owner", "owner", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := s.GetToken("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits := uploadquota.Limits{MaxTotalSize: 15, MaxUploadsPerOwner: 1, MaxStoragePerOwner: 12}
+	if err := s.CreateUploadChecked("one", tok.AccountID, tok.ID, "one.html", 10, "", limits); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if err := s.CreateUploadChecked("two", tok.AccountID, tok.ID, "two.html", 1, "", limits); !errors.Is(err, uploadquota.ErrOwnerCountExceeded) {
+		t.Fatalf("expected owner count quota, got %v", err)
+	}
+
+	if err := s.CreateToken("second", "second", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tok2, err := s.GetToken("second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateUploadChecked("three", tok2.AccountID, tok2.ID, "three.html", 10, "", limits); !errors.Is(err, uploadquota.ErrTotalExceeded) {
+		t.Fatalf("expected total quota, got %v", err)
+	}
+}
+
+func TestUploadSlugExists(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("owner", "owner", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := s.GetToken("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exists, err := s.UploadSlugExists("page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("slug should not exist before upload")
+	}
+	if err := s.CreateUploadChecked("page", tok.AccountID, tok.ID, "page.html", 10, "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	exists, err = s.UploadSlugExists("page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("slug should exist after upload")
+	}
+}
+
+func TestCheckedAdminUpdatesPreserveLastAdmin(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("admin", "admin", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	admin, err := s.GetToken("admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAccountAdminChecked(admin.AccountID, false); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("expected last admin error, got %v", err)
+	}
+	if err := s.SetAccountDisabledChecked(admin.AccountID, true); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("expected last admin disable error, got %v", err)
+	}
+
+	if err := s.CreateToken("admin2", "admin2", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAccountAdminChecked(admin.AccountID, false); err != nil {
+		t.Fatalf("demote with second admin: %v", err)
+	}
+}
+
+func TestDeleteTokenCheckedPreservesLastAdminAndAllowsExpiredDelete(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("admin", "admin", true, time.Now().Add(-time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := s.ListTokens()
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := tokens[0]
+	if _, err := s.DeleteTokenChecked(admin.ID); !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("expected last admin token error, got %v", err)
+	}
+	if err := s.CreateToken("admin2", "admin2", true, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteTokenChecked(admin.ID); err != nil {
+		t.Fatalf("delete expired admin token with another admin present: %v", err)
 	}
 }

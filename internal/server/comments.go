@@ -3,7 +3,7 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -41,6 +41,10 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 		owner, err := s.store.GetToken(tok)
 		if err != nil {
 			jsonError(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		if owner.Disabled {
+			jsonError(w, http.StatusForbidden, "account disabled")
 			return
 		}
 		if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
@@ -83,7 +87,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var in commentIn
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&in); err != nil {
+	if err := decodeJSON(w, r, &in, defaultJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}
@@ -105,7 +109,9 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 
 	vid := s.visitorID(w, r)
 	if in.Name != "anonymous" {
-		_ = s.store.UpsertVisitor(vid, in.Name)
+		if err := s.store.UpsertVisitor(vid, in.Name); err != nil {
+			slog.Warn("comment visitor upsert failed", "upload_id", u.ID, "err", err)
+		}
 		s.setNameCookie(w, in.Name)
 	}
 

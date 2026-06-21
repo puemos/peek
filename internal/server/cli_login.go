@@ -1,64 +1,18 @@
 package server
 
 import (
-	"crypto/rand"
-	"encoding/json"
-	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	webui "github.com/puemos/peek/internal/web"
 )
 
 const (
 	cliLoginTTL      = 15 * time.Minute
 	cliLoginInterval = 2
 )
-
-var cliLoginTmpl = template.Must(template.New("cli-login").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CLI login &mdash; Peek</title>
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/dashboard.css">
-</head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-    <form method="POST" action="/cli-login/{{.Code}}" class="hn-gate-form">
-      <h2>Approve CLI login</h2>
-      <p>Code <strong>{{.Code}}</strong> will receive an API token for {{.User}}.</p>
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <button type="submit" name="decision" value="approve">Approve</button>
-      <button type="submit" name="decision" value="deny" class="hn-secondary-btn">Deny</button>
-      {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
-    </form>
-  </div>
-</div>
-</body>
-</html>`))
-
-var cliLoginDoneTmpl = template.Must(template.New("cli-login-done").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CLI login &mdash; Peek</title>
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/dashboard.css">
-</head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-    <div class="hn-gate-form">
-      <h2>{{.Title}}</h2>
-      <p>{{.Message}}</p>
-    </div>
-  </div>
-</div>
-</body>
-</html>`))
 
 func (s *Server) handleCLILoginStart(w http.ResponseWriter, r *http.Request) {
 	if s.setupRequired() {
@@ -99,7 +53,7 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DeviceCode string `json:"device_code"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, smallJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}
@@ -114,7 +68,11 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if time.Now().After(d.ExpiresAt) {
-		_ = s.store.ExpireCLILogin(d.ID)
+		if d.Status == "pending" {
+			if err := s.store.ExpireCLILogin(d.ID); err != nil {
+				slog.Warn("cli login expire failed", "device_id", d.ID, "err", err)
+			}
+		}
 		jsonOK(w, map[string]any{"status": "expired"})
 		return
 	}
@@ -155,10 +113,11 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCLILoginPage(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
 	d, err := s.store.GetCLILoginByUserCode(code)
 	if err != nil || d.Status != "pending" || time.Now().After(d.ExpiresAt) {
-		cliLoginDoneTmpl.Execute(w, map[string]string{"Title": "CLI login expired", "Message": "Start a new login from the CLI."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login expired", Message: "Start a new login from the CLI."})
 		return
 	}
 	owner, ok := s.webAuth(r)
@@ -167,12 +126,12 @@ func (s *Server) handleCLILoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	csrf := s.newCSRF(w)
-	cliLoginTmpl.Execute(w, map[string]any{"Code": code, "CSRF": csrf, "User": owner.Name})
+	s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name})
 }
 
 func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
 	owner, ok := s.webAuth(r)
 	if !ok {
@@ -180,32 +139,55 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		cliLoginTmpl.Execute(w, map[string]any{"Code": code, "CSRF": s.newCSRF(w), "User": owner.Name, "Error": "Invalid session."})
+	if err := r.ParseForm(); err != nil {
+		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Invalid session."})
+		return
+	}
+	validCSRF, err := s.validateCSRF(r, w, r.FormValue("csrf"))
+	if err != nil {
+		s.renderCSRFError(w, err)
+		return
+	}
+	if !validCSRF {
+		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Invalid session."})
 		return
 	}
 	d, err := s.store.GetCLILoginByUserCode(code)
 	if err != nil || d.Status != "pending" || time.Now().After(d.ExpiresAt) {
-		cliLoginDoneTmpl.Execute(w, map[string]string{"Title": "CLI login expired", "Message": "Start a new login from the CLI."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login expired", Message: "Start a new login from the CLI."})
 		return
 	}
 	if r.FormValue("decision") == "deny" {
-		_ = s.store.DenyCLILogin(d.ID)
-		cliLoginDoneTmpl.Execute(w, map[string]string{"Title": "CLI login denied", "Message": "Return to your terminal to continue."})
+		if err := s.store.DenyCLILogin(d.ID); err != nil {
+			slog.Warn("cli login deny failed", "device_id", d.ID, "err", err)
+			s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Denial failed."})
+			return
+		}
+		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login denied", Message: "Return to your terminal to continue."})
 		return
 	}
 	if err := s.store.ApproveCLILogin(d.ID, owner.ID); err != nil {
-		cliLoginTmpl.Execute(w, map[string]any{"Code": code, "CSRF": s.newCSRF(w), "User": owner.Name, "Error": "Approval failed."})
+		slog.Warn("cli login approve failed", "device_id", d.ID, "account_id", owner.ID, "err", err)
+		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Approval failed."})
 		return
 	}
 	s.audit("cli login approved account=%d code=%s", owner.ID, code)
-	cliLoginDoneTmpl.Execute(w, map[string]string{"Title": "CLI login approved", "Message": "Return to your terminal to continue."})
+	s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login approved", Message: "Return to your terminal to continue."})
+}
+
+func (s *Server) renderCLILoginForm(w http.ResponseWriter, status int, data webui.CLILoginData) {
+	csrf, ok := s.csrfToken(w)
+	if !ok {
+		return
+	}
+	data.CSRF = csrf
+	s.renderHTML(w, status, webui.TemplateCLILogin, data)
 }
 
 func randomUserCode() (string, error) {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := secureRandomRead(b); err != nil {
 		return "", err
 	}
 	for i := range b {

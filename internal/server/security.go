@@ -14,13 +14,23 @@ import (
 	"time"
 )
 
+var secureRandomRead = rand.Read
+
 // randID returns a URL-safe random id of nBytes entropy.
 func randID(nBytes int) (string, error) {
 	b := make([]byte, nBytes)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := secureRandomRead(b); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func randHex(nBytes int) (string, error) {
+	b := make([]byte, nBytes)
+	if _, err := secureRandomRead(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // hmacSHA256 returns hex digest of msg keyed by secret.
@@ -119,8 +129,6 @@ func parseSignedSubject(secret, val string) (string, bool) {
 	return sub, true
 }
 
-var errInvalid = errors.New("invalid")
-
 // encryptSecret encrypts plaintext using AES-256-GCM with a key derived from
 // the server secret. Returns base64-encoded nonce+ciphertext.
 func encryptSecret(secretHex, plaintext string) (string, error) {
@@ -137,7 +145,7 @@ func encryptSecret(secretHex, plaintext string) (string, error) {
 		return "", err
 	}
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
+	if _, err := secureRandomRead(nonce); err != nil {
 		return "", err
 	}
 	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)

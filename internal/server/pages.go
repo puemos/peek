@@ -2,187 +2,43 @@ package server
 
 import (
 	"bytes"
-	"html/template"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
+
+	webui "github.com/puemos/peek/internal/web"
 )
-
-var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>{{.Filename}} &mdash; Peek</title>
-<link rel="stylesheet" href="/style.css">
-</head>
-<body data-slug="{{.Slug}}" data-protected="{{.Protected}}">
-<iframe id="hn-frame" src="{{.RawURL}}" sandbox="allow-scripts allow-popups"
-        referrerpolicy="no-referrer" title="shared page"></iframe>
-
-<div id="hn-hint" hidden>
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-  Click any element to comment
-  <span class="hn-hint-sep">or</span>
-  <button type="button" id="hn-hint-general">comment on the page</button>
-  <kbd>Esc</kbd>
-</div>
-
-<div id="hn-bar">
-  <button id="hn-comment-btn" type="button" title="Add a comment">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-    Comment
-  </button>
-  <button id="hn-panel-btn" class="hn-icon-btn" type="button" title="View comments" aria-label="View comments">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-    <span id="hn-count" class="hn-badge">0</span>
-  </button>
-</div>
-
-<aside id="hn-panel" class="hn-panel">
-  <header>
-    <h3>Comments</h3>
-    <div class="hn-panel-actions">
-      <div id="hn-export" class="hn-export" hidden>
-        <button id="hn-export-btn" type="button" title="Export comments" aria-haspopup="menu" aria-expanded="false">
-          <svg class="hn-export-glyph" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          <span id="hn-export-label">Export</span>
-          <svg class="hn-export-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div id="hn-export-menu" class="hn-export-menu" role="menu" hidden>
-          <button id="hn-export-markdown" type="button" role="menuitem">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
-            <span>Markdown</span>
-          </button>
-          <button id="hn-export-json" type="button" role="menuitem">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
-            <span>JSON</span>
-          </button>
-        </div>
-      </div>
-      <button id="hn-panel-close" type="button">&times;</button>
-    </div>
-  </header>
-  <ul id="hn-comment-list"></ul>
-</aside>
-
-<div id="hn-composer" class="hn-composer" hidden>
-  <div class="hn-target" id="hn-target"></div>
-  <form id="hn-comment-form">
-    <textarea id="hn-body" placeholder="Write a comment&hellip;" maxlength="4000" required></textarea>
-    <p class="hn-error" id="hn-error" hidden></p>
-    <div class="hn-composer-actions">
-      <button type="submit">Post</button>
-      <button type="button" id="hn-cancel">Cancel</button>
-      <span class="hn-commenting-as" id="hn-commenting-as"></span>
-    </div>
-  </form>
-</div>
-
-<div id="hn-name-modal" class="hn-modal" hidden>
-  <div class="hn-modal-card">
-    <h2>Add your name</h2>
-    <p>It shows next to comments you leave. You can skip this.</p>
-    <form id="hn-name-form">
-      <input id="hn-name-input" type="text" placeholder="Your name" maxlength="100" autocomplete="name">
-      <div class="hn-modal-actions">
-        <button type="submit">Continue</button>
-        <button type="button" id="hn-name-skip">Skip</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<script src="/app.js"></script>
-</body>
-</html>`))
-
-var gateTmpl = template.Must(template.New("gate").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Password required &mdash; Peek</title>
-<link rel="stylesheet" href="/style.css">
-</head>
-<body class="hn-gate">
-<div class="hn-gate-card">
-<form method="POST" action="/p/{{.Slug}}" class="hn-gate-form">
-  <h2>This page is protected</h2>
-  <p>Enter the password to view this page.</p>
-  <input type="password" name="password" placeholder="Password" required autofocus>
-  <button type="submit">Unlock</button>
-  {{if .Error}}<p class="hn-err">Incorrect password.</p>{{end}}
-</form>
-</div>
-</body>
-</html>`))
-
-var indexTmpl = template.Must(template.New("index").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Peek</title>
-<link rel="stylesheet" href="/style.css">
-</head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-welcome-box">
-    <h1>Peek</h1>
-    <p>Share HTML files and get a live preview link.<br>Upload via the dashboard or the CLI.</p>
-    <div class="hn-welcome-actions">
-      <a href="/dashboard" class="hn-welcome-primary">Open dashboard &rarr;</a>
-      <a href="/login" class="hn-welcome-secondary">Sign in</a>
-    </div>
-    <div class="hn-welcome-code">
-      <strong>CLI quick start:</strong><br>
-      <code>peek login --host {{.BaseURL}}</code><br>
-      <code>peek upload page.html</code>
-    </div>
-  </div>
-</div>
-</body>
-</html>`))
-
-type pageData struct {
-	Filename  string
-	Slug      string
-	RawURL    string
-	Protected bool
-}
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
 	}
 	if u.PasswordHash != "" && !s.pageAuthorized(r, u) {
-		gateTmpl.Execute(w, map[string]any{"Slug": slug, "Error": false})
+		s.renderHTML(w, http.StatusOK, webui.TemplateGate, webui.GateData{Slug: slug})
 		return
 	}
 	vid := s.visitorID(w, r)
-	go s.recordVisit(r, u, vid)
+	s.recordVisit(r, u, vid)
 
 	rawURL := "/raw/" + slug + "?t=" + makeViewToken(s.secret, slug, vid) + "&v=" + vid
 	d := pageData{
 		Filename: u.Filename, Slug: slug,
 		RawURL: rawURL, Protected: u.PasswordHash != "",
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; frame-src 'self'")
-	pageTmpl.Execute(w, d)
+	w.Header().Set("Content-Security-Policy", webui.PageCSP)
+	s.renderHTML(w, http.StatusOK, webui.TemplatePage, d)
 }
 
 func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
 	}
 	if u.PasswordHash == "" {
@@ -190,13 +46,12 @@ func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+		s.renderWebError(w, http.StatusBadRequest, "Bad request", "The password form could not be read.")
 		return
 	}
 	pw := r.FormValue("password")
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(pw)) != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		gateTmpl.Execute(w, map[string]any{"Slug": slug, "Error": true})
+		s.renderHTML(w, http.StatusUnauthorized, webui.TemplateGate, webui.GateData{Slug: slug, Error: true})
 		return
 	}
 	s.setCookie(w, &http.Cookie{
@@ -235,13 +90,25 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
+	insertOffset, err := bridgeInsertOffset(rc)
+	closeErr := rc.Close()
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	data = injectBridge(data)
+	if closeErr != nil {
+		slog.Warn("close raw html scan", "slug", slug, "err", closeErr)
+	}
+	rc, err = s.storage.Open(r.Context(), slug)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer rc.Close()
+	writeRawHTML(w, slug, rc, insertOffset)
+}
+
+func writeRawHTML(w http.ResponseWriter, slug string, body io.Reader, insertOffset int64) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Allow the user's HTML to run inline scripts/styles & load resources, but
@@ -256,33 +123,105 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			"font-src https: http: data:; "+
 			"connect-src https: http:; "+
 			"frame-ancestors 'self'")
-	w.Write(data)
+	if insertOffset > 0 {
+		if _, err := io.CopyN(w, body, insertOffset); err != nil {
+			slog.Error("write raw html response", "slug", slug, "err", err)
+			return
+		}
+	}
+	if _, err := w.Write(bridgeScriptTag()); err != nil {
+		slog.Error("write raw html response", "slug", slug, "err", err)
+		return
+	}
+	if _, err := io.Copy(w, body); err != nil {
+		slog.Error("write raw html response", "slug", slug, "err", err)
+	}
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+		s.renderWebError(w, http.StatusNotFound, "Page not found", "The requested page does not exist.")
 		return
 	}
 	if s.setupRequired() {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	indexTmpl.Execute(w, map[string]any{"BaseURL": s.baseURL})
+	s.renderHTML(w, http.StatusOK, webui.TemplateIndex, webui.IndexData{BaseURL: s.baseURL})
 }
 
 // injectBridge appends the picker script so the parent can drive element
 // selection over postMessage. Runs inside the sandboxed iframe.
 func injectBridge(b []byte) []byte {
+	offset, err := bridgeInsertOffset(bytes.NewReader(b))
+	if err != nil {
+		return b
+	}
+	tag := bridgeScriptTag()
+	return append(append(append([]byte{}, b[:offset]...), tag...), b[offset:]...)
+}
+
+func bridgeScriptTag() []byte {
+	return []byte(`<script src="` + webui.AssetURL("bridge.js") + `"></script>`)
+}
+
+func bridgeInsertOffset(r io.Reader) (int64, error) {
 	marker := []byte("</body>")
-	tag := []byte(`<script src="/bridge.js"></script>`)
-	if idx := bytes.LastIndex(b, marker); idx >= 0 {
-		return append(append(b[:idx:idx], tag...), b[idx:]...)
-	}
 	marker2 := []byte("</html>")
-	if idx := bytes.LastIndex(b, marker2); idx >= 0 {
-		return append(append(b[:idx:idx], tag...), b[idx:]...)
+	const maxTail = len("</body>") - 1
+	buf := make([]byte, 32*1024)
+	tail := make([]byte, 0, maxTail)
+	var (
+		total    int64
+		lastBody int64 = -1
+		lastHTML int64 = -1
+	)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			prevTotal := total
+			combined := make([]byte, 0, len(tail)+n)
+			combined = append(combined, tail...)
+			combined = append(combined, buf[:n]...)
+			combinedStart := total - int64(len(tail))
+			lower := bytes.ToLower(combined)
+			lastBody = lastMarkerOffset(lower, marker, combinedStart, prevTotal, lastBody)
+			lastHTML = lastMarkerOffset(lower, marker2, combinedStart, prevTotal, lastHTML)
+			total += int64(n)
+			if len(combined) > maxTail {
+				tail = append(tail[:0], combined[len(combined)-maxTail:]...)
+			} else {
+				tail = append(tail[:0], combined...)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
 	}
-	return append(b, tag...)
+	if lastBody >= 0 {
+		return lastBody, nil
+	}
+	if lastHTML >= 0 {
+		return lastHTML, nil
+	}
+	return total, nil
+}
+
+func lastMarkerOffset(lower, marker []byte, combinedStart, previousTotal, current int64) int64 {
+	for searchFrom := 0; searchFrom < len(lower); {
+		idx := bytes.Index(lower[searchFrom:], marker)
+		if idx < 0 {
+			return current
+		}
+		idx += searchFrom
+		absolute := combinedStart + int64(idx)
+		if absolute+int64(len(marker)) > previousTotal {
+			current = absolute
+		}
+		searchFrom = idx + 1
+	}
+	return current
 }

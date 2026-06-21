@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/puemos/peek/actions/workflows/ci.yml/badge.svg)](https://github.com/puemos/peek/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/puemos/peek?sort=semver)](https://github.com/puemos/peek/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
 
-**Share an HTML page, get a link, collect feedback right on the page.**
+**Share an HTML page inside your company, get a link, collect feedback right on the page.**
 
-Peek is a self-hosted server that turns any HTML file into a live, shareable preview URL. Viewers can drop comments **pinned to a specific element, anchored to selected text, or on the whole page** — like Figma/Linear review, but for any HTML. Single static Go binary, pure-Go SQLite, no CGO.
+Peek is a self-hosted internal review tool for teams that need to share HTML previews without turning them into public deployments. It turns any HTML file into a live preview URL and lets reviewers drop comments **pinned to a specific element, anchored to selected text, or on the whole page** — like Figma/Linear review, but for any HTML. Single static Go binary, pure-Go SQLite, no CGO.
 
 ![Peek viewer with pinned comments](assets/hero.png)
 
@@ -20,9 +20,11 @@ Peek is a self-hosted server that turns any HTML file into a live, shareable pre
 - 🎯 **Click a comment → jump to it** — the panel and the on-page pins are linked both ways; selected text stays highlighted via the CSS Custom Highlight API (no DOM mutation of the user's HTML).
 - 🔒 **Safe by construction** — uploaded HTML renders inside a sandboxed, opaque-origin iframe. It can never read your cookies, hit the server, or touch the parent page.
 - ⚡ **One static binary** — Go stdlib + pure-Go SQLite, no CGO, no runtime deps.
-- 🧰 **CLI + web dashboard + agent skill** — upload from the terminal, a browser, or let a coding agent share HTML for you.
+- 🧰 **CLI + web dashboard + agent skill** — upload from the terminal, a browser, or let a coding agent share HTML for your team.
 - 📊 **Privacy-respecting analytics** — total/unique visits, recent views with SHA-256-hashed IPs.
-- 🏭 **Production-ready** — health/readiness checks, graceful shutdown, structured JSON logging, Prometheus metrics, audit log, token expiry, quota/retention controls, GDPR data export/deletion, and S3 endpoint SSRF protection.
+- 🏭 **Built for internal company deployments** — first-run admin setup, invite-only OAuth, health/readiness checks, graceful shutdown, structured JSON logging, Prometheus metrics, audit log, token expiry, quota/retention controls, data export/deletion, and S3 endpoint SSRF protection.
+
+Peek is not designed as a SaaS product. It intentionally avoids billing, public multi-tenant onboarding, marketplace workflows, and growth-oriented product surfaces. The operating model is one company, team, lab, or agency running its own Peek server for trusted reviewers and internal automation.
 
 ## Install
 
@@ -70,7 +72,7 @@ docker run -d --name peek -p 7700:7700 \
   ghcr.io/puemos/peek:latest
 ```
 
-The `/data` volume holds the SQLite database, uploads, and the signing key — keep it to persist state across restarts. On first run, Peek prints a one-time setup URL. Open it, create the first admin account, then sign in normally. Configure via env vars: `PEEK_ADDR` (default `:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`, `PEEK_MAX_UPLOAD`, `PEEK_SECRET` (for shared-secret deployments and encrypted settings), `PEEK_LOG_LEVEL` (`debug`/`info`/`warn`), `PEEK_MAX_TOTAL_SIZE`, `PEEK_RETENTION_DAYS`, `PEEK_TRUSTED_PROXY`, and the S3 vars listed below. The container runs as a nonroot user (uid `65532`) and includes a `HEALTHCHECK`. If you bind-mount a host directory instead of a named volume, make sure that path is writable by uid `65532`.
+The `/data` volume holds the SQLite database, uploads, and the signing key — keep it to persist state across restarts. On first run, Peek prints a one-time setup URL. Open it, create the first admin account, then sign in normally. Configure via env vars: `PEEK_ADDR` (default `:7700`), `PEEK_DATA` (default `/data`), `PEEK_BASE_URL`, `PEEK_MAX_UPLOAD`, `PEEK_SECRET` (for shared-secret deployments and encrypted settings), `PEEK_LOG_LEVEL` (`debug`/`info`/`warn`), `PEEK_MAX_TOTAL_SIZE`, `PEEK_RETENTION_DAYS`, `PEEK_TRUSTED_PROXY`, and the S3 vars listed below. Set `PEEK_S3_ALLOW_PRIVATE_ENDPOINT=true` only for explicit dev/private S3-compatible endpoints such as the local MinIO compose profile. The container runs as a nonroot user (uid `65532`) and includes a `HEALTHCHECK`. If you bind-mount a host directory instead of a named volume, make sure that path is writable by uid `65532`.
 
 For a local Docker Compose stack:
 
@@ -104,7 +106,7 @@ peek list
 peek stats PhiUs-lMbZE_Sw
 peek password PhiUs-lMbZE_Sw --set newpass   # or --clear
 peek delete PhiUs-lMbZE_Sw
-peek export PhiUs-lMbZE_Sw                    # GDPR data export
+peek export PhiUs-lMbZE_Sw                    # export upload data
 peek delete-all                               # delete all your uploads
 ```
 
@@ -131,14 +133,14 @@ peek login [--host <url>]              browser login when available; token fallb
 peek login --token-stdin               read an access token from stdin
 peek login --token-file <path>         read an access token from a file
 peek config show                       show current host + masked token
-peek upload <file.html> [--password <pw>] [--name <filename>]
+peek upload <file.html> [--password <pw> | --password-stdin] [--name <filename>]
 peek list
 peek delete <slug>
-peek delete-all                        delete all your uploads (GDPR)
-peek password <slug> --set <pw> | --clear
+peek delete-all                        delete all your uploads
+peek password <slug> --set <pw> | --set-stdin | --clear
 peek stats <slug>
 peek comments <slug>                   list comments on one of your uploads
-peek export <slug>                     export all data for an upload (GDPR)
+peek export <slug>                     export all data for an upload
 peek token create --name <name>        create a user token (admin only)
 peek token list                        list tokens (admin only)
 peek token revoke <id>                 revoke a token by id (admin only)
@@ -167,6 +169,7 @@ peek version                           show version
 | `--s3-region`      | `PEEK_S3_REGION`      | `us-east-1`             | S3 region                                                                                               |
 | `--s3-access-key`  | `PEEK_S3_ACCESS_KEY`  | _(empty)_               | S3 access key                                                                                           |
 | `--s3-secret-key`  | `PEEK_S3_SECRET_KEY`  | _(empty)_               | S3 secret key, encrypted in settings after initialization                                               |
+| `--s3-allow-private-endpoint` | `PEEK_S3_ALLOW_PRIVATE_ENDPOINT` | `false` | Allow private/link-local S3 endpoints for explicit dev deployments such as local MinIO.                  |
 
 `peekd --version` prints the server version. `PEEK_DATA=./data peekd backup [path/to/backup.db]` writes a consistent SQLite snapshot using `VACUUM INTO`. `peekd healthcheck` checks `/healthz`; set `PEEK_HEALTHCHECK_ADDR=host:port` when the probe should target a specific address.
 
@@ -195,7 +198,7 @@ Saved to `<user-config-dir>/peek/config.json` (e.g. `~/.config/peek` on Linux, `
 | Hot-linking / bypassing the password gate | `/raw` requires a short-lived HMAC-signed view token issued only by `/p/<slug>` and bound to the visitor cookie.                                                             |
 | Brute force / spam                        | Per-IP rate limits on `/login`, CLI login, the password gate, and comment posting.                                                                                           |
 | Malicious content / huge uploads          | HTML sniffed, binaries rejected, configurable max size, `MaxBytesReader`.                                                                                                    |
-| SSRF via S3 settings                      | S3 endpoints must be HTTP(S), HTTPS unless localhost, and cannot resolve to private/link-local IPs.                                                                          |
+| SSRF via S3 settings                      | S3 endpoints must be HTTP(S), HTTPS unless private endpoints are explicitly allowed, and cannot resolve to private/link-local IPs by default.                                |
 | Path traversal / SQLi                     | Random base64url slugs (filenames never user-derived); all queries parameterized.                                                                                            |
 | Password / IP leakage                     | Account and page passwords are bcrypt-hashed; analytics IPs SHA-256-hashed with the server secret.                                                                           |
 
@@ -221,9 +224,15 @@ Operational endpoints:
 
 Protect `/metrics` at your proxy if the server is reachable from untrusted networks.
 
+For the full internal deployment checklist, including persistent state, backups, first-run setup, OAuth, quotas, S3 storage, observability, and upgrades, see [docs/operations.md](docs/operations.md).
+
+## Architecture
+
+The repository is intentionally split into narrow internal packages: `internal/server` owns HTTP routing and request handling, `internal/uploads` owns upload creation and validation, `internal/db` owns SQLite persistence, `internal/objectstore` owns file and S3 storage backends, `internal/web` owns server-side templates and view models, `internal/peekd` owns daemon runtime/flags/backup/healthcheck orchestration, and `internal/cli` owns the terminal client. See [docs/architecture.md](docs/architecture.md) for the package map and local quality gates.
+
 ## Web GUI
 
-A browser dashboard at `/login` lets non-technical users upload files or paste HTML, list/delete uploads, set passwords, and view stats. First run starts at a one-time `/setup` URL that creates the initial local admin account. Admins can then enable Google and/or GitHub OAuth from Settings by entering each provider's web client ID and secret. Configure provider callback URLs as:
+A browser dashboard at `/login` lets company users upload files or paste HTML, list/delete uploads, set passwords, and view stats. First run starts at a one-time `/setup` URL that creates the initial local admin account. Admins can then enable Google and/or GitHub OAuth from Settings by entering each provider's web client ID and secret. Configure provider callback URLs as:
 
 ```
 https://peek.example.com/oauth/google/callback
@@ -261,15 +270,16 @@ cmd/peekd/          server entrypoint
 cmd/peek/           CLI entrypoint
 internal/db/        SQLite store + schema
 internal/models/    data types
-internal/server/    HTTP server, handlers, security, embedded assets
+internal/server/    HTTP server, handlers, auth, security
 internal/cli/       CLI client + commands
+internal/web/       Templates and embedded CSS/JS assets
 skills/peek/        consumer agent skill (upload + read comments)
 skills/peek-server/ server/admin agent skill
 assets/             README / launch media
 scripts/            tooling
 ```
 
-The screenshots and 1920x1080/60fps MP4 demo video are generated — run `pnpm install`, then rerun `pnpm gen-assets` (needs Go, Node, ffmpeg, and Chrome) to refresh them whenever the UI changes.
+The application CSS/JS used at runtime lives in `internal/web/assets` and is embedded directly by Go. The root `assets/` directory is documentation media only. The screenshots and 1920x1080/60fps MP4 demo video are generated — run `pnpm install`, then rerun `pnpm gen-assets` (needs Go, Node, ffmpeg, and Chrome) to refresh documentation media whenever the UI changes.
 
 ## License
 

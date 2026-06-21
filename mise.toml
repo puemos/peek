@@ -1,13 +1,59 @@
 [tools]
-go = "latest"
+go = "1.26.4"
+
+[tasks.fmt]
+description = "Format all Go source files"
+run = """
+files=$(git ls-files '*.go' | while IFS= read -r file; do [ -f "$file" ] && printf '%s\n' "$file"; done)
+test -z "$files" || gofmt -w $files
+"""
+
+[tasks.fmt-check]
+description = "Verify Go source formatting"
+run = """
+files=$(git ls-files '*.go' | while IFS= read -r file; do [ -f "$file" ] && printf '%s\n' "$file"; done)
+unformatted=$(test -z "$files" || gofmt -l $files)
+test -z "$unformatted" || (printf '%s\n' "$unformatted" && exit 1)
+"""
 
 [tasks.build]
-description = "Build both binaries (hn server + peek CLI) into bin/"
+description = "Build both binaries (Peek server + CLI) into bin/"
 run = "go build -o bin/peekd ./cmd/peekd && go build -o bin/peek ./cmd/peek"
 
 [tasks.vet]
 description = "Run go vet on all packages"
 run = "go vet ./..."
+
+[tasks.test]
+description = "Run the unit test suite"
+run = "go test ./..."
+
+[tasks.race]
+description = "Run the unit test suite with the race detector"
+run = "go test -race -count=1 ./..."
+
+[tasks.coverage]
+description = "Run tests and print total coverage"
+run = """
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out | tail -1
+"""
+
+[tasks.govulncheck]
+description = "Run the Go vulnerability scanner"
+run = "go run golang.org/x/vuln/cmd/govulncheck@latest ./..."
+
+[tasks.staticcheck]
+description = "Run Staticcheck on all packages"
+run = "go run honnef.co/go/tools/cmd/staticcheck@latest ./..."
+
+[tasks.check]
+description = "Run the local quality gate used before commits"
+depends = ["fmt-check", "vet", "test", "build"]
+
+[tasks.check-full]
+description = "Run the full CI-equivalent local quality gate"
+depends = ["check", "race", "coverage", "govulncheck", "staticcheck"]
 
 [tasks.run]
 description = "Start the dev server on :7700 with a fresh data dir"
@@ -19,15 +65,12 @@ description = "Configure the CLI to point at the local dev server"
 run = "./bin/peek login --host http://localhost:7700"
 depends = ["build"]
 
-[tasks.test]
-description = "Build, vet, then run a smoke test (upload + list + stats)"
-depends = ["build", "vet"]
+[tasks.smoke]
+description = "Run a local upload/list/stats smoke test against the configured dev server"
+depends = ["build"]
 run = """
-SLUG=$(./bin/peek upload /tmp/test.html 2>/dev/null | grep '^slug:' | awk '{print $2}')
-if [ -z "$SLUG" ]; then
-  printf '<html><body><h1>Smoke test</h1><p id=t>Hello</p></body></html>' > /tmp/test.html
-  SLUG=$(./bin/peek upload /tmp/test.html | grep '^slug:' | awk '{print $2}')
-fi
+printf '<html><body><h1>Smoke test</h1><p id=t>Hello</p></body></html>' > /tmp/test.html
+SLUG=$(./bin/peek upload /tmp/test.html | grep '^slug:' | awk '{print $2}')
 echo "Uploaded slug: $SLUG"
 ./bin/peek list
 ./bin/peek stats "$SLUG"

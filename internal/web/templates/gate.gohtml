@@ -1,0 +1,20 @@
+{{define "gate"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Password required &mdash; Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+</head>
+<body class="hn-gate">
+<div class="hn-gate-card">
+<form method="POST" action="/p/{{.Slug}}" class="hn-gate-form">
+  <h2>This page is protected</h2>
+  <p>Enter the password to view this page.</p>
+  <input type="password" name="password" placeholder="Password" required autofocus>
+  <button type="submit">Unlock</button>
+  {{if .Error}}<p class="hn-err">Incorrect password.</p>{{end}}
+</form>
+</div>
+</body>
+</html>{{end}}

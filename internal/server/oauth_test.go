@@ -1,15 +1,20 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/puemos/peek/internal/db"
+	webui "github.com/puemos/peek/internal/web"
+	"golang.org/x/oauth2"
 )
 
 const testSecret = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -20,11 +25,16 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = store.Close() })
 	return &Server{
 		store:           store,
 		secret:          testSecret,
 		baseURL:         "http://peek.test",
+		renderer:        renderer,
 		loginLimiter:    newLimiter(100, time.Minute),
 		commentLimiter:  newLimiter(100, time.Minute),
 		cliLoginLimiter: newLimiter(100, time.Minute),
@@ -105,6 +115,134 @@ func TestResolveOAuthAccountRejectsUnverifiedEmail(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "verified") {
 		t.Fatalf("expected verified email error, got %v", err)
+	}
+}
+
+func TestOAuthStartErrorRendersLoginPage(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/oauth/google/start", nil)
+	req.SetPathValue("provider", "google")
+	rec := httptest.NewRecorder()
+
+	s.handleOAuthStart(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != webui.DashboardCSP {
+		t.Fatalf("csp = %q", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("cache-control = %q", got)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "OAuth provider is not configured.") {
+		t.Fatalf("rendered page did not include oauth error: %s", body)
+	}
+	if !strings.Contains(body, "Sign in") {
+		t.Fatalf("expected login template, got: %s", body)
+	}
+}
+
+func TestOAuthAccountErrorMessageHidesInternalFailures(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{err: errors.New("OAuth account must have a verified email"), want: "OAuth account must have a verified email."},
+		{err: errors.New("account disabled"), want: "This account is disabled."},
+		{err: errors.New("invite required"), want: "An invite is required for this account."},
+		{err: errors.New("invite not found"), want: "This invite is invalid or expired."},
+		{err: errors.New("account lookup failed: driver timeout"), want: "OAuth account could not be linked."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			if got := oauthAccountErrorMessage(tc.err); got != tc.want {
+				t.Fatalf("message = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFetchGitHubProfileUsesVerifiedPrimaryEmail(t *testing.T) {
+	var sawAuth atomic.Bool
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer token" {
+			sawAuth.Store(true)
+		}
+		if r.Header.Get("Accept") != "application/vnd.github+json" {
+			t.Errorf("accept header = %q", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":42,"login":"octo","name":""}`))
+		case "/emails":
+			_, _ = w.Write([]byte(`[
+				{"email":"secondary@example.com","primary":false,"verified":true},
+				{"email":"PRIMARY@Example.COM","primary":true,"verified":true}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer provider.Close()
+	restoreGitHubURLs(t, provider.URL)
+
+	s := newTestServer(t)
+	profile, err := s.fetchGitHubProfile(context.Background(), testGitHubProviderConfig(), &oauth2.Token{
+		AccessToken: "token",
+		TokenType:   "Bearer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawAuth.Load() {
+		t.Fatal("provider did not receive bearer token")
+	}
+	if profile.Provider != "github" || profile.ProviderUserID != "42" || profile.Email != "primary@example.com" || !profile.EmailVerified || profile.Name != "octo" {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestFetchGitHubProfileRejectsOversizedProviderJSON(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Repeat(" ", oauthJSONBodyLimit+1)))
+	}))
+	defer provider.Close()
+	restoreGitHubURLs(t, provider.URL)
+
+	s := newTestServer(t)
+	_, err := s.fetchGitHubProfile(context.Background(), testGitHubProviderConfig(), &oauth2.Token{
+		AccessToken: "token",
+		TokenType:   "Bearer",
+	})
+	if err == nil || !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("error = %v, want oversized response error", err)
+	}
+}
+
+func restoreGitHubURLs(t *testing.T, base string) {
+	t.Helper()
+	oldUserURL, oldEmailsURL := githubUserURL, githubEmailsURL
+	githubUserURL = base + "/user"
+	githubEmailsURL = base + "/emails"
+	t.Cleanup(func() {
+		githubUserURL = oldUserURL
+		githubEmailsURL = oldEmailsURL
+	})
+}
+
+func testGitHubProviderConfig() *oauthProviderConfig {
+	return &oauthProviderConfig{
+		authProvider: authProvider{Key: "github", Name: "GitHub"},
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "http://unused.example/auth",
+			TokenURL: "http://unused.example/token",
+		},
 	}
 }
 

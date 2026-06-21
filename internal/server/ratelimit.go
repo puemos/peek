@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,6 +15,7 @@ type limiter struct {
 	hits   map[string]*window
 	max    int
 	window time.Duration
+	now    func() time.Time
 }
 
 type window struct {
@@ -22,11 +24,11 @@ type window struct {
 }
 
 func newLimiter(max int, win time.Duration) *limiter {
-	return &limiter{hits: make(map[string]*window), max: max, window: win}
+	return &limiter{hits: make(map[string]*window), max: max, window: win, now: time.Now}
 }
 
 func (l *limiter) allow(key string) bool {
-	now := time.Now()
+	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.hits) > 10000 {
@@ -52,9 +54,21 @@ func (l *limiter) allow(key string) bool {
 func (s *Server) rateLimit(l *limiter, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !l.allow(s.clientIP(r)) {
-			http.Error(w, "Too many requests. Try again shortly.", http.StatusTooManyRequests)
+			rateLimitError(w, r)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func rateLimitError(w http.ResponseWriter, r *http.Request) {
+	if wantsJSONError(r) {
+		jsonError(w, http.StatusTooManyRequests, "too many requests, try again shortly")
+		return
+	}
+	http.Error(w, "Too many requests. Try again shortly.", http.StatusTooManyRequests)
+}
+
+func wantsJSONError(r *http.Request) bool {
+	return strings.HasPrefix(r.URL.Path, "/api/") || strings.Contains(r.Header.Get("Accept"), "application/json")
 }

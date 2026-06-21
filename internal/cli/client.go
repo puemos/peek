@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +37,10 @@ func LoadConfig() (*Config, error) {
 	}
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return &Config{}, nil
+		if errors.Is(err, os.ErrNotExist) {
+			return &Config{}, nil
+		}
+		return nil, err
 	}
 	var c Config
 	if err := json.Unmarshal(b, &c); err != nil {
@@ -126,19 +130,30 @@ func (c *client) del(path string, out any) error {
 
 func decodeResp(resp *http.Response, out any) error {
 	if resp.StatusCode >= 400 {
-		var e struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&e)
-		if e.Error == "" {
-			e.Error = resp.Status
-		}
-		return fmt.Errorf("%s", e.Error)
+		return decodeErrorResp(resp)
 	}
 	if out != nil {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 	return nil
+}
+
+func decodeErrorResp(resp *http.Response) error {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	if err != nil {
+		return fmt.Errorf("%s: read error response: %w", resp.Status, err)
+	}
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		return fmt.Errorf("%s", resp.Status)
+	}
+	var e struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &e); err == nil && strings.TrimSpace(e.Error) != "" {
+		return fmt.Errorf("%s", strings.TrimSpace(e.Error))
+	}
+	return fmt.Errorf("%s: %s", resp.Status, msg)
 }
 
 func envOr(k, d string) string {

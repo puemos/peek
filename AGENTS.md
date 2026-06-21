@@ -4,23 +4,43 @@
 - Go is managed via **mise** (`mise.toml`). Run `mise install` first.
 - Activate in a shell: `eval "$(mise activate zsh)"`
 
+## Product direction
+- Peek is an internal/company self-hosted tool, not a SaaS product. Prefer changes that improve single-organization deployment, admin workflows, OAuth/SSO fit, auditability, backup/restore, retention, and boring operational reliability.
+- Do not add billing, public multi-tenancy, public signup/onboarding funnels, marketplace/product-growth flows, or SaaS abstractions unless explicitly requested.
+
 ## Editing rule
 - Do not manually wrap lines in Markdown files; write prose/notes as natural flowing lines and let the renderer handle wrapping.
 
 ## Build
 ```sh
-go build -o bin/peekd  ./cmd/peekd
-go build -o bin/peek ./cmd/peek
+mise run build
 ```
 
 ## Lint / typecheck
 ```sh
-go vet ./...
+mise run vet
+mise run fmt-check
+```
+
+## Test
+```sh
+mise run test
+```
+
+## Local quality gate
+```sh
+mise run check
+```
+
+Before opening a PR or after touching shared server, database, storage, auth, or concurrency behavior:
+
+```sh
+mise run check-full
 ```
 
 ## Run (dev)
 ```sh
-rm -rf data && ./bin/peekd --addr :7700 --data ./data --base-url http://localhost:7700
+mise run run
 ```
 
 ## Smoke test

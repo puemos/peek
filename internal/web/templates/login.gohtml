@@ -1,0 +1,46 @@
+{{define "login"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in &mdash; Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body>
+<div class="hn-welcome">
+  <div class="hn-gate-card">
+  {{if .Invite}}<p class="hn-login-note">Choose a provider to accept your invite.</p>{{end}}
+  {{if .Providers}}
+  <div class="hn-oauth-list">
+    {{range .Providers}}<a href="/oauth/{{.Key}}/start" class="hn-oauth-btn">Continue with {{.Name}}</a>{{end}}
+  </div>
+  {{if or .PasswordLogin .TokenLogin}}<div class="hn-login-sep"><span>or</span></div>{{end}}
+  {{end}}
+  {{if .PasswordLogin}}
+  <form method="POST" action="/login" class="hn-gate-form">
+    <h2>Peek</h2>
+    <p>{{if .OAuthEnabled}}Admin sign in{{else}}Sign in with email and password{{end}}</p>
+    <input type="hidden" name="method" value="password">
+    <input type="email" name="email" placeholder="Email" required autofocus autocomplete="email">
+    <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Sign in &rarr;</button>
+  </form>
+  {{end}}
+  {{if .TokenLogin}}
+  {{if .PasswordLogin}}<div class="hn-login-sep"><span>token</span></div>{{end}}
+  <form method="POST" action="/login" class="hn-gate-form">
+    <h2>Peek</h2>
+    <p>Enter your access token to manage uploads.</p>
+    <input type="hidden" name="method" value="token">
+    <input type="password" name="token" placeholder="Access token" required {{if not .PasswordLogin}}autofocus{{end}} autocomplete="off">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Sign in &rarr;</button>
+  </form>
+  {{end}}
+  {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
+  </div>
+</div>
+</body>
+</html>{{end}}

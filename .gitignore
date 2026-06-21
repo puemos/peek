@@ -1,5 +1,7 @@
 # Go
 /bin/
+/peek
+/peekd
 *.test
 *.out
 dist/
