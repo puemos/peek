@@ -206,7 +206,17 @@
 
   // A comment's anchor key: element selector + the exact text quote. Two
   // selections inside the same element get distinct pins/numbers.
-  function keyOf(c) { return (c.selector || "") + "" + (c.element_text || ""); }
+  function anchorKind(c) {
+    if (c.anchor_kind === "text" || c.anchor_kind === "element" || c.anchor_kind === "page") return c.anchor_kind;
+    if (!c.selector) return "page";
+    return c.element_text ? "text" : "element";
+  }
+
+  function anchorQuote(c) {
+    return anchorKind(c) === "text" ? (c.element_text || "") : "";
+  }
+
+  function keyOf(c) { return anchorKind(c) + "" + (c.selector || "") + "" + anchorQuote(c); }
 
   // Number only anchored comments (element or text); shared with on-page pins.
   function numberMap(comments) {
@@ -244,7 +254,10 @@
     comments.forEach(function (c) {
       if (!c.selector) return;
       var k = keyOf(c);
-      if (!seen[k]) { seen[k] = true; items.push({ selector: c.selector, quote: c.element_text || "", n: nmap[k] }); }
+      if (!seen[k]) {
+        seen[k] = true;
+        items.push({ selector: c.selector, quote: anchorQuote(c), anchor_kind: anchorKind(c), n: nmap[k] });
+      }
     });
     postToFrame({ hn: "comments", items: items });
 
@@ -258,16 +271,23 @@
     comments.forEach(function (c) {
       var li = document.createElement("li");
       li.dataset.selector = c.selector || "";
-      li.dataset.quote = c.element_text || "";
+      li.dataset.quote = anchorQuote(c);
 
       li.appendChild(makeMeta(c, nmap));
 
-      if (c.selector && c.element_text) {
+      var kind = anchorKind(c);
+      if (c.selector && kind === "text" && c.element_text) {
         var target = document.createElement("div");
         target.className = "hn-target";
         target.textContent = "“" + c.element_text + "”";
         target.title = c.selector;
         li.appendChild(target);
+      } else if (c.selector) {
+        var elemTarget = document.createElement("div");
+        elemTarget.className = "hn-target";
+        elemTarget.textContent = c.element_text ? "↳ " + c.element_text : "↳ " + c.selector;
+        elemTarget.title = c.selector;
+        li.appendChild(elemTarget);
       } else if (!c.selector) {
         var scope = document.createElement("div");
         scope.className = "hn-scope";
@@ -282,7 +302,7 @@
 
       if (c.selector) {
         li.classList.add("hn-locatable");
-        li.addEventListener("click", function () { locateAndFlag(c.selector, c.element_text || "", li); });
+        li.addEventListener("click", function () { locateAndFlag(c.selector, anchorQuote(c), li); });
       }
       frag.appendChild(li);
     });
@@ -296,7 +316,7 @@
     comments.forEach(function (c, i) {
       var when = new Date(c.created_at * 1000).toLocaleString();
       lines.push("## " + (i + 1) + ". " + (c.author || "anonymous") + " · " + when);
-      if (c.element_text) {
+      if (anchorKind(c) === "text" && c.element_text) {
         lines.push("**On:** > " + c.element_text.replace(/\s+/g, " ").trim());
       } else if (c.selector) {
         lines.push("**On:** `" + c.selector + "`");
@@ -410,9 +430,15 @@
 
   function showComposer(pick) {
     state.pendingPick = pick;
-    if (pick.selector) {
+    var kind = pick.anchor_kind || (pick.selector ? "element" : "page");
+    state.pendingPick.anchor_kind = kind;
+    if (pick.selector && kind === "text") {
       els.target.className = "hn-target";
-      els.target.textContent = pick.element_text ? "“" + pick.element_text + "”" : "↳ " + pick.selector;
+      els.target.textContent = "“" + pick.element_text + "”";
+      els.target.title = pick.selector;
+    } else if (pick.selector) {
+      els.target.className = "hn-target";
+      els.target.textContent = pick.element_text ? "↳ " + pick.element_text : "↳ " + pick.selector;
       els.target.title = pick.selector;
     } else {
       els.target.className = "hn-target hn-target-general";
@@ -489,7 +515,7 @@
   if (els.commentingAs) els.commentingAs.addEventListener("click", openNameModal);
   if (els.hintGeneral) els.hintGeneral.addEventListener("click", function () {
     setMode(false);
-    showComposer({ selector: "", element_text: "", rect: null });
+    showComposer({ selector: "", element_text: "", anchor_kind: "page", rect: null });
   });
 
   // Cmd/Ctrl+Enter submits from the textarea.
@@ -509,6 +535,7 @@
     api("POST", "/api/uploads/" + SLUG + "/comments", {
       selector: state.pendingPick.selector,
       element_text: state.pendingPick.element_text,
+      anchor_kind: state.pendingPick.anchor_kind || (state.pendingPick.selector ? "element" : "page"),
       name: getName(),
       body: body
     }).then(function (c) {

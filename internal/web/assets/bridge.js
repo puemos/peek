@@ -15,7 +15,7 @@
   var state = {
     modeOn: false,
     highlight: null,
-    pins: [],           // [{selector, quote, n, el, node, range}]
+    pins: [],           // [{selector, quote, kind, n, el, node, range}]
     pinLayer: null,
     selBtn: null,
     rafPending: false,
@@ -145,7 +145,7 @@
     var sel = uniqueSelector(e.target);
     var r = e.target.getBoundingClientRect();
     var rect = { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
-    parent.postMessage({ hn: "pick", selector: sel, element_text: snippet(e.target), rect: rect }, "*");
+    parent.postMessage({ hn: "pick", selector: sel, element_text: snippet(e.target), anchor_kind: "element", rect: rect }, "*");
     highlight(null);
   }
   function setMode(on) {
@@ -198,7 +198,7 @@
       var selector = uniqueSelector(anchor) || "body";
       var rr = range.getBoundingClientRect();
       var rect = { top: rr.top, left: rr.left, right: rr.right, bottom: rr.bottom, width: rr.width, height: rr.height };
-      parent.postMessage({ hn: "pick", selector: selector, element_text: text, rect: rect }, "*");
+      parent.postMessage({ hn: "pick", selector: selector, element_text: text, anchor_kind: "text", rect: rect }, "*");
       hideSelButton();
       sel.removeAllRanges();
     });
@@ -231,9 +231,11 @@
   function ensureLayer() {
     if (state.pinLayer && state.pinLayer.isConnected) return state.pinLayer;
     state.pinLayer = document.getElementById("hn-pin-layer");
+    if (state.pinLayer && state.pinLayer.getAttribute("data-hn-pin-layer") !== "true") state.pinLayer = null;
     if (!state.pinLayer) {
       state.pinLayer = document.createElement("div");
       state.pinLayer.id = "hn-pin-layer";
+      state.pinLayer.setAttribute("data-hn-pin-layer", "true");
       document.documentElement.appendChild(state.pinLayer);
     }
     return state.pinLayer;
@@ -257,29 +259,63 @@
         parent.postMessage({ hn: "pinclick", selector: it.selector, quote: it.quote || "" }, "*");
       });
       frag.appendChild(pin);
-      state.pins.push({ selector: it.selector, quote: it.quote || "", n: it.n, el: pin, node: node, range: range });
+      state.pins.push({ selector: it.selector, quote: it.quote || "", kind: it.anchor_kind || (it.quote ? "text" : "element"), n: it.n, el: pin, node: node, range: range });
     });
     layer.replaceChildren(frag);
     applyHighlights();
     positionPins();
   }
 
-  function anchorRect(p) {
-    if (p.range) { try { var rr = p.range.getBoundingClientRect(); if (rr.width || rr.height) return rr; } catch (e) {} }
-    if (p.node && p.node.isConnected) return p.node.getBoundingClientRect();
+  function firstUsableRect(rects) {
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      if (r && (r.width || r.height)) return r;
+    }
     return null;
+  }
+
+  function anchorPoint(p) {
+    if (p.range) {
+      try {
+        var rr = firstUsableRect(p.range.getClientRects());
+        if (!rr) rr = p.range.getBoundingClientRect();
+        if (rr && (rr.width || rr.height)) return { x: rr.right, y: rr.top };
+      } catch (e) {}
+    }
+    if (p.node && p.node.isConnected) {
+      var r = p.node.getBoundingClientRect();
+      if (r && (r.width || r.height)) return { x: r.right, y: r.top };
+    }
+    return null;
+  }
+
+  function layerMetrics(layer) {
+    var marker = layer.querySelector("#hn-pin-measure");
+    if (!marker) {
+      marker = document.createElement("div");
+      marker.id = "hn-pin-measure";
+      marker.style.cssText = "position:absolute;left:0;top:0;width:100px;height:100px;pointer-events:none;visibility:hidden;";
+      layer.appendChild(marker);
+    }
+    var r = marker.getBoundingClientRect();
+    return {
+      left: r.left,
+      top: r.top,
+      sx: r.width ? r.width / 100 : 1,
+      sy: r.height ? r.height / 100 : 1
+    };
   }
 
   function positionPins() {
     if (!state.pins.length) return;
-    var sx = window.scrollX || window.pageXOffset;
-    var sy = window.scrollY || window.pageYOffset;
+    var layer = ensureLayer();
+    var m = layerMetrics(layer);
     state.pins.forEach(function (p) {
-      var r = anchorRect(p);
-      if (!r || (r.width === 0 && r.height === 0)) { p.el.style.display = "none"; return; }
+      var pt = anchorPoint(p);
+      if (!pt) { p.el.style.display = "none"; return; }
       p.el.style.display = "";
-      p.el.style.left = (r.right + sx) + "px";
-      p.el.style.top = (r.top + sy) + "px";
+      p.el.style.left = ((pt.x - m.left) / m.sx) + "px";
+      p.el.style.top = ((pt.y - m.top) / m.sy) + "px";
     });
   }
 

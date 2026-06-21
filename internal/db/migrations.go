@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);`},
 	{4, "account_password_hash", `-- ALTER TABLE handled idempotently below`},
+	{5, "comment_anchor_kind", `-- ALTER TABLE handled idempotently below`},
 }
 
 func (s *Store) runMigrations() error {
@@ -58,6 +59,10 @@ func (s *Store) runMigrations() error {
 			}
 		} else if m.id == 4 {
 			if err := s.migrateAccountPasswordHash(); err != nil {
+				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
+			}
+		} else if m.id == 5 {
+			if err := s.migrateCommentAnchorKind(); err != nil {
 				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
 			}
 		} else if m.sql != "" {
@@ -104,6 +109,19 @@ func (s *Store) migrateTokenExpiry() error {
 // accounts. Empty means the account cannot use password login.
 func (s *Store) migrateAccountPasswordHash() error {
 	_, err := s.Exec(`ALTER TABLE accounts ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''`)
+	if err != nil {
+		if isDuplicateColumnError(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// migrateCommentAnchorKind records whether a comment is anchored to selected
+// text, a whole element, or the page.
+func (s *Store) migrateCommentAnchorKind() error {
+	_, err := s.Exec(`ALTER TABLE comments ADD COLUMN anchor_kind TEXT NOT NULL DEFAULT ''`)
 	if err != nil {
 		if isDuplicateColumnError(err) {
 			return nil

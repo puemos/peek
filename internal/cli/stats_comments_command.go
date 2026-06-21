@@ -68,12 +68,13 @@ func cmdComments(args []string) error {
 		return err
 	}
 	var list []struct {
-		ID        int64  `json:"id"`
-		Selector  string `json:"selector"`
-		Text      string `json:"element_text"`
-		Author    string `json:"author"`
-		Body      string `json:"body"`
-		CreatedAt int64  `json:"created_at"`
+		ID         int64  `json:"id"`
+		Selector   string `json:"selector"`
+		Text       string `json:"element_text"`
+		AnchorKind string `json:"anchor_kind"`
+		Author     string `json:"author"`
+		Body       string `json:"body"`
+		CreatedAt  int64  `json:"created_at"`
 	}
 	if err := c.getJSON("/api/uploads/"+args[0]+"/comments", &list); err != nil {
 		return err
@@ -90,8 +91,18 @@ func cmdComments(args []string) error {
 		}
 		// Context: the on-page anchor a comment points at.
 		var ctx string
+		kind := cm.AnchorKind
+		if kind == "" {
+			if cm.Selector == "" {
+				kind = "page"
+			} else if cm.Text != "" {
+				kind = "text"
+			} else {
+				kind = "element"
+			}
+		}
 		switch {
-		case cm.Text != "":
+		case kind == "text" && cm.Text != "":
 			ctx = "“" + truncate(cm.Text, 60) + "”"
 		case cm.Selector != "":
 			ctx = cm.Selector

@@ -78,11 +78,12 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type exportComment struct {
-		Author    string `json:"author"`
-		Body      string `json:"body"`
-		Selector  string `json:"selector"`
-		Text      string `json:"element_text"`
-		CreatedAt int64  `json:"created_at"`
+		Author     string `json:"author"`
+		Body       string `json:"body"`
+		Selector   string `json:"selector"`
+		Text       string `json:"element_text"`
+		AnchorKind string `json:"anchor_kind"`
+		CreatedAt  int64  `json:"created_at"`
 	}
 	type exportVisit struct {
 		Name      string `json:"name"`
@@ -103,7 +104,8 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 	for _, c := range comments {
 		cmts = append(cmts, exportComment{
 			Author: c.AuthorName, Body: c.Body, Selector: c.ElementSelector,
-			Text: c.ElementText, CreatedAt: c.CreatedAt.Unix(),
+			Text: c.ElementText, AnchorKind: commentAnchorKind(c.ElementSelector, c.ElementText, c.AnchorKind),
+			CreatedAt: c.CreatedAt.Unix(),
 		})
 	}
 	export["comments"] = cmts

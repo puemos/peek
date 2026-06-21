@@ -12,19 +12,21 @@ import (
 )
 
 type commentIn struct {
-	Selector string `json:"selector"`
-	Text     string `json:"element_text"`
-	Name     string `json:"name"`
-	Body     string `json:"body"`
+	Selector   string `json:"selector"`
+	Text       string `json:"element_text"`
+	AnchorKind string `json:"anchor_kind"`
+	Name       string `json:"name"`
+	Body       string `json:"body"`
 }
 
 type commentOut struct {
-	ID        int64  `json:"id"`
-	Selector  string `json:"selector"`
-	Text      string `json:"element_text"`
-	Author    string `json:"author"`
-	Body      string `json:"body"`
-	CreatedAt int64  `json:"created_at"`
+	ID         int64  `json:"id"`
+	Selector   string `json:"selector"`
+	Text       string `json:"element_text"`
+	AnchorKind string `json:"anchor_kind"`
+	Author     string `json:"author"`
+	Body       string `json:"body"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +66,8 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 	for _, c := range list {
 		out = append(out, commentOut{
 			ID: c.ID, Selector: c.ElementSelector, Text: c.ElementText,
-			Author: c.AuthorName, Body: c.Body, CreatedAt: c.CreatedAt.Unix(),
+			AnchorKind: commentAnchorKind(c.ElementSelector, c.ElementText, c.AnchorKind),
+			Author:     c.AuthorName, Body: c.Body, CreatedAt: c.CreatedAt.Unix(),
 		})
 	}
 	jsonOK(w, out)
@@ -95,11 +98,18 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	in.Body = strings.TrimSpace(in.Body)
 	in.Name = strings.TrimSpace(in.Name)
 	in.Text = strings.TrimSpace(in.Text)
+	in.AnchorKind = strings.TrimSpace(in.AnchorKind)
+	anchorKind, ok := normalizeCommentAnchorKind(in.Selector, in.Text, in.AnchorKind)
+	if !ok {
+		jsonError(w, http.StatusBadRequest, "invalid anchor kind")
+		return
+	}
+	in.AnchorKind = anchorKind
 	if in.Body == "" {
 		jsonError(w, http.StatusBadRequest, "comment body required")
 		return
 	}
-	if len(in.Body) > 4000 || len(in.Name) > 100 || len(in.Selector) > 500 || len(in.Text) > 200 {
+	if len(in.Body) > 4000 || len(in.Name) > 100 || len(in.Selector) > 500 || len(in.Text) > 200 || len(in.AnchorKind) > 20 {
 		jsonError(w, http.StatusRequestEntityTooLarge, "field too long")
 		return
 	}
@@ -118,7 +128,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	h := sha256.Sum256([]byte(s.secret + "|" + vid))
 	vidHash := hex.EncodeToString(h[:])[:16]
 
-	if err := s.store.AddComment(r.Context(), u.ID, in.Selector, in.Text, in.Name, vidHash, in.Body); err != nil {
+	if err := s.store.AddComment(r.Context(), u.ID, in.Selector, in.Text, in.AnchorKind, in.Name, vidHash, in.Body); err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
 	}
@@ -132,10 +142,40 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	for _, c := range list {
 		out = append(out, commentOut{
 			ID: c.ID, Selector: c.ElementSelector, Text: c.ElementText,
-			Author: c.AuthorName, Body: c.Body, CreatedAt: c.CreatedAt.Unix(),
+			AnchorKind: commentAnchorKind(c.ElementSelector, c.ElementText, c.AnchorKind),
+			Author:     c.AuthorName, Body: c.Body, CreatedAt: c.CreatedAt.Unix(),
 		})
 	}
 	jsonOK(w, out)
+}
+
+func normalizeCommentAnchorKind(selector, text, kind string) (string, bool) {
+	switch kind {
+	case "":
+		return commentAnchorKind(selector, text, ""), true
+	case "text":
+		return kind, selector != "" && text != ""
+	case "element":
+		return kind, selector != ""
+	case "page":
+		return kind, selector == ""
+	default:
+		return "", false
+	}
+}
+
+func commentAnchorKind(selector, text, kind string) string {
+	switch kind {
+	case "text", "element", "page":
+		return kind
+	}
+	if selector == "" {
+		return "page"
+	}
+	if text != "" {
+		return "text"
+	}
+	return "element"
 }
 
 // pageAuthorized returns true if the viewer may see the page. For unprotected

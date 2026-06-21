@@ -163,10 +163,10 @@ func TestAddListComments(t *testing.T) {
 		t.Fatalf("create upload: %v", err)
 	}
 	up, _ := s.GetUpload(context.Background(), "slug2")
-	if err := s.AddComment(context.Background(), up.ID, "#id", "text", "Alice", "cookie-a", "comment body"); err != nil {
+	if err := s.AddComment(context.Background(), up.ID, "#id", "text", "text", "Alice", "cookie-a", "comment body"); err != nil {
 		t.Fatalf("add comment: %v", err)
 	}
-	if err := s.AddComment(context.Background(), up.ID, "#id2", "text2", "Bob", "cookie-b", "second"); err != nil {
+	if err := s.AddComment(context.Background(), up.ID, "#id2", "text2", "element", "Bob", "cookie-b", "second"); err != nil {
 		t.Fatalf("add comment: %v", err)
 	}
 	comments, err := s.ListComments(context.Background(), up.ID)
@@ -178,6 +178,9 @@ func TestAddListComments(t *testing.T) {
 	}
 	if comments[0].AuthorName != "Alice" || comments[1].AuthorName != "Bob" {
 		t.Fatalf("comment order or content mismatch: %+v", comments)
+	}
+	if comments[0].AnchorKind != "text" || comments[1].AnchorKind != "element" {
+		t.Fatalf("comment anchor kinds mismatch: %+v", comments)
 	}
 }
 
@@ -326,6 +329,7 @@ CREATE TABLE settings (
 );
 INSERT INTO tokens(token,name,is_admin,created_at) VALUES('legacy-admin','Admin',1,100);
 INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1,'page.html',10,101);
+INSERT INTO comments(upload_id,element_selector,element_text,author_name,author_cookie,body,created_at) VALUES(1,'#hero','Important','Ada','visitor','Looks good',102);
 `)
 	if err != nil {
 		t.Fatal(err)
@@ -353,6 +357,13 @@ INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1
 	}
 	if up.OwnerAccountID != tok.AccountID || up.OwnerTokenID != tok.ID {
 		t.Fatalf("upload ownership not migrated: upload=%+v token=%+v", up, tok)
+	}
+	comments, err := store.ListComments(context.Background(), up.ID)
+	if err != nil {
+		t.Fatalf("list migrated comments: %v", err)
+	}
+	if len(comments) != 1 || comments[0].ElementText != "Important" || comments[0].AnchorKind != "" {
+		t.Fatalf("unexpected migrated comments: %+v", comments)
 	}
 	if err := store.CreateUploadChecked(context.Background(), "oauth", tok.AccountID, 0, "oauth.html", 5, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("account-owned upload without token should be allowed: %v", err)

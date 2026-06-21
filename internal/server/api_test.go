@@ -84,7 +84,7 @@ func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get upload: %v", err)
 	}
-	if err := store.AddComment(context.Background(), upload.ID, "", "", "Ada", "visitor", "Looks good"); err != nil {
+	if err := store.AddComment(context.Background(), upload.ID, "", "", "page", "Ada", "visitor", "Looks good"); err != nil {
 		t.Fatalf("seed comment: %v", err)
 	}
 	if err := store.SetAccountDisabled(context.Background(), owner.AccountID, true); err != nil {
@@ -196,9 +196,9 @@ func TestInternalReviewWorkflow(t *testing.T) {
 		t.Fatalf("page did not reference raw iframe URL: %s", pageResp.Body)
 	}
 
-	resp = app.requestString(t, http.MethodPost, "/api/uploads/"+up.Slug+"/comments", `{"name":"Ada","body":"Looks good","selector":"#hero","element_text":"Hello"}`, withContentType("application/json"), withCookies(pageResp.Cookies...))
+	resp = app.requestString(t, http.MethodPost, "/api/uploads/"+up.Slug+"/comments", `{"name":"Ada","body":"Looks good","selector":"#hero","element_text":"Hello","anchor_kind":"text"}`, withContentType("application/json"), withCookies(pageResp.Cookies...))
 	assertStatus(t, resp, http.StatusOK)
-	if !strings.Contains(string(resp.Body), `"author":"Ada"`) || !strings.Contains(string(resp.Body), `"selector":"#hero"`) {
+	if !strings.Contains(string(resp.Body), `"author":"Ada"`) || !strings.Contains(string(resp.Body), `"selector":"#hero"`) || !strings.Contains(string(resp.Body), `"anchor_kind":"text"`) {
 		t.Fatalf("comment response missing saved comment: %s", resp.Body)
 	}
 
@@ -215,7 +215,7 @@ func TestInternalReviewWorkflow(t *testing.T) {
 	if export.Filename != "review.html" || export.TotalVisits < 1 || len(export.Comments) != 1 {
 		t.Fatalf("unexpected export: %+v", export)
 	}
-	if export.Comments[0].Author != "Ada" || export.Comments[0].Body != "Looks good" {
+	if export.Comments[0].Author != "Ada" || export.Comments[0].Body != "Looks good" || export.Comments[0].AnchorKind != "text" {
 		t.Fatalf("unexpected exported comment: %+v", export.Comments)
 	}
 
@@ -230,8 +230,9 @@ type workflowExport struct {
 	Filename    string `json:"filename"`
 	TotalVisits int    `json:"total_visits"`
 	Comments    []struct {
-		Author string `json:"author"`
-		Body   string `json:"body"`
+		Author     string `json:"author"`
+		Body       string `json:"body"`
+		AnchorKind string `json:"anchor_kind"`
 	} `json:"comments"`
 }
 

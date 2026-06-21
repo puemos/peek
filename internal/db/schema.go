@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS comments (
 	upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
 	element_selector TEXT NOT NULL,
 	element_text TEXT NOT NULL DEFAULT '',
+	anchor_kind TEXT NOT NULL DEFAULT '',
 	author_name TEXT NOT NULL,
 	author_cookie TEXT NOT NULL,
 	body TEXT NOT NULL,

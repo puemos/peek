@@ -74,6 +74,7 @@ type Comment struct {
 	UploadID        int64
 	ElementSelector string
 	ElementText     string
+	AnchorKind      string
 	AuthorName      string
 	AuthorCookie    string
 	Body            string

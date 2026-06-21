@@ -42,7 +42,55 @@ func TestAddCommentLogsVisitorUpsertFailure(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"author":"Ada"`) {
 		t.Fatalf("comment response did not include saved comment: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"anchor_kind":"page"`) {
+		t.Fatalf("comment response did not infer page anchor kind: %s", rec.Body.String())
+	}
 	if !strings.Contains(logs.String(), "comment visitor upsert failed") {
 		t.Fatalf("visitor upsert failure was not logged: %s", logs.String())
+	}
+}
+
+func TestAddCommentPersistsExplicitAnchorKind(t *testing.T) {
+	s := newTestServer(t)
+	account, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads/page/comments", strings.NewReader(`{"name":"Ada","body":"Looks good","selector":"#hero","element_text":"Hero copy","anchor_kind":"element"}`))
+	req.SetPathValue("slug", "page")
+	rec := httptest.NewRecorder()
+
+	s.handleAddComment(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"anchor_kind":"element"`) {
+		t.Fatalf("comment response did not include explicit anchor kind: %s", rec.Body.String())
+	}
+}
+
+func TestAddCommentRejectsInvalidAnchorKind(t *testing.T) {
+	s := newTestServer(t)
+	account, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads/page/comments", strings.NewReader(`{"body":"Looks good","selector":"#hero","element_text":"Hero copy","anchor_kind":"sideways"}`))
+	req.SetPathValue("slug", "page")
+	rec := httptest.NewRecorder()
+
+	s.handleAddComment(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }

@@ -89,10 +89,12 @@ func TestCmdCommentsPrintsContextualComments(t *testing.T) {
 				"created_at":   int64(1700000000),
 			},
 			{
-				"id":         2,
-				"selector":   "#footer",
-				"body":       "Needs legal review.",
-				"created_at": int64(1700000600),
+				"id":           2,
+				"selector":     "#footer",
+				"element_text": "Footer copy",
+				"anchor_kind":  "element",
+				"body":         "Needs legal review.",
+				"created_at":   int64(1700000600),
 			},
 		})
 	}))

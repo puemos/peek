@@ -198,3 +198,20 @@ func TestRuntimeJSAvoidsHTMLStringInsertion(t *testing.T) {
 		}
 	}
 }
+
+func TestBridgePositionsPinsInLayerCoordinateSpace(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/bridge.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(b)
+	if !strings.Contains(js, "function layerMetrics(layer)") || !strings.Contains(js, "hn-pin-measure") {
+		t.Fatal("bridge must measure the pin layer coordinate space before placing pins")
+	}
+	if !strings.Contains(js, "getClientRects()") {
+		t.Fatal("bridge must place text pins from actual range line boxes")
+	}
+	if strings.Contains(js, "window.scrollX || window.pageXOffset") {
+		t.Fatal("bridge must not place pins by adding viewport rects to scroll offsets")
+	}
+}
