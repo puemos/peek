@@ -140,7 +140,10 @@ async function showTerminalIntro(page) {
 async function openSharedPage(page) {
   await page.context().addCookies([{ name: "hn_name", value: "Sam", url: BASE, sameSite: "Lax" }]);
   await page.context().addInitScript(() => {
-    try { localStorage.setItem("hn_name_asked", "1"); } catch (e) {}
+    try {
+      localStorage.setItem("hn_name", "Sam");
+      localStorage.setItem("hn_name_asked", "1");
+    } catch (e) {}
   });
 
   await page.goto(shareURL, { waitUntil: "domcontentloaded" });
