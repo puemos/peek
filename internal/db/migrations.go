@@ -45,7 +45,11 @@ func (s *Store) runMigrations() error {
 	}
 
 	for _, m := range migrations {
-		if s.isMigrationApplied(m.id) {
+		applied, err := s.isMigrationApplied(m.id)
+		if err != nil {
+			return fmt.Errorf("read migration %d (%s): %w", m.id, m.desc, err)
+		}
+		if applied {
 			continue
 		}
 		if m.id == 2 {
@@ -68,10 +72,13 @@ func (s *Store) runMigrations() error {
 	return nil
 }
 
-func (s *Store) isMigrationApplied(id int) bool {
+func (s *Store) isMigrationApplied(id int) (bool, error) {
 	var n int
 	err := s.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE id=?`, id).Scan(&n)
-	return err == nil && n > 0
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 func (s *Store) markMigrationApplied(id int) error {

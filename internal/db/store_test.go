@@ -350,6 +350,24 @@ INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1
 	}
 }
 
+func TestIsMigrationAppliedReportsMetadataReadFailure(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	applied, err := store.isMigrationApplied(1)
+	if err == nil {
+		t.Fatal("expected migration metadata read failure")
+	}
+	if applied {
+		t.Fatal("closed store should not report migration as applied")
+	}
+}
+
 func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "peek.db"))
 	if err != nil {
