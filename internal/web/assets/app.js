@@ -146,10 +146,13 @@
       name: localStorage.getItem(STORAGE_KEY) || "",
       nameInput: "",
       nameModalOpen: false,
+      pendingCommentAfterName: false,
+      allowAnonymousComment: false,
 
-      init(slug, protectedFlag) {
-        this.slug = slug;
-        this.protected = !!protectedFlag;
+      init() {
+        const dataset = document.body ? document.body.dataset : {};
+        this.slug = dataset.slug || "";
+        this.protected = dataset.protected === "true";
 
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
@@ -166,6 +169,7 @@
       },
 
       loadComments() {
+        if (!this.slug) return;
         this.panelLoading = true;
         fetch("/api/uploads/" + this.slug + "/comments", {
           credentials: "same-origin",
@@ -185,6 +189,7 @@
       },
 
       loadViews() {
+        if (!this.slug) return;
         fetch("/api/uploads/" + this.slug + "/views", {
           credentials: "same-origin",
         })
@@ -280,7 +285,7 @@
         document.addEventListener("keydown", (e) => {
           if (e.key === "Escape") {
             if (this.nameModalOpen) {
-              this.nameModalOpen = false;
+              this.closeNameModal();
               return;
             }
             if (this.composerOpen) {
@@ -386,6 +391,17 @@
         if (!body) return;
 
         this.composerError = "";
+        if (!this.slug) {
+          this.showComposerError("Page is still loading. Please try again.");
+          return;
+        }
+        if (!this.name && !this.allowAnonymousComment) {
+          this.pendingCommentAfterName = true;
+          this.showNameModal();
+          return;
+        }
+        this.pendingCommentAfterName = false;
+        this.allowAnonymousComment = false;
 
         const target = this.composerTarget;
         const payload = { body: body, name: this.name || "" };
@@ -456,19 +472,51 @@
       showNameModal() {
         this.nameInput = this.name || "";
         this.nameModalOpen = true;
+        localStorage.setItem("hn_name_asked", "1");
         this.$nextTick(() => {
           const inp = this.$refs.nameInput;
           if (inp) inp.focus();
         });
       },
 
+      closeNameModal() {
+        this.nameModalOpen = false;
+        this.pendingCommentAfterName = false;
+        this.allowAnonymousComment = false;
+      },
+
       saveName() {
         const n = (this.nameInput || "").trim();
-        if (n) {
-          this.name = n;
-          localStorage.setItem(STORAGE_KEY, n);
+        if (!n) {
+          const inp = this.$refs.nameInput;
+          if (inp) inp.focus();
+          return;
         }
+        const resume = this.pendingCommentAfterName;
+        this.pendingCommentAfterName = false;
+        this.allowAnonymousComment = false;
+        this.name = n;
+        localStorage.setItem(STORAGE_KEY, n);
+        localStorage.setItem("hn_name_asked", "1");
         this.nameModalOpen = false;
+        if (resume) {
+          this.$nextTick(() => {
+            this.postComment();
+          });
+        }
+      },
+
+      skipName() {
+        const resume = this.pendingCommentAfterName;
+        this.pendingCommentAfterName = false;
+        this.nameModalOpen = false;
+        localStorage.setItem("hn_name_asked", "1");
+        if (resume) {
+          this.allowAnonymousComment = true;
+          this.$nextTick(() => {
+            this.postComment();
+          });
+        }
       },
 
       toggleSparkline() {

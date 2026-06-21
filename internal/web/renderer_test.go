@@ -92,6 +92,32 @@ func TestRendererExecutesAllTemplates(t *testing.T) {
 	}
 }
 
+func TestPageTemplateUsesDatasetForViewerConfig(t *testing.T) {
+	renderer, err := newRenderer(func(name string) string {
+		return "/" + name + "?v=test"
+	})
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	body, err := renderer.Execute(TemplatePage, PageData{Name: "page.html", Slug: "abc123", RawURL: "/raw/abc123?t=t&v=v", Protected: true})
+	if err != nil {
+		t.Fatalf("execute page: %v", err)
+	}
+	html := string(body)
+	if strings.Contains(html, `x-init="init(`) {
+		t.Fatalf("page template should not call Alpine init with positional args: %s", html)
+	}
+	for _, want := range []string{
+		`x-data="pageApp"`,
+		`data-slug="abc123"`,
+		`data-protected="true"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("page template missing %q: %s", want, html)
+		}
+	}
+}
+
 func TestDashboardInviteLinkRendersAsCopyAction(t *testing.T) {
 	renderer, err := NewRenderer()
 	if err != nil {

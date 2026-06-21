@@ -14,6 +14,7 @@ import (
 	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/uploadquota"
 	webui "github.com/puemos/peek/internal/web"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type rawPageStorage struct {
@@ -59,6 +60,63 @@ func TestHandlePageMissingUploadRendersWebError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Page not found") {
 		t.Fatalf("body did not render web error: %s", rec.Body.String())
+	}
+}
+
+func TestPagePasswordCookieAuthorizesProtectedCommentAPI(t *testing.T) {
+	s := newTestServer(t)
+	account, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte("lolololo"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.CreateUploadChecked(context.Background(), "protected", account.ID, 0, "protected.html", 42, string(hash), uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads/protected/comments", strings.NewReader(`{"name":"Ada","body":"Looks good"}`))
+	req.SetPathValue("slug", "protected")
+	rec := httptest.NewRecorder()
+	s.handleAddComment(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/p/protected", strings.NewReader("password=lolololo"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("slug", "protected")
+	rec = httptest.NewRecorder()
+	s.handlePagePassword(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("password status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var authCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == authCookieName("protected") {
+			authCookie = c
+			break
+		}
+	}
+	if authCookie == nil {
+		t.Fatalf("password response did not set %s cookie", authCookieName("protected"))
+	}
+	if authCookie.Path != "/" {
+		t.Fatalf("auth cookie path = %q, want /", authCookie.Path)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/uploads/protected/comments", strings.NewReader(`{"name":"Ada","body":"Looks good"}`))
+	req.SetPathValue("slug", "protected")
+	req.AddCookie(authCookie)
+	rec = httptest.NewRecorder()
+	s.handleAddComment(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("comment status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"author":"Ada"`) {
+		t.Fatalf("comment response missing saved author: %s", rec.Body.String())
 	}
 }
 

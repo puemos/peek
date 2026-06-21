@@ -165,6 +165,48 @@ func TestParentAppStoresReviewerNameLocally(t *testing.T) {
 	}
 }
 
+func TestParentAppReadsViewerConfigFromDataset(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if strings.Contains(src, "init(slug, protectedFlag)") {
+		t.Fatal("parent app should not rely on Alpine init positional arguments")
+	}
+	for _, want := range []string{
+		"init()",
+		"document.body.dataset",
+		"this.slug = dataset.slug",
+		`dataset.protected === "true"`,
+		"if (!this.slug) return;",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("parent app dataset initialization missing %q", want)
+		}
+	}
+}
+
+func TestParentAppPromptsForNameBeforeAnonymousComment(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		"pendingCommentAfterName",
+		"allowAnonymousComment",
+		"this.showNameModal();",
+		"skipName()",
+		"this.allowAnonymousComment = true",
+		"this.postComment();",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("parent app name prompt flow missing %q", want)
+		}
+	}
+}
+
 func TestDashboardAlpineClipboardUsesSharedFailureFeedback(t *testing.T) {
 	b, err := assetsFS.ReadFile("assets/dashboard-alpine.js")
 	if err != nil {

@@ -11,7 +11,7 @@
 <script src="{{asset "app.js"}}" defer></script>
 <script src="{{asset "alpine.min.js"}}" defer></script>
 </head>
-<body x-data="pageApp" x-init="init('{{.Slug}}', {{.Protected}})" data-slug="{{.Slug}}" class="overflow-hidden">
+<body x-data="pageApp" data-slug="{{.Slug}}" data-protected="{{.Protected}}" class="overflow-hidden">
 
 <iframe id="hn-frame" src="{{.RawURL}}" sandbox="allow-scripts allow-popups"
         referrerpolicy="no-referrer" title="shared page"
@@ -137,11 +137,11 @@
     <h2 class="text-[17px] font-semibold tracking-tight text-card-foreground mb-1.5">Add your name</h2>
     <p class="text-[13px] text-muted-foreground mb-4 leading-relaxed">It shows next to comments you leave. You can skip this.</p>
     <form @submit.prevent="saveName" class="flex flex-col gap-3.5">
-      <input x-ref="nameInput" x-model="nameInput" type="text" placeholder="Your name" maxlength="100" autocomplete="name"
+      <input x-ref="nameInput" x-model="nameInput" type="text" placeholder="Your name" maxlength="100" autocomplete="name" required
              class="h-10 rounded-lg border border-input bg-secondary px-3.5 text-foreground text-[13px] placeholder:text-muted-foreground transition focus:outline-none focus:border-ring focus:ring-2 focus:ring-ring/20">
       <div class="flex gap-2 items-center">
         <button type="submit" class="hn-small-button hn-button-primary">Continue</button>
-        <button type="button" id="hn-name-skip" @click="nameModalOpen = false" class="hn-small-button ml-auto">Skip</button>
+        <button type="button" id="hn-name-skip" @click="skipName" class="hn-small-button ml-auto">Skip</button>
       </div>
     </form>
   </div>

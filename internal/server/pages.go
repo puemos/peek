@@ -22,6 +22,9 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateGate, webui.GateData{Slug: slug})
 		return
 	}
+	if u.PasswordHash != "" {
+		s.setPageAuthCookie(w, slug)
+	}
 	vid := s.visitorID(w, r)
 	s.recordVisit(r, u, vid)
 
@@ -54,15 +57,19 @@ func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 		s.renderHTML(w, http.StatusUnauthorized, webui.TemplateGate, webui.GateData{Slug: slug, Error: true})
 		return
 	}
+	s.setPageAuthCookie(w, slug)
+	http.Redirect(w, r, "/p/"+slug, http.StatusSeeOther)
+}
+
+func (s *Server) setPageAuthCookie(w http.ResponseWriter, slug string) {
 	s.setCookie(w, &http.Cookie{
 		Name:     authCookieName(slug),
 		Value:    makeSessionCookieValue(s.secret, slug, sessionTTL),
-		Path:     "/p/" + slug,
+		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
 		SameSite: http.SameSiteLaxMode,
 		HttpOnly: true,
 	})
-	http.Redirect(w, r, "/p/"+slug, http.StatusSeeOther)
 }
 
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
