@@ -119,8 +119,6 @@ func parseSignedSubject(secret, val string) (string, bool) {
 	return sub, true
 }
 
-var errInvalid = errors.New("invalid")
-
 // encryptSecret encrypts plaintext using AES-256-GCM with a key derived from
 // the server secret. Returns base64-encoded nonce+ciphertext.
 func encryptSecret(secretHex, plaintext string) (string, error) {
