@@ -49,7 +49,7 @@ func TestDashboardReportsUploadListFailure(t *testing.T) {
 	if _, err := store.Exec(`DROP TABLE uploads`); err != nil {
 		t.Fatal(err)
 	}
-	renderer, err := webui.NewRenderer(assetURL)
+	renderer, err := webui.NewRenderer(webui.AssetURL)
 	if err != nil {
 		t.Fatal(err)
 	}

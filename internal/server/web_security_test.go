@@ -8,7 +8,7 @@ import (
 )
 
 func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
-	renderer, err := webui.NewRenderer(assetURL)
+	renderer, err := webui.NewRenderer(webui.AssetURL)
 	if err != nil {
 		t.Fatalf("new renderer: %v", err)
 	}

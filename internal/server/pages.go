@@ -129,7 +129,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // selection over postMessage. Runs inside the sandboxed iframe.
 func injectBridge(b []byte) []byte {
 	marker := []byte("</body>")
-	tag := []byte(`<script src="/bridge.js"></script>`)
+	tag := []byte(`<script src="` + webui.AssetURL("bridge.js") + `"></script>`)
 	if idx := bytes.LastIndex(b, marker); idx >= 0 {
 		return append(append(b[:idx:idx], tag...), b[idx:]...)
 	}
