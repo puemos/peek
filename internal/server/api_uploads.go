@@ -167,14 +167,12 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
-	if err := s.store.DeleteUpload(u.ID); err != nil {
+	if err := s.deleteUpload(r.Context(), *u); err != nil {
+		slog.Error("api upload delete failed", "slug", slug, "err", err)
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
-	if err := s.storage.Delete(r.Context(), slug); err != nil {
-		slog.Warn("api upload storage cleanup failed", "slug", slug, "err", err)
-	}
 	jsonOK(w, map[string]any{"deleted": slug})
 }
 
@@ -238,12 +236,9 @@ func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) 
 	}
 	deleted := 0
 	for _, u := range uploads {
-		if err := s.store.DeleteUpload(u.ID); err != nil {
-			slog.Warn("api upload delete_all db delete failed", "slug", u.Slug, "err", err)
+		if err := s.deleteUpload(r.Context(), u); err != nil {
+			slog.Warn("api upload delete_all failed", "slug", u.Slug, "err", err)
 			continue
-		}
-		if err := s.storage.Delete(r.Context(), u.Slug); err != nil {
-			slog.Warn("api upload delete_all storage cleanup failed", "slug", u.Slug, "err", err)
 		}
 		deleted++
 	}

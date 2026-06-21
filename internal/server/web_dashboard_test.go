@@ -174,7 +174,7 @@ func TestDashboardStatsMissingUploadRendersWebError(t *testing.T) {
 	}
 }
 
-func TestDashboardDeleteStopsWhenDatabaseDeleteFails(t *testing.T) {
+func TestDashboardDeleteReportsDatabaseDeleteFailureAfterStorageDelete(t *testing.T) {
 	s, store, storage, accountID := newDashboardDeleteTestServer(t)
 	seedDashboardDeleteUpload(t, store, accountID)
 	if _, err := store.Exec(`CREATE TRIGGER block_upload_delete BEFORE DELETE ON uploads BEGIN SELECT RAISE(ABORT, 'blocked delete'); END;`); err != nil {
@@ -195,11 +195,38 @@ func TestDashboardDeleteStopsWhenDatabaseDeleteFails(t *testing.T) {
 	if got := u.Query().Get("err"); got != "delete failed" {
 		t.Fatalf("err query = %q, location = %q", got, loc)
 	}
-	if len(storage.deleted) != 0 {
-		t.Fatalf("storage delete called after DB failure: %+v", storage.deleted)
+	if len(storage.deleted) != 1 || storage.deleted[0] != "page" {
+		t.Fatalf("storage deletes = %+v", storage.deleted)
 	}
 	if _, err := store.GetUpload("page"); err != nil {
 		t.Fatalf("upload should remain after DB failure: %v", err)
+	}
+}
+
+func TestDashboardDeleteStopsWhenStorageDeleteFails(t *testing.T) {
+	s, store, storage, accountID := newDashboardDeleteTestServer(t)
+	storage.err = errors.New("storage blocked")
+	seedDashboardDeleteUpload(t, store, accountID)
+
+	rec := httptest.NewRecorder()
+	s.handleDashboardDelete(rec, dashboardDeleteRequest(t, s, accountID, "page"))
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	loc := rec.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("parse location: %v", err)
+	}
+	if got := u.Query().Get("err"); got != "delete failed" {
+		t.Fatalf("err query = %q, location = %q", got, loc)
+	}
+	if len(storage.deleted) != 1 || storage.deleted[0] != "page" {
+		t.Fatalf("storage deletes = %+v", storage.deleted)
+	}
+	if _, err := store.GetUpload("page"); err != nil {
+		t.Fatalf("upload should remain after storage failure: %v", err)
 	}
 }
 

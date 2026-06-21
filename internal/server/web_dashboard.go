@@ -168,13 +168,10 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		dashboardError(w, r, "not owner")
 		return
 	}
-	if err := s.store.DeleteUpload(u.ID); err != nil {
+	if err := s.deleteUpload(r.Context(), *u); err != nil {
 		slog.Error("dashboard upload delete failed", "slug", slug, "err", err)
 		dashboardError(w, r, "delete failed")
 		return
-	}
-	if err := s.storage.Delete(r.Context(), slug); err != nil {
-		slog.Warn("dashboard upload storage cleanup failed", "slug", slug, "err", err)
 	}
 	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
 	dashboardHome(w, r)
