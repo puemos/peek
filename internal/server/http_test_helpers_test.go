@@ -1,12 +1,16 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/puemos/peek/internal/server"
 )
 
 type testApp struct {
@@ -14,6 +18,7 @@ type testApp struct {
 	AdminToken string
 	DataDir    string
 
+	server *server.Server
 	client *http.Client
 }
 
@@ -28,6 +33,7 @@ func newTestApp(t *testing.T) testApp {
 		URL:        ts.URL,
 		AdminToken: adminToken,
 		DataDir:    dir,
+		server:     srv,
 		client:     ts.Client(),
 	}
 }
@@ -80,6 +86,15 @@ func (a testApp) requestJSON(t *testing.T, method, path string, in any, opts ...
 	}
 	opts = append([]requestOption{withContentType("application/json")}, opts...)
 	return a.request(t, method, path, strings.NewReader(body.String()), opts...)
+}
+
+func (a testApp) flushVisits(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := a.server.FlushVisits(ctx); err != nil {
+		t.Fatalf("flush visits: %v", err)
+	}
 }
 
 type requestOption func(*http.Request)

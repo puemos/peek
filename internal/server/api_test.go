@@ -207,7 +207,10 @@ func TestInternalReviewWorkflow(t *testing.T) {
 		t.Fatalf("owner comments response missing comment: %s", resp.Body)
 	}
 
-	export := waitForExport(t, app, up.Slug)
+	app.flushVisits(t)
+	resp = app.request(t, http.MethodGet, "/api/uploads/"+up.Slug+"/export", nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	export := decodeResponseJSON[workflowExport](t, resp)
 	if export.Filename != "review.html" || export.TotalVisits < 1 || len(export.Comments) != 1 {
 		t.Fatalf("unexpected export: %+v", export)
 	}
@@ -229,23 +232,6 @@ type workflowExport struct {
 		Author string `json:"author"`
 		Body   string `json:"body"`
 	} `json:"comments"`
-}
-
-func waitForExport(t *testing.T, app testApp, slug string) workflowExport {
-	t.Helper()
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for {
-		resp := app.request(t, http.MethodGet, "/api/uploads/"+slug+"/export", nil, withAuth(app.AdminToken))
-		assertStatus(t, resp, http.StatusOK)
-		out := decodeResponseJSON[workflowExport](t, resp)
-		if out.TotalVisits > 0 {
-			return out
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("export never included page visit: %+v", out)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 func TestCreateTokenWithExpiryAndList(t *testing.T) {

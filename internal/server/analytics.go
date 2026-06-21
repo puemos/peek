@@ -18,6 +18,7 @@ type visitEvent struct {
 	Name     string
 	IPHash   string
 	UA       string
+	done     chan struct{}
 }
 
 // visitorID returns the stable visitor id from the hn_vid cookie, setting a
@@ -72,6 +73,10 @@ func (s *Server) startVisitWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case ev := <-s.visitQueue:
+			if ev.done != nil {
+				close(ev.done)
+				continue
+			}
 			if err := s.store.RecordVisit(ev.UploadID, ev.VID, ev.Name, ev.IPHash, ev.UA); err != nil {
 				slog.Warn("record visit failed", "upload_id", ev.UploadID, "err", err)
 				continue
@@ -82,6 +87,23 @@ func (s *Server) startVisitWorker(ctx context.Context) {
 				}
 			}
 		}
+	}
+}
+
+// FlushVisits waits until all visit events already accepted by the queue have
+// been processed by the analytics worker.
+func (s *Server) FlushVisits(ctx context.Context) error {
+	done := make(chan struct{})
+	select {
+	case s.visitQueue <- visitEvent{done: done}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
