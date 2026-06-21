@@ -61,15 +61,19 @@ func (s *Server) cleanupExpired(ctx context.Context) {
 		slog.Error("retention cleanup: list", "err", err)
 		return
 	}
+	removed := 0
 	for _, u := range uploads {
 		if err := s.storage.Delete(ctx, u.Slug); err != nil {
 			slog.Error("retention cleanup: storage delete", "slug", u.Slug, "err", err)
+			continue
 		}
 		if err := s.store.DeleteUpload(u.ID); err != nil {
 			slog.Error("retention cleanup: db delete", "slug", u.Slug, "err", err)
+			continue
 		}
+		removed++
 	}
-	if len(uploads) > 0 {
-		slog.Info("retention cleanup: removed expired uploads", "count", len(uploads), "cutoff", cutoff.Format(time.DateOnly))
+	if removed > 0 {
+		slog.Info("retention cleanup: removed expired uploads", "count", removed, "cutoff", cutoff.Format(time.DateOnly))
 	}
 }
