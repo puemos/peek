@@ -1,55 +1,68 @@
 {{define "stats"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stats &mdash; {{.Name}}</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+{{template "toast-head" .}}
 </head>
-<body class="hn-dash">
-<header class="hn-dash-header">
-  <div class="hn-dash-header-inner">
-    <a href="/dashboard" class="hn-dash-logo">&larr; Dashboard</a>
+<body x-data="{ copied: false }" class="min-h-screen" @click.outside="copied = false">
+{{if .Error}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="{{.Error}}" data-toast-duration="6500"></div>{{end}}
+<header class="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+  <div class="mx-auto flex h-14 max-w-5xl items-center px-6">
+    <a href="/dashboard" class="text-sm font-semibold tracking-tight text-foreground no-underline">&larr; Dashboard</a>
   </div>
 </header>
-<main class="hn-dash-main">
-  {{if .Error}}
-  <div class="hn-flash hn-flash-err">{{.Error}}</div>
-  {{end}}
-  <section class="hn-card">
-    <h2>{{.Name}}</h2>
-    <div class="hn-stats-grid">
-      <div class="hn-stat"><span class="hn-stat-num">{{.TotalVisits}}</span><span class="hn-stat-label">total visits</span></div>
-      <div class="hn-stat"><span class="hn-stat-num">{{.UniqueVisitors}}</span><span class="hn-stat-label">unique visitors</span></div>
+<main class="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-8 pb-20">
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h2 class="mb-5 text-base font-semibold tracking-tight text-card-foreground">{{.Name}}</h2>
+    <div class="mb-5 flex rounded-lg border border-border overflow-hidden">
+      <div class="flex flex-1 flex-col gap-1.5 p-4">
+        <span class="text-2xl font-semibold tracking-tight text-foreground">{{.TotalVisits}}</span>
+        <span class="text-xs text-muted-foreground">total visits</span>
+      </div>
+      <div class="flex flex-1 flex-col gap-1.5 border-l border-border p-4">
+        <span class="text-2xl font-semibold tracking-tight text-foreground">{{.UniqueVisitors}}</span>
+        <span class="text-xs text-muted-foreground">unique visitors</span>
+      </div>
     </div>
-    <p class="hn-muted">Share link: <a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative">copy</button></p>
-  </section>
-  <section class="hn-card">
-    <h3>Recent visits</h3>
+    <p class="text-sm text-muted-foreground">Share link: <a href="/p/{{.Slug}}" target="_blank" class="font-medium text-primary no-underline hover:underline">/p/{{.Slug}}</a>
+      <button type="button"
+        x-on:click="peekCopyText($el.dataset.url, { success: 'Copied share link.' }).then((ok) => { if (ok) copied = $el.dataset.url })"
+        data-url="/p/{{.Slug}}"
+        class="ml-2 rounded-md border border-input px-2.5 py-1 text-xs text-muted-foreground transition hover:border-primary hover:text-primary">
+        <span x-show="copied !== $el.dataset.url">copy</span>
+        <span x-show="copied === $el.dataset.url" class="text-primary">copied!</span>
+      </button>
+    </p>
+  </div>
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h3 class="mb-4 text-sm font-semibold tracking-tight text-card-foreground">Recent visits</h3>
     {{if .Error}}
-    <div class="hn-empty"><p>Stats are unavailable.</p></div>
+    <div class="py-10 text-center"><p class="text-sm text-muted-foreground">Stats are unavailable.</p></div>
     {{else if .Recent}}
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>When</th><th>Visitor</th><th>IP (hashed)</th><th>User agent</th></tr></thead>
+    <div class="overflow-x-auto">
+    <table class="w-full border-collapse text-sm">
+      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">When</th><th class="px-3 py-2">Visitor</th><th class="px-3 py-2">IP (hashed)</th><th class="px-3 py-2">User agent</th></tr></thead>
       <tbody>
       {{range .Recent}}
-        <tr>
-          <td class="hn-muted-cell">{{.WhenHuman}}</td>
-          <td>{{if .Name}}{{.Name}}{{else}}<span class="hn-muted-cell">(anonymous)</span>{{end}}</td>
-          <td class="hn-muted-cell">{{.IP}}</td>
-          <td class="hn-ua">{{.UA}}</td>
+        <tr class="border-b border-border/50 last:border-0 hover:bg-foreground/[0.025]">
+          <td class="h-10 px-3 text-muted-foreground">{{.WhenHuman}}</td>
+          <td class="px-3">{{if .Name}}{{.Name}}{{else}}<span class="text-muted-foreground/70">(anonymous)</span>{{end}}</td>
+          <td class="px-3 text-muted-foreground">{{.IP}}</td>
+          <td class="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap px-3 text-xs text-muted-foreground/70">{{.UA}}</td>
         </tr>
       {{end}}
       </tbody>
     </table>
     </div>
     {{else}}
-    <div class="hn-empty"><p>No visits yet.</p><p class="hn-muted">Share the link to start collecting analytics.</p></div>
+    <div class="py-10 text-center"><p class="text-sm text-foreground">No visits yet.</p><p class="mt-1.5 text-xs text-muted-foreground">Share the link to start collecting analytics.</p></div>
     {{end}}
-  </section>
+  </div>
 </main>
-<script src="{{asset "dashboard.js"}}"></script>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}

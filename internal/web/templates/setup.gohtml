@@ -1,27 +1,28 @@
 {{define "setup"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Set up Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+{{template "toast-head" .}}
 </head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-  <form method="POST" action="/setup" class="hn-gate-form">
-    <h2>Set up Peek</h2>
-    <p>Create the first admin account.</p>
-    <input type="email" name="email" placeholder="Admin email" required autofocus autocomplete="email">
-    <input type="text" name="name" placeholder="Name" autocomplete="name">
-    <input type="password" name="password" placeholder="Password" required autocomplete="new-password">
-    <input type="hidden" name="code" value="{{.Code}}">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button type="submit">Create admin</button>
-    {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
-  </form>
-  </div>
+<body class="grid min-h-screen place-items-center p-6">
+{{if .Error}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="{{.Error}}" data-toast-duration="6500"></div>{{end}}
+<div class="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
+<form method="POST" action="/setup" class="flex flex-col gap-4">
+  <h2 class="text-lg font-semibold tracking-tight text-card-foreground">Set up Peek</h2>
+  <p class="text-sm text-muted-foreground">Create the first admin account.</p>
+  <input type="email" name="email" placeholder="Admin email" required autofocus autocomplete="email" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <input type="text" name="name" placeholder="Name" autocomplete="name" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <input type="password" name="password" placeholder="Password" required autocomplete="new-password" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <input type="hidden" name="code" value="{{.Code}}">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Create admin</button>
+  {{if .Error}}<p class="text-sm text-destructive">{{.Error}}</p>{{end}}
+</form>
 </div>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}

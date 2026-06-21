@@ -1,25 +1,24 @@
 {{define "index"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
 </head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-welcome-box">
-    <h1>Peek</h1>
-    <p>Share HTML files and get a live preview link.<br>Upload via the dashboard or the CLI.</p>
-    <div class="hn-welcome-actions">
-      <a href="/dashboard" class="hn-welcome-primary">Open dashboard &rarr;</a>
-      <a href="/login" class="hn-welcome-secondary">Sign in</a>
-    </div>
-    <div class="hn-welcome-code">
-      <strong>CLI quick start:</strong><br>
-      <code>peek login --host {{.BaseURL}}</code><br>
-      <code>peek upload page.html</code>
-    </div>
+<body class="grid min-h-screen place-items-center p-6">
+<div class="max-w-md text-center">
+  <div class="flex justify-center">{{template "brand-logo" .}}</div>
+  <p class="mt-2 text-sm leading-relaxed text-muted-foreground">Share HTML files and get a live preview link.<br>Upload via the dashboard or the CLI.</p>
+  <div class="mt-6 flex flex-wrap justify-center gap-3">
+    <a href="/dashboard" class="inline-flex h-10 items-center gap-1.5 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground no-underline transition hover:bg-primary/90">Open dashboard &rarr;</a>
+    <a href="/login" class="inline-flex h-10 items-center rounded-lg border border-input bg-secondary px-5 text-sm text-secondary-foreground no-underline transition hover:border-border">Sign in</a>
+  </div>
+  <div class="mt-8 rounded-xl border border-border bg-card p-4 text-left text-xs leading-relaxed text-muted-foreground">
+    <strong class="text-foreground">CLI quick start:</strong><br>
+    <code class="text-xs text-secondary-foreground">peek login --host {{.BaseURL}}</code><br>
+    <code class="text-xs text-secondary-foreground">peek upload page.html</code>
   </div>
 </div>
 </body>

@@ -1,0 +1,29 @@
+{{define "brand-head"}}
+<link rel="icon" href="{{asset "favicon.png"}}" type="image/png">
+<link rel="alternate icon" href="{{asset "favicon.ico"}}">
+<link rel="apple-touch-icon" href="{{asset "favicon.png"}}">
+{{end}}
+{{define "toast-head"}}
+<script src="{{asset "toast.js"}}" defer></script>
+<script src="{{asset "alpine.min.js"}}" defer></script>
+{{end}}
+{{define "toast-host"}}
+<ul x-data="peekToasts" @toast-show.window="show($event.detail)" class="peek-toast-host" aria-live="polite" x-cloak>
+  <template x-for="toast in toasts" :key="toast.id">
+    <li x-show="toast.show" x-transition.opacity.duration.150ms class="peek-toast" :class="typeClass(toast)" :role="toast.role">
+      <span class="peek-toast-marker" aria-hidden="true"></span>
+      <span class="peek-toast-body">
+        <span class="peek-toast-message" x-text="toast.message"></span>
+        <span class="peek-toast-description" x-show="toast.description" x-text="toast.description"></span>
+      </span>
+      <button type="button" class="peek-toast-close" @click="remove(toast.id)" aria-label="Dismiss notification">&times;</button>
+    </li>
+  </template>
+</ul>
+{{end}}
+{{define "brand-logo"}}
+<img src="{{asset "logo.png"}}" alt="Peek" class="block h-10 w-auto">
+{{end}}
+{{define "brand-link"}}
+<a href="/" class="inline-flex items-center no-underline">{{template "brand-logo" .}}</a>
+{{end}}

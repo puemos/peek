@@ -1,23 +1,24 @@
 {{define "error"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
 </head>
-<body class="hn-dash">
-<header class="hn-dash-header">
-  <div class="hn-dash-header-inner">
-    <a href="/" class="hn-dash-logo">Peek</a>
+<body class="min-h-screen">
+<header class="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+  <div class="mx-auto flex h-14 max-w-5xl items-center px-6">
+    {{template "brand-link" .}}
   </div>
 </header>
-<main class="hn-dash-main">
-  <section class="hn-card">
-    <h2>{{.Title}}</h2>
-    <p class="hn-muted">{{.Message}}</p>
-    <p><a href="/dashboard" class="hn-link">Open dashboard</a></p>
-  </section>
+<main class="mx-auto max-w-5xl px-6 py-12">
+  <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
+    <h2 class="mb-4 text-lg font-semibold tracking-tight text-card-foreground">{{.Title}}</h2>
+    <p class="mb-6 text-sm text-muted-foreground">{{.Message}}</p>
+    <p><a href="/dashboard" class="text-sm font-medium text-primary no-underline hover:underline">Open dashboard</a></p>
+  </div>
 </main>
 </body>
 </html>{{end}}

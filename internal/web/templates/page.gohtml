@@ -1,101 +1,152 @@
 {{define "page"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>{{.Name}} &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+<script src="{{asset "toast.js"}}" defer></script>
+<script src="{{asset "app.js"}}" defer></script>
+<script src="{{asset "alpine.min.js"}}" defer></script>
 </head>
-<body data-slug="{{.Slug}}" data-protected="{{.Protected}}">
-<iframe id="hn-frame" src="{{.RawURL}}" sandbox="allow-scripts allow-popups"
-        referrerpolicy="no-referrer" title="shared page"></iframe>
+<body x-data="pageApp" x-init="init('{{.Slug}}', {{.Protected}})" data-slug="{{.Slug}}" class="overflow-hidden">
 
-<div id="hn-hint" hidden>
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+<iframe id="hn-frame" src="{{.RawURL}}" sandbox="allow-scripts allow-popups"
+        referrerpolicy="no-referrer" title="shared page"
+        class="fixed inset-0 h-full w-full border-0 bg-white"></iframe>
+
+<div id="hn-morph-anchor" class="hn-morph-anchor" aria-hidden="true"></div>
+
+<div id="hn-hint" x-show="commentMode" x-cloak
+     class="hn-floating-surface fixed top-[18px] left-1/2 z-[1200] -translate-x-1/2 flex items-center gap-2 h-[40px] px-2.5 pl-3.5 rounded-full text-[13px] whitespace-nowrap"
+     x-transition.opacity.duration.150ms>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary shrink-0"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
   Click any element to comment
-  <span class="hn-hint-sep">or</span>
-  <button type="button" id="hn-hint-general">comment on the page</button>
-  <kbd>Esc</kbd>
+  <span class="text-muted-foreground">or</span>
+  <button type="button" @click="startGeneralComment($event)" class="hn-hint-link">comment on the page</button>
+  <kbd class="text-[11px] text-muted-foreground bg-muted rounded-md px-1.5 py-0.5 leading-none border border-border">Esc</kbd>
 </div>
 
-<div id="hn-bar">
-  <button id="hn-comment-btn" type="button" title="Add a comment">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+<div id="hn-bar"
+     class="hn-floating-surface hn-toolbar fixed bottom-5 left-1/2 -translate-x-1/2 z-[1000] transition-opacity duration-150"
+     :class="{ 'opacity-90': !panelOpen && !composerOpen }">
+  <button id="hn-comment-btn" type="button" @click="toggleCommentMode"
+          class="hn-toolbar-button"
+          :class="{ 'hn-button-primary': commentMode }">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-95 shrink-0"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
     Comment
   </button>
-  <button id="hn-views-btn" class="hn-icon-btn" type="button" title="View statistics" aria-label="View statistics">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-    <span id="hn-views-count" class="hn-badge">0</span>
+  <button id="hn-views-btn" class="hn-toolbar-button" type="button" title="View statistics" @click="toggleSparkline" @click.outside="showSparkline = false" :class="{ 'hn-button-primary': showSparkline }">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-95 shrink-0"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span id="hn-views-count" class="hn-badge" x-text="viewCount" :class="{ 'hn-badge-empty': viewCount === 0 }">0</span>
   </button>
-  <button id="hn-panel-btn" class="hn-icon-btn" type="button" title="View comments" aria-label="View comments">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-    <span id="hn-count" class="hn-badge">0</span>
+  <button id="hn-panel-btn" class="hn-toolbar-button" type="button" title="View comments" @click="panelOpen = !panelOpen" :class="{ 'hn-button-primary': panelOpen }">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-95 shrink-0"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    <span id="hn-count" class="hn-badge" x-text="commentCount" :class="{ 'hn-badge-empty': commentCount === 0 }">0</span>
   </button>
 </div>
 
-<div id="hn-sparkline" class="hn-sparkline" hidden>
-  <div class="hn-sparkline-header">
-    <span class="hn-sparkline-total"></span>
-    <span class="hn-sparkline-unique"></span>
+<div id="hn-sparkline" x-show="showSparkline" x-cloak
+     class="hn-floating-surface hn-sparkline-card fixed bottom-[88px] left-1/2 -translate-x-1/2 z-[1000]"
+     x-transition.opacity.duration.150ms>
+  <div class="flex justify-between items-center mb-2 text-xs font-medium">
+    <span class="text-foreground" x-text="sparklineTotal"></span>
+    <span class="text-muted-foreground" x-text="sparklineUnique"></span>
   </div>
-  <svg id="hn-sparkline-svg" viewBox="0 0 168 56" preserveAspectRatio="none"></svg>
+  <svg id="hn-sparkline-svg" viewBox="0 0 168 56" preserveAspectRatio="none" class="block w-full h-12"></svg>
 </div>
 
-<aside id="hn-panel" class="hn-panel">
-  <header>
-    <h3>Comments</h3>
-    <div class="hn-panel-actions">
-      <div id="hn-export" class="hn-export" hidden>
-        <button id="hn-export-btn" type="button" title="Export comments" aria-haspopup="menu" aria-expanded="false">
-          <svg class="hn-export-glyph" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          <span id="hn-export-label">Export</span>
-          <svg class="hn-export-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+<aside id="hn-panel"
+       class="hn-panel fixed top-0 right-0 bottom-0 w-[380px] z-[900] bg-card border-l border-border flex flex-col transition-transform duration-200 ease-out shadow-2xl"
+       :class="{ 'hn-panel-open': panelOpen }">
+  <header class="flex items-center justify-between p-4 border-b border-border shrink-0">
+    <h3 class="text-[13px] font-semibold tracking-tight m-0 text-card-foreground">Comments</h3>
+    <div class="flex items-center gap-1.5">
+      <div class="relative" x-data="{ exportOpen: false }" x-show="comments.length > 0" x-cloak>
+        <button type="button" @click="exportOpen = !exportOpen" @click.outside="exportOpen = false"
+                class="hn-small-button"
+                :aria-expanded="exportOpen">
+          <svg class="text-muted-foreground shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          Export
+          <svg class="text-muted-foreground/70 ml-px shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
-        <div id="hn-export-menu" class="hn-export-menu" role="menu" hidden>
-          <button id="hn-export-markdown" type="button" role="menuitem">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
-            <span>Markdown</span>
+        <div x-show="exportOpen" x-cloak
+             class="hn-floating-surface absolute top-[calc(100%+8px)] right-0 z-10 min-w-[158px] p-1.5 rounded-xl overflow-hidden"
+             x-transition>
+          <button type="button" @click="exportComments('markdown'); exportOpen = false"
+                  class="hn-menu-button">
+            <svg class="text-muted-foreground shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+            Markdown
           </button>
-          <button id="hn-export-json" type="button" role="menuitem">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
-            <span>JSON</span>
+          <button type="button" @click="exportComments('json'); exportOpen = false"
+                  class="hn-menu-button mt-1">
+            <svg class="text-muted-foreground shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
+            JSON
           </button>
         </div>
       </div>
-      <button id="hn-panel-close" type="button">&times;</button>
+      <button type="button" @click="panelOpen = false"
+              class="hn-icon-button">&times;</button>
     </div>
   </header>
-  <ul id="hn-comment-list"></ul>
+  <ul id="hn-comment-list" class="list-none m-0 p-0 overflow-y-auto flex-1">
+    <template x-for="(c, i) in comments" :key="c.id">
+      <li class="px-4 py-3.5 border-b border-border last:border-0 transition-colors hover:bg-foreground/[0.02]"
+          :class="{ 'cursor-pointer hn-locatable': c.selector }"
+          :style="{ borderLeft: '3px solid ' + c.authorColor, backgroundColor: activeComment === c.id ? c.authorSoft : '' }"
+          @click="c.selector && locateComment(c)">
+        <div class="flex items-center gap-2 mb-1">
+          <span x-show="c.number" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full text-primary-foreground text-[11px] font-semibold shrink-0 align-middle" :style="{ backgroundColor: c.authorColor }" x-text="c.number"></span>
+          <span class="text-xs text-muted-foreground"><strong class="font-semibold" :style="{ color: c.authorText }" x-text="c.name"></strong> &middot; <span x-text="c.created_human"></span></span>
+        </div>
+        <div x-show="c.scope" class="inline-block text-[11px] px-2 py-0.5 mb-1.5 rounded-md" :style="{ backgroundColor: c.authorSoft, color: c.authorText }" x-text="c.scope"></div>
+        <div x-show="c.target" class="text-xs mb-1.5 break-words" :style="{ color: c.authorText }" x-text="c.target"></div>
+        <div class="whitespace-pre-wrap break-words leading-relaxed" x-text="c.body"></div>
+      </li>
+    </template>
+    <li x-show="panelLoading" class="p-4 text-sm text-muted-foreground">Loading&hellip;</li>
+    <li x-show="!panelLoading && comments.length === 0 && panelLoaded" class="hn-empty-state py-9 px-6 text-center border-0">
+      <div class="text-[26px] opacity-80 mb-2.5">&#x1f4ac;</div>
+      <p class="text-sm text-foreground mb-1.5">No comments here yet</p>
+      <span class="text-[13px] text-muted-foreground">Click <strong class="text-foreground font-semibold">Comment</strong> to add the first one.</span>
+    </li>
+  </ul>
 </aside>
 
-<div id="hn-composer" class="hn-composer" hidden>
-  <div class="hn-target" id="hn-target"></div>
-  <form id="hn-comment-form">
-    <textarea id="hn-body" placeholder="Write a comment&hellip;" maxlength="4000" required></textarea>
-    <p class="hn-error" id="hn-error" hidden></p>
-    <div class="hn-composer-actions">
-      <button type="submit">Post</button>
-      <button type="button" id="hn-cancel">Cancel</button>
-      <span class="hn-commenting-as" id="hn-commenting-as"></span>
+<div id="hn-composer" x-cloak popover="manual"
+     class="hn-feedback-card"
+     :class="{ 'hn-composer-open': composerOpen }"
+     @toggle="syncComposerPopover($event)">
+  <form id="hn-comment-form" class="hn-feedback-form" @submit.prevent="postComment">
+    <textarea id="hn-body" x-ref="composerTextarea" x-model="composerBody" placeholder="Feedback" maxlength="4000" required aria-describedby="hn-composer-error"
+              class="hn-feedback-input" :aria-label="composerTargetLabel || 'Feedback'"></textarea>
+    <p id="hn-composer-error" x-show="composerError" x-text="composerError" class="sr-only"></p>
+    <div class="hn-feedback-footer">
+      <button type="submit" class="hn-primary-button">Send feedback</button>
     </div>
   </form>
 </div>
 
-<div id="hn-name-modal" class="hn-modal" hidden>
-  <div class="hn-modal-card">
-    <h2>Add your name</h2>
-    <p>It shows next to comments you leave. You can skip this.</p>
-    <form id="hn-name-form">
-      <input id="hn-name-input" type="text" placeholder="Your name" maxlength="100" autocomplete="name">
-      <div class="hn-modal-actions">
-        <button type="submit">Continue</button>
-        <button type="button" id="hn-name-skip">Skip</button>
+<div id="hn-name-modal" x-show="nameModalOpen" hidden x-cloak
+     class="fixed inset-0 z-[1300] grid place-items-center p-6 bg-black/45 backdrop-blur-sm"
+     x-transition.opacity.duration.150ms>
+  <div class="w-[340px] max-w-full bg-card border border-border rounded-xl p-6 shadow-[0_12px_32px_-4px_rgba(0,0,0,.6),0_4px_12px_-4px_rgba(0,0,0,.5)]"
+       x-transition.scale.origin-center.duration.150ms>
+    <h2 class="text-[17px] font-semibold tracking-tight text-card-foreground mb-1.5">Add your name</h2>
+    <p class="text-[13px] text-muted-foreground mb-4 leading-relaxed">It shows next to comments you leave. You can skip this.</p>
+    <form @submit.prevent="saveName" class="flex flex-col gap-3.5">
+      <input x-ref="nameInput" x-model="nameInput" type="text" placeholder="Your name" maxlength="100" autocomplete="name"
+             class="h-10 rounded-lg border border-input bg-secondary px-3.5 text-foreground text-[13px] placeholder:text-muted-foreground transition focus:outline-none focus:border-ring focus:ring-2 focus:ring-ring/20">
+      <div class="flex gap-2 items-center">
+        <button type="submit" class="hn-small-button hn-button-primary">Continue</button>
+        <button type="button" id="hn-name-skip" @click="nameModalOpen = false" class="hn-small-button ml-auto">Skip</button>
       </div>
     </form>
   </div>
 </div>
 
-<script src="{{asset "app.js"}}"></script>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}

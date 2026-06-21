@@ -1,87 +1,93 @@
 {{define "dashboard"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+<script src="{{asset "dashboard-alpine.js"}}" defer></script>
+{{template "toast-head" .}}
 </head>
-<body class="hn-dash">
-<header class="hn-dash-header">
-  <div class="hn-dash-header-inner">
-    <a href="/" class="hn-dash-logo">Peek</a>
-    <nav class="hn-dash-nav">
-      <span class="hn-dash-user">{{.User}}</span>
-      <form method="POST" action="/logout" class="hn-dash-logout">
+<body x-data="dashboard({ googleOAuth: {{.SettingsPanel.Auth.Google.EnabledValue}}, githubOAuth: {{.SettingsPanel.Auth.GitHub.EnabledValue}}, storageBackend: '{{.SettingsPanel.Storage.Value}}' })" class="min-h-screen">
+{{if .UploadSuccessURL}}<div hidden data-peek-toast data-toast-type="success" data-toast-message="Uploaded! Share link:" data-toast-description="{{.UploadSuccessURL}}" data-toast-duration="8000"></div>{{end}}
+{{if .FlashSuccess}}<div hidden data-peek-toast data-toast-type="success" data-toast-message="{{.FlashSuccess}}"></div>{{end}}
+{{if .UploadError}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="{{.UploadError}}" data-toast-duration="6500"></div>{{end}}
+<header class="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+  <div class="mx-auto flex h-14 max-w-5xl items-center px-6">
+    {{template "brand-link" .}}
+    <nav class="ml-auto flex items-center gap-4">
+      <span class="text-sm text-muted-foreground">{{.User}}</span>
+      <form method="POST" action="/logout" class="m-0">
         <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button type="submit">Sign out</button>
+        <button type="submit" class="rounded-lg border border-input px-3.5 py-1.5 text-sm text-muted-foreground transition hover:border-border hover:text-secondary-foreground hover:bg-secondary">Sign out</button>
       </form>
     </nav>
   </div>
 </header>
 
-<main class="hn-dash-main">
-  {{if .UploadSuccessURL}}
-  <div class="hn-flash hn-flash-ok">
-    <span>Uploaded! Share link:</span>
-    <code>{{.UploadSuccessURL}}</code>
-    <button type="button" data-url="{{.UploadSuccessURL}}" class="hn-flash-copy hn-copy-absolute">Copy</button>
-  </div>
-  {{end}}
-  {{if .FlashSuccess}}
-  <div class="hn-flash hn-flash-ok">{{.FlashSuccess}}</div>
-  {{end}}
-  {{if .UploadError}}
-  <div class="hn-flash hn-flash-err">{{.UploadError}}</div>
-  {{end}}
-
-  <section class="hn-card">
-    <h2>Upload HTML</h2>
-    <form method="POST" action="/dashboard/upload" enctype="multipart/form-data" class="hn-upload-form">
+<main class="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-8 pb-20">
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h2 class="mb-4 text-base font-semibold tracking-tight text-card-foreground">Upload HTML</h2>
+    <form method="POST" action="/dashboard/upload" enctype="multipart/form-data" x-on:submit="guardUploadSubmit($event)" class="flex flex-col gap-3.5">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <div class="hn-tabs">
-        <label><input type="radio" name="mode" value="file" checked> Choose file</label>
-        <label><input type="radio" name="mode" value="paste"> Paste HTML</label>
-      </div>
-      <div id="hn-file-input">
-        <label class="hn-file-drop">
-          <input type="file" name="file" accept=".html,.htm,text/html">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>Click to choose an HTML file</span>
+      <div class="inline-flex gap-0.5 self-start rounded-lg bg-muted p-0.5">
+        <label class="cursor-pointer rounded-md px-3 py-1.5 text-sm transition" :class="mode === 'file' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'">
+          <input type="radio" name="mode" value="file" x-model="mode" class="sr-only"> Choose file
+        </label>
+        <label class="cursor-pointer rounded-md px-3 py-1.5 text-sm transition" :class="mode === 'paste' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'">
+          <input type="radio" name="mode" value="paste" x-model="mode" class="sr-only"> Paste HTML
         </label>
       </div>
-      <div id="hn-paste-input" hidden>
-        <textarea name="html" placeholder="<!doctype html>&#10;<html>&#10;  <body>&#10;    <h1>Hello</h1>&#10;  </body>&#10;</html>" rows="8"></textarea>
+      <div x-show="mode === 'file'">
+        <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border p-6 transition hover:border-primary hover:text-secondary-foreground hover:bg-accent" :class="fileName ? 'border-primary/40 bg-accent text-secondary-foreground' : 'border-input bg-secondary text-muted-foreground'">
+          <input type="file" name="file" accept=".html,.htm,text/html" x-on:change="setSelectedFile($event.target.files && $event.target.files[0])" class="absolute h-px w-px opacity-0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="opacity-70"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="max-w-full truncate text-sm font-medium" x-text="fileName || 'Click to choose an HTML file'">Click to choose an HTML file</span>
+          <span x-show="fileName" x-cloak class="text-xs text-muted-foreground" x-text="fileSizeLabel ? fileSizeLabel + ' selected' : 'File selected'"></span>
+        </label>
       </div>
-      <div class="hn-upload-opts">
-        <input type="text" name="name" placeholder="name (optional)">
-        <input type="password" name="password" placeholder="password (optional)">
+      <div x-show="mode === 'paste'">
+        <textarea name="html" x-model="html" placeholder="<!doctype html>&#10;<html>&#10;  <body>&#10;    <h1>Hello</h1>&#10;  </body>&#10;</html>" rows="8" class="w-full resize-y rounded-lg border border-input bg-secondary px-3.5 py-3 font-mono text-xs text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"></textarea>
       </div>
-      <button type="submit">Upload &amp; get link</button>
+      <div class="flex gap-3">
+        <input type="text" name="name" placeholder="name (optional)" class="flex-1 h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+        <input type="password" name="password" placeholder="password (optional)" class="flex-1 h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+      </div>
+      <button type="submit" :disabled="!canUpload()" class="self-start h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary">Upload &amp; get link</button>
     </form>
-  </section>
+  </div>
 
-  <section class="hn-card">
-    <h2>Your uploads <span class="hn-card-count">{{len .Uploads}}</span></h2>
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h2 class="mb-4 text-base font-semibold tracking-tight text-card-foreground">Your uploads <span class="text-xs font-normal text-muted-foreground/70">{{len .Uploads}}</span></h2>
     {{if .Uploads}}
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>Name</th><th>Size</th><th>Protected</th><th>Created</th><th>Link</th><th></th></tr></thead>
+    <div class="overflow-x-auto">
+    <table class="w-full border-collapse text-sm">
+      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Name</th><th class="px-3 py-2">Size</th><th class="px-3 py-2">Protected</th><th class="px-3 py-2">Created</th><th class="px-3 py-2">Link</th><th class="px-3 py-2"></th></tr></thead>
       <tbody>
       {{range .Uploads}}
-        <tr>
-          <td class="hn-filename">{{.Name}}</td>
-          <td class="hn-muted-cell">{{.SizeHuman}}</td>
-          <td>{{if .Protected}}<span class="hn-tag hn-tag-on">protected</span>{{else}}<span class="hn-tag">public</span>{{end}}</td>
-          <td class="hn-muted-cell">{{.CreatedHuman}}</td>
-          <td><a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative" title="Copy link">copy</button></td>
-          <td class="hn-actions">
-            <a href="/dashboard/stats/{{.Slug}}" class="hn-btn-sm">stats</a>
-            <form method="POST" action="/dashboard/delete/{{.Slug}}" data-confirm="Delete {{.Name}}? This cannot be undone.">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <button type="submit" class="hn-btn-sm hn-btn-danger">delete</button>
-            </form>
+        <tr class="border-b border-border/50 last:border-0 hover:bg-foreground/[0.025]">
+          <td class="h-10 px-3 font-medium">{{.Name}}</td>
+          <td class="px-3 text-muted-foreground">{{.SizeHuman}}</td>
+          <td class="px-3">{{if .Protected}}<span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">protected</span>{{else}}<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">public</span>{{end}}</td>
+          <td class="px-3 text-muted-foreground">{{.CreatedHuman}}</td>
+          <td class="px-3">
+            <div class="flex items-center gap-2 whitespace-nowrap">
+              <a href="/p/{{.Slug}}" target="_blank" class="font-medium text-primary no-underline hover:underline">/p/{{.Slug}}</a>
+              <button type="button" x-data="{ url: '/p/{{.Slug}}' }" data-url="/p/{{.Slug}}" x-on:click="copy(url)" class="peek-copy-button" :class="{ 'peek-copy-button-copied': copied === url }" :aria-label="copied === url ? 'Copied' : 'Copy link'" title="Copy link">
+                <svg x-show="copied !== url" class="peek-copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25Z" /></svg>
+                <svg x-show="copied === url" x-cloak class="peek-copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m7.5 15.75 3 3 6-7.5M8.25 8.25H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m1.5-15.75c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0 1 18 18.75h-2.25m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375" /></svg>
+              </button>
+            </div>
+          </td>
+          <td class="px-3">
+            <div class="peek-row-actions">
+              <a href="/dashboard/stats/{{.Slug}}" class="peek-row-button">Stats</a>
+              <form method="POST" action="/dashboard/delete/{{.Slug}}" x-on:submit="confirm($event, 'Delete {{.Name}}? This cannot be undone.')" class="m-0">
+                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                <button type="submit" class="peek-row-button peek-row-button-danger">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
       {{end}}
@@ -89,39 +95,47 @@
     </table>
     </div>
     {{else}}
-    <div class="hn-empty">
-      <p>No uploads yet.</p>
-      <p class="hn-muted">Upload an HTML file or paste HTML above to get a shareable link.</p>
+    <div class="py-10 text-center">
+      <p class="text-sm text-foreground">No uploads yet.</p>
+      <p class="mt-1.5 text-xs text-muted-foreground">Upload an HTML file or paste HTML above to get a shareable link.</p>
     </div>
     {{end}}
-  </section>
+  </div>
 
   {{if .IsAdmin}}
-  <section class="hn-card">
-    <h2>Invitations <span class="hn-card-count">{{len .Invites}}</span></h2>
-    <form method="POST" action="/dashboard/invites" class="hn-inline-form">
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h2 class="mb-4 text-base font-semibold tracking-tight text-card-foreground">Invitations <span class="text-xs font-normal text-muted-foreground/70">{{len .Invites}}</span></h2>
+    <form method="POST" action="/dashboard/invites" class="mb-4 flex gap-2.5">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <input type="email" name="email" placeholder="person@example.com" required>
-      <button type="submit">Create invite</button>
+      <input type="email" name="email" placeholder="person@example.com" required class="h-10 min-w-[180px] flex-1 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+      <button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Create invite</button>
     </form>
     {{if .Invites}}
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>Email</th><th>Status</th><th>Expires</th><th>Link</th><th></th></tr></thead>
+    <div class="overflow-x-auto">
+    <table class="w-full border-collapse text-sm">
+      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Email</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Expires</th><th class="px-3 py-2">Link</th><th class="px-3 py-2"></th></tr></thead>
       <tbody>
       {{range .Invites}}
-        <tr>
-          <td>{{.Email}}</td>
-          <td><span class="hn-tag {{if eq .Status "pending"}}hn-tag-on{{end}}">{{.Status}}</span></td>
-          <td class="hn-muted-cell">{{.Expires}}</td>
-          <td>{{if .Link}}<code>{{.Link}}</code> <button type="button" data-url="{{.Link}}" class="hn-copy-btn hn-copy-absolute">copy</button>{{else}}<span class="hn-muted-cell">{{.Status}}</span>{{end}}</td>
-          <td class="hn-actions">
-            {{if .CanRevoke}}
-            <form method="POST" action="/dashboard/invites/revoke/{{.ID}}">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <button type="submit" class="hn-btn-sm hn-btn-danger">revoke</button>
-            </form>
-            {{end}}
+        <tr class="border-b border-border/50 last:border-0 hover:bg-foreground/[0.025]">
+          <td class="h-10 px-3">{{.Email}}</td>
+          <td class="px-3"><span class="rounded-md px-2 py-0.5 text-[11px] font-semibold {{if eq .Status "pending"}}bg-accent text-accent-foreground{{else}}bg-muted text-muted-foreground{{end}}">{{.Status}}</span></td>
+          <td class="px-3 text-muted-foreground">{{.Expires}}</td>
+          <td class="px-3">{{if .Link}}
+            <button type="button" data-url="{{.Link}}" x-on:click="copyAbsolute($el.dataset.url)" class="peek-link-copy-button" :class="{ 'peek-link-copy-button-copied': copied === absoluteURL($el.dataset.url) }" :aria-label="copied === absoluteURL($el.dataset.url) ? 'Invite link copied' : 'Copy invite link'" title="Copy invite link">
+              <span class="peek-link-copy-text">{{.Link}}</span>
+              <svg x-show="copied !== absoluteURL($el.closest('button').dataset.url)" class="peek-copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25Z" /></svg>
+              <svg x-show="copied === absoluteURL($el.closest('button').dataset.url)" x-cloak class="peek-copy-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m7.5 15.75 3 3 6-7.5M8.25 8.25H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m1.5-15.75c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0 1 18 18.75h-2.25m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375" /></svg>
+            </button>{{else}}<span class="text-muted-foreground/70">{{.Status}}</span>{{end}}
+          </td>
+          <td class="px-3">
+            <div class="peek-row-actions">
+              {{if .CanRevoke}}
+              <form method="POST" action="/dashboard/invites/revoke/{{.ID}}" class="m-0">
+                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                <button type="submit" class="peek-row-button peek-row-button-danger">Revoke</button>
+              </form>
+              {{end}}
+            </div>
           </td>
         </tr>
       {{end}}
@@ -129,61 +143,166 @@
     </table>
     </div>
     {{end}}
-  </section>
+  </div>
 
-  <section class="hn-card">
-    <h2>Users <span class="hn-card-count">{{len .Accounts}}</span></h2>
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>Name</th><th>Email</th><th>Admin</th><th>Status</th><th></th></tr></thead>
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h2 class="mb-4 text-base font-semibold tracking-tight text-card-foreground">Users <span class="text-xs font-normal text-muted-foreground/70">{{len .Accounts}}</span></h2>
+    <div class="overflow-x-auto">
+    <table class="w-full border-collapse text-sm">
+      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Name</th><th class="px-3 py-2">Email</th><th class="px-3 py-2">Admin</th><th class="px-3 py-2">Status</th><th class="px-3 py-2"></th></tr></thead>
       <tbody>
       {{range .Accounts}}
-        <tr>
-          <td>{{.Name}}{{if .IsSelf}} <span class="hn-muted-cell">(you)</span>{{end}}</td>
-          <td class="hn-muted-cell">{{if .Email}}{{.Email}}{{else}}token-only{{end}}</td>
-          <td>{{if .Admin}}<span class="hn-tag hn-tag-on">admin</span>{{else}}<span class="hn-tag">user</span>{{end}}</td>
-          <td>{{if .Disabled}}<span class="hn-tag hn-tag-danger">disabled</span>{{else}}<span class="hn-tag hn-tag-on">active</span>{{end}}</td>
-          <td class="hn-actions">
-            <form method="POST" action="/dashboard/users/{{.ID}}/admin">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <input type="hidden" name="admin" value="{{if .Admin}}false{{else}}true{{end}}">
-              <button type="submit" class="hn-btn-sm">{{if .Admin}}remove admin{{else}}make admin{{end}}</button>
-            </form>
-            <form method="POST" action="/dashboard/users/{{.ID}}/disabled">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
-              <button type="submit" class="hn-btn-sm hn-btn-danger">{{if .Disabled}}enable{{else}}disable{{end}}</button>
-            </form>
+        <tr class="border-b border-border/50 last:border-0 hover:bg-foreground/[0.025]">
+          <td class="h-10 px-3">{{.Name}}{{if .IsSelf}} <span class="text-muted-foreground">(you)</span>{{end}}</td>
+          <td class="px-3 text-muted-foreground">{{if .Email}}{{.Email}}{{else}}token-only{{end}}</td>
+          <td class="px-3">{{if .Admin}}<span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">admin</span>{{else}}<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">user</span>{{end}}</td>
+          <td class="px-3">{{if .Disabled}}<span class="rounded-md bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">disabled</span>{{else}}<span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">active</span>{{end}}</td>
+          <td class="px-3">
+            <div class="peek-row-actions">
+              <form method="POST" action="/dashboard/users/{{.ID}}/admin" class="m-0">
+                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                <input type="hidden" name="admin" value="{{if .Admin}}false{{else}}true{{end}}">
+                <button type="submit" class="peek-row-button">{{if .Admin}}Remove admin{{else}}Make admin{{end}}</button>
+              </form>
+              <form method="POST" action="/dashboard/users/{{.ID}}/disabled" class="m-0">
+                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+                <button type="submit" class="peek-row-button peek-row-button-danger">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
+              </form>
+            </div>
           </td>
         </tr>
       {{end}}
       </tbody>
     </table>
     </div>
-  </section>
+  </div>
 
-  <section class="hn-card">
-    <h2>Settings</h2>
-    <form method="POST" action="/dashboard/settings" class="hn-settings-form">
+  <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <h2 class="mb-4 text-base font-semibold tracking-tight text-card-foreground">Settings</h2>
+    <form method="POST" action="/dashboard/settings" class="flex flex-col gap-5">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <div class="hn-settings-grid">
-        {{range .SettingsMeta}}
-        <label>
-          <span>{{.Label}}{{if .IsStartup}} <em>(restart to apply)</em>{{end}}</span>
-          {{if .IsBool}}
-          <input type="checkbox" name="{{.Key}}" value="true" {{if .Value}}checked{{end}}>
-          {{else}}
-          <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off">
-          {{end}}
-          <span class="hn-muted">{{.Description}}</span>
+
+      <div class="peek-settings-tab-list" role="tablist" aria-label="Settings sections">
+        <button type="button" class="peek-settings-tab" :class="{ 'peek-settings-tab-active': settingsTab === 'auth' }" x-on:click="settingsTab = 'auth'" role="tab" :aria-selected="settingsTab === 'auth'">Auth</button>
+        <button type="button" class="peek-settings-tab" :class="{ 'peek-settings-tab-active': settingsTab === 'storage' }" x-on:click="settingsTab = 'storage'" role="tab" :aria-selected="settingsTab === 'storage'">Storage</button>
+        <button type="button" class="peek-settings-tab" :class="{ 'peek-settings-tab-active': settingsTab === 'limits' }" x-on:click="settingsTab = 'limits'" role="tab" :aria-selected="settingsTab === 'limits'">Limits</button>
+      </div>
+
+      <div x-show="settingsTab === 'auth'" class="flex flex-col gap-4">
+        <label class="peek-setting-switch">
+          <span class="peek-switch-control">
+            <input type="checkbox" role="switch" name="{{.SettingsPanel.Auth.Token.Key}}" value="true" {{if .SettingsPanel.Auth.Token.Value}}checked{{end}} class="peek-switch-input">
+            <span class="peek-switch-track" aria-hidden="true"><span class="peek-switch-thumb"></span></span>
+          </span>
+          <span class="flex min-w-0 flex-col gap-1">
+            <span class="text-sm text-secondary-foreground">{{.SettingsPanel.Auth.Token.Label}}</span>
+            <span class="text-xs text-muted-foreground">{{.SettingsPanel.Auth.Token.Description}}</span>
+          </span>
         </label>
+
+        {{with .SettingsPanel.Auth.Google}}
+        <div class="peek-provider-settings">
+          <label class="peek-setting-switch">
+            <span class="peek-switch-control">
+              <input type="checkbox" role="switch" name="{{.Enabled.Key}}" value="true" x-model="oauth.{{.Key}}" {{if .EnabledValue}}checked{{end}} class="peek-switch-input">
+              <span class="peek-switch-track" aria-hidden="true"><span class="peek-switch-thumb"></span></span>
+            </span>
+            <span class="flex min-w-0 flex-col gap-1">
+              <span class="text-sm text-secondary-foreground">{{.Enabled.Label}}</span>
+              <span class="text-xs text-muted-foreground">{{.Enabled.Description}}</span>
+            </span>
+          </label>
+          <div x-show="oauth.{{.Key}}" x-cloak class="grid gap-3 md:grid-cols-2">
+            <label class="flex flex-col gap-1">
+              <span class="text-sm text-secondary-foreground">{{.ClientID.Label}}</span>
+              <input type="text" name="{{.ClientID.Key}}" value="{{.ClientID.Value}}" placeholder="{{.ClientID.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
+              <span class="text-xs text-muted-foreground">{{.ClientID.Description}}</span>
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-sm text-secondary-foreground">{{.ClientSecret.Label}}</span>
+              <input type="password" name="{{.ClientSecret.Key}}" value="{{.ClientSecret.Value}}" placeholder="{{.ClientSecret.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
+              <span class="text-xs text-muted-foreground">{{.ClientSecret.Description}}</span>
+            </label>
+          </div>
+        </div>
+        {{end}}
+
+        {{with .SettingsPanel.Auth.GitHub}}
+        <div class="peek-provider-settings">
+          <label class="peek-setting-switch">
+            <span class="peek-switch-control">
+              <input type="checkbox" role="switch" name="{{.Enabled.Key}}" value="true" x-model="oauth.{{.Key}}" {{if .EnabledValue}}checked{{end}} class="peek-switch-input">
+              <span class="peek-switch-track" aria-hidden="true"><span class="peek-switch-thumb"></span></span>
+            </span>
+            <span class="flex min-w-0 flex-col gap-1">
+              <span class="text-sm text-secondary-foreground">{{.Enabled.Label}}</span>
+              <span class="text-xs text-muted-foreground">{{.Enabled.Description}}</span>
+            </span>
+          </label>
+          <div x-show="oauth.{{.Key}}" x-cloak class="grid gap-3 md:grid-cols-2">
+            <label class="flex flex-col gap-1">
+              <span class="text-sm text-secondary-foreground">{{.ClientID.Label}}</span>
+              <input type="text" name="{{.ClientID.Key}}" value="{{.ClientID.Value}}" placeholder="{{.ClientID.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
+              <span class="text-xs text-muted-foreground">{{.ClientID.Description}}</span>
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-sm text-secondary-foreground">{{.ClientSecret.Label}}</span>
+              <input type="password" name="{{.ClientSecret.Key}}" value="{{.ClientSecret.Value}}" placeholder="{{.ClientSecret.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
+              <span class="text-xs text-muted-foreground">{{.ClientSecret.Description}}</span>
+            </label>
+          </div>
+        </div>
         {{end}}
       </div>
-      <button type="submit">Save settings</button>
+
+      <div x-show="settingsTab === 'storage'" x-cloak class="flex flex-col gap-4">
+        <div class="flex flex-col gap-2">
+          <span class="text-sm text-secondary-foreground">{{.SettingsPanel.Storage.Backend.Label}} {{if .SettingsPanel.Storage.Backend.IsStartup}}<em class="text-xs text-muted-foreground not-italic">(restart to apply)</em>{{end}}</span>
+          <div class="peek-segmented-control">
+            <label class="peek-segmented-option" :class="{ 'peek-segmented-option-active': storageBackend === 'file' }">
+              <input type="radio" name="{{.SettingsPanel.Storage.Backend.Key}}" value="file" x-model="storageBackend" {{if eq .SettingsPanel.Storage.Value "file"}}checked{{end}} class="sr-only">
+              <span>File</span>
+            </label>
+            <label class="peek-segmented-option" :class="{ 'peek-segmented-option-active': storageBackend === 's3' }">
+              <input type="radio" name="{{.SettingsPanel.Storage.Backend.Key}}" value="s3" x-model="storageBackend" {{if .SettingsPanel.Storage.S3Selected}}checked{{end}} class="sr-only">
+              <span>S3</span>
+            </label>
+          </div>
+          <span class="text-xs text-muted-foreground">{{.SettingsPanel.Storage.Backend.Description}}</span>
+        </div>
+
+        <div x-show="storageBackend === 's3'" x-cloak class="grid gap-3 md:grid-cols-2">
+          {{range .SettingsPanel.Storage.S3Settings}}
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-secondary-foreground">{{.Label}}</span>
+            <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off" :disabled="storageBackend !== 's3'" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
+            <span class="text-xs text-muted-foreground">{{.Description}}</span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+
+      <div x-show="settingsTab === 'limits'" x-cloak class="flex flex-col gap-4">
+        {{range .SettingsPanel.Limits}}
+        <div class="peek-limit-control md:grid-cols-[minmax(0,1fr)_160px] md:items-center">
+          <div class="flex flex-col gap-1">
+            <label for="setting-{{.Key}}" class="text-sm text-secondary-foreground">{{.Label}}</label>
+            <span class="text-xs text-muted-foreground">{{.Description}}</span>
+          </div>
+          <div class="flex h-10 overflow-hidden rounded-lg border border-input bg-secondary focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            <input id="setting-{{.Key}}" type="number" name="{{.FormKey}}" min="{{.Min}}" max="{{.Max}}" step="{{.Step}}" value="{{.Value}}" class="min-w-0 flex-1 bg-transparent px-3 text-sm text-foreground focus:outline-none">
+            <span class="flex min-w-14 items-center justify-center border-l border-border px-3 text-xs font-medium text-muted-foreground">{{.Unit}}</span>
+          </div>
+        </div>
+        {{end}}
+      </div>
+
+      <button type="submit" class="self-start h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Save settings</button>
     </form>
-  </section>
+  </div>
   {{end}}
 </main>
-<script src="{{asset "dashboard.js"}}"></script>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}

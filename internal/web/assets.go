@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-//go:embed assets/*.js assets/*.css
+//go:embed assets/*.js assets/*.css assets/*.svg assets/*.png assets/*.ico
 var assetsFS embed.FS
 
 type embeddedAsset struct {
@@ -18,11 +18,17 @@ type embeddedAsset struct {
 }
 
 var assetManifest = map[string]embeddedAsset{
-	"bridge.js":     {path: "assets/bridge.js", contentType: "text/javascript; charset=utf-8"},
-	"app.js":        {path: "assets/app.js", contentType: "text/javascript; charset=utf-8"},
-	"dashboard.js":  {path: "assets/dashboard.js", contentType: "text/javascript; charset=utf-8"},
-	"style.css":     {path: "assets/style.css", contentType: "text/css; charset=utf-8"},
-	"dashboard.css": {path: "assets/dashboard.css", contentType: "text/css; charset=utf-8"},
+	"bridge.js":           {path: "assets/bridge.js", contentType: "text/javascript; charset=utf-8"},
+	"app.js":              {path: "assets/app.js", contentType: "text/javascript; charset=utf-8"},
+	"dashboard-alpine.js": {path: "assets/dashboard-alpine.js", contentType: "text/javascript; charset=utf-8"},
+	"toast.js":            {path: "assets/toast.js", contentType: "text/javascript; charset=utf-8"},
+	"alpine.min.js":       {path: "assets/alpine.min.js", contentType: "text/javascript; charset=utf-8"},
+	"pines.css":           {path: "assets/pines.css", contentType: "text/css; charset=utf-8"},
+	"favicon.svg":         {path: "assets/favicon.svg", contentType: "image/svg+xml"},
+	"favicon.png":         {path: "assets/favicon.png", contentType: "image/png"},
+	"favicon.ico":         {path: "assets/favicon.ico", contentType: "image/x-icon"},
+	"logo.svg":            {path: "assets/logo.svg", contentType: "image/svg+xml"},
+	"logo.png":            {path: "assets/logo.png", contentType: "image/png"},
 }
 
 func init() {

@@ -1,24 +1,25 @@
 {{define "cli-login"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CLI login &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+{{template "toast-head" .}}
 </head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-    <form method="POST" action="/cli-login/{{.Code}}" class="hn-gate-form">
-      <h2>Approve CLI login</h2>
-      <p>Code <strong>{{.Code}}</strong> will receive an API token for {{.User}}.</p>
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <button type="submit" name="decision" value="approve">Approve</button>
-      <button type="submit" name="decision" value="deny" class="hn-secondary-btn">Deny</button>
-      {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
-    </form>
-  </div>
+<body class="grid min-h-screen place-items-center p-6">
+{{if .Error}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="{{.Error}}" data-toast-duration="6500"></div>{{end}}
+<div class="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
+  <form method="POST" action="/cli-login/{{.Code}}" class="flex flex-col gap-4">
+    <h2 class="text-lg font-semibold tracking-tight text-card-foreground">Approve CLI login</h2>
+    <p class="text-sm text-muted-foreground">Code <strong class="text-foreground">{{.Code}}</strong> will receive an API token for {{.User}}.</p>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit" name="decision" value="approve" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Approve</button>
+    <button type="submit" name="decision" value="deny" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-secondary-foreground transition hover:border-border">Deny</button>
+    {{if .Error}}<p class="text-sm text-destructive">{{.Error}}</p>{{end}}
+  </form>
 </div>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}

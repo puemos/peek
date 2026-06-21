@@ -1,20 +1,24 @@
 {{define "gate"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Password required &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+{{template "toast-head" .}}
 </head>
-<body class="hn-gate">
-<div class="hn-gate-card">
-<form method="POST" action="/p/{{.Slug}}" class="hn-gate-form">
-  <h2>This page is protected</h2>
-  <p>Enter the password to view this page.</p>
-  <input type="password" name="password" placeholder="Password" required autofocus>
-  <button type="submit">Unlock</button>
-  {{if .Error}}<p class="hn-err">Incorrect password.</p>{{end}}
+<body class="grid min-h-screen place-items-center p-6">
+{{if .Error}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="Incorrect password." data-toast-duration="6500"></div>{{end}}
+<div class="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
+<form method="POST" action="/p/{{.Slug}}" class="flex flex-col gap-4">
+  <h2 class="text-lg font-semibold tracking-tight text-card-foreground">This page is protected</h2>
+  <p class="text-sm text-muted-foreground">Enter the password to view this page.</p>
+  <input type="password" name="password" placeholder="Password" required autofocus class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Unlock</button>
+  {{if .Error}}<p class="text-sm text-destructive">Incorrect password.</p>{{end}}
 </form>
 </div>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}

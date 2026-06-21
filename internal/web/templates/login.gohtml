@@ -1,46 +1,63 @@
 {{define "login"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
+{{template "toast-head" .}}
 </head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-  {{if .Invite}}<p class="hn-login-note">Choose a provider to accept your invite.</p>{{end}}
-  {{if .Providers}}
-  <div class="hn-oauth-list">
-    {{range .Providers}}<a href="/oauth/{{.Key}}/start" class="hn-oauth-btn">Continue with {{.Name}}</a>{{end}}
-  </div>
-  {{if or .PasswordLogin .TokenLogin}}<div class="hn-login-sep"><span>or</span></div>{{end}}
-  {{end}}
-  {{if .PasswordLogin}}
-  <form method="POST" action="/login" class="hn-gate-form">
-    <h2>Peek</h2>
-    <p>{{if .OAuthEnabled}}Admin sign in{{else}}Sign in with email and password{{end}}</p>
-    <input type="hidden" name="method" value="password">
-    <input type="email" name="email" placeholder="Email" required autofocus autocomplete="email">
-    <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button type="submit">Sign in &rarr;</button>
-  </form>
-  {{end}}
-  {{if .TokenLogin}}
-  {{if .PasswordLogin}}<div class="hn-login-sep"><span>token</span></div>{{end}}
-  <form method="POST" action="/login" class="hn-gate-form">
-    <h2>Peek</h2>
-    <p>Enter your access token to manage uploads.</p>
-    <input type="hidden" name="method" value="token">
-    <input type="password" name="token" placeholder="Access token" required {{if not .PasswordLogin}}autofocus{{end}} autocomplete="off">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button type="submit">Sign in &rarr;</button>
-  </form>
-  {{end}}
-  {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
-  </div>
+<body class="grid min-h-screen place-items-center p-6">
+{{if .Invite}}<div hidden data-peek-toast data-toast-type="info" data-toast-message="Accept your invite by signing in."></div>{{end}}
+{{if .Error}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="{{.Error}}" data-toast-duration="6500"></div>{{end}}
+<div class="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
+<div class="mb-4 flex justify-center">{{template "brand-logo" .}}</div>
+{{if .Invite}}<p class="mb-4 rounded-lg border border-primary/25 bg-accent px-3 py-2.5 text-sm text-accent-foreground">Accept your invite by signing in.</p>{{end}}
+{{if .Providers}}
+<div class="flex flex-col gap-2.5 mb-3.5">
+  {{range .Providers}}<a href="/oauth/{{.Key}}/start" class="flex h-10 items-center justify-center rounded-lg border border-input bg-secondary text-sm font-medium text-secondary-foreground no-underline transition hover:border-border hover:bg-secondary/80">Continue with {{.Name}}</a>{{end}}
 </div>
+{{if or .PasswordLogin .TokenLogin}}<div class="mb-3.5 flex items-center gap-2.5 text-xs text-muted-foreground/70 before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"><span>or</span></div>{{end}}
+{{end}}
+{{if and .PasswordLogin .TokenLogin}}
+<div class="peek-login-tabs">
+  <input class="sr-only" type="radio" name="login_method_tab" id="login-method-email" checked>
+  <input class="sr-only" type="radio" name="login_method_tab" id="login-method-token">
+  <div class="peek-login-tab-list">
+    <label for="login-method-email" class="peek-login-tab peek-login-tab-email">Email</label>
+    <label for="login-method-token" class="peek-login-tab peek-login-tab-token">Token</label>
+  </div>
+  <div class="peek-login-tab-panel peek-login-email-panel">{{template "login-password-form" .}}</div>
+  <div class="peek-login-tab-panel peek-login-token-panel">{{template "login-token-form" .}}</div>
+</div>
+{{else}}
+{{if .PasswordLogin}}{{template "login-password-form" .}}{{end}}
+{{if .TokenLogin}}{{template "login-token-form" .}}{{end}}
+{{end}}
+{{if .Error}}<p class="mt-4 text-sm text-destructive">{{.Error}}</p>{{end}}
+</div>
+{{template "toast-host" .}}
 </body>
 </html>{{end}}
+
+{{define "login-password-form"}}
+<form method="POST" action="/login" class="flex flex-col gap-4">
+  <p class="text-sm text-muted-foreground">{{if .OAuthEnabled}}Admin sign in{{else}}Sign in with email and password{{end}}</p>
+  <input type="hidden" name="method" value="password">
+  <input type="email" name="email" placeholder="Email" required autofocus autocomplete="email" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <input type="password" name="password" placeholder="Password" required autocomplete="current-password" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Sign in &rarr;</button>
+</form>
+{{end}}
+
+{{define "login-token-form"}}
+<form method="POST" action="/login" class="flex flex-col gap-4">
+  <p class="text-sm text-muted-foreground">Enter your access token to manage uploads.</p>
+  <input type="hidden" name="method" value="token">
+  <input type="password" name="token" placeholder="Access token" required {{if not .PasswordLogin}}autofocus{{end}} autocomplete="off" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">Sign in &rarr;</button>
+</form>
+{{end}}

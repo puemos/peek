@@ -34,9 +34,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /raw/{slug}", s.handleRaw)
 	mux.HandleFunc("GET /bridge.js", s.handleBridge)
 	mux.HandleFunc("GET /app.js", s.handleApp)
-	mux.HandleFunc("GET /dashboard.js", s.handleDashboardJS)
-	mux.HandleFunc("GET /style.css", s.handleStyle)
-	mux.HandleFunc("GET /dashboard.css", s.handleDashboardCSS)
+	mux.HandleFunc("GET /dashboard-alpine.js", s.handleDashboardAlpine)
+	mux.HandleFunc("GET /toast.js", s.handleToast)
+	mux.HandleFunc("GET /alpine.min.js", s.handleAlpine)
+	mux.HandleFunc("GET /pines.css", s.handlePines)
+	mux.HandleFunc("GET /favicon.svg", s.handleFaviconSVG)
+	mux.HandleFunc("GET /favicon.png", s.handleFaviconPNG)
+	mux.HandleFunc("GET /favicon.ico", s.handleFaviconICO)
+	mux.HandleFunc("GET /logo.svg", s.handleLogoSVG)
+	mux.HandleFunc("GET /logo.png", s.handleLogoPNG)
 	mux.HandleFunc("GET /", s.handleIndex)
 
 	// Health checks (unauthenticated, for load balancers / orchestrators).

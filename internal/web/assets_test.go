@@ -29,8 +29,8 @@ func (w *failingAssetWriter) Write([]byte) (int, error) {
 }
 
 func TestAssetURLIncludesContentHash(t *testing.T) {
-	got := AssetURL("dashboard.js")
-	if !strings.HasPrefix(got, "/dashboard.js?v=") {
+	got := AssetURL("bridge.js")
+	if !strings.HasPrefix(got, "/bridge.js?v=") {
 		t.Fatalf("AssetURL() = %q", got)
 	}
 	if got == AssetURL("missing.js") {
@@ -76,10 +76,10 @@ func TestAssetManifestCoversEmbeddedAssets(t *testing.T) {
 }
 
 func TestServeAssetCacheHeaders(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, AssetURL("dashboard.js"), nil)
+	req := httptest.NewRequest(http.MethodGet, AssetURL("bridge.js"), nil)
 	rec := httptest.NewRecorder()
 
-	ServeAsset(rec, req, "dashboard.js")
+	ServeAsset(rec, req, "bridge.js")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
@@ -112,9 +112,9 @@ func TestServeAssetLogsWriteFailure(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(oldLogger) })
 	w := &failingAssetWriter{}
-	req := httptest.NewRequest(http.MethodGet, AssetURL("dashboard.js"), nil)
+	req := httptest.NewRequest(http.MethodGet, AssetURL("bridge.js"), nil)
 
-	ServeAsset(w, req, "dashboard.js")
+	ServeAsset(w, req, "bridge.js")
 
 	if got := w.Header().Get("Content-Type"); got != "text/javascript; charset=utf-8" {
 		t.Fatalf("content-type = %q", got)
@@ -122,7 +122,7 @@ func TestServeAssetLogsWriteFailure(t *testing.T) {
 	if !strings.Contains(logs.String(), "write asset response failed") {
 		t.Fatalf("write failure was not logged: %s", logs.String())
 	}
-	if !strings.Contains(logs.String(), "asset=dashboard.js") {
+	if !strings.Contains(logs.String(), "asset=bridge.js") {
 		t.Fatalf("asset name was not logged: %s", logs.String())
 	}
 }
@@ -132,7 +132,8 @@ func TestParentAppMessageHandlerChecksFrameSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "if (e.source !== els.frame.contentWindow) return;") {
+	src := string(b)
+	if !strings.Contains(src, "e.source !== frame()") && !strings.Contains(src, "e.source !== els.frame") {
 		t.Fatal("parent message handler must reject messages not sent by the sandbox iframe")
 	}
 }
@@ -156,22 +157,74 @@ func TestParentAppStoresReviewerNameLocally(t *testing.T) {
 	if strings.Contains(src, "document.cookie") {
 		t.Fatal("parent app should not persist reviewer names in cookies")
 	}
-	if !strings.Contains(src, `localStorage.getItem("hn_name")`) || !strings.Contains(src, `localStorage.setItem("hn_name", n)`) {
+	if !strings.Contains(src, `localStorage.getItem(STORAGE_KEY)`) && !strings.Contains(src, `localStorage.getItem("hn_name")`) {
 		t.Fatal("parent app should persist reviewer names in localStorage")
+	}
+	if !strings.Contains(src, `STORAGE_KEY = "hn_name"`) {
+		t.Fatal("parent app should define STORAGE_KEY constant")
 	}
 }
 
-func TestDashboardClipboardHasFailureFeedback(t *testing.T) {
-	b, err := assetsFS.ReadFile("assets/dashboard.js")
+func TestDashboardAlpineClipboardUsesSharedFailureFeedback(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/dashboard-alpine.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	src := string(b)
-	if !strings.Contains(src, `showCopyFeedback(button, "copy failed")`) {
-		t.Fatal("dashboard copy actions should show failure feedback")
+	if !strings.Contains(src, `window.peekCopyText`) {
+		t.Fatal("dashboard copy actions should use the shared clipboard helper")
+	}
+
+	b, err = assetsFS.ReadFile("assets/toast.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src = string(b)
+	if !strings.Contains(src, `"Copy failed."`) || !strings.Contains(src, `.catch(`) {
+		t.Fatal("shared copy actions should handle failure")
 	}
 	if !strings.Contains(src, `document.execCommand("copy")`) {
-		t.Fatal("dashboard copy actions should keep the textarea copy fallback")
+		t.Fatal("shared copy actions should keep the textarea copy fallback")
+	}
+}
+
+func TestDashboardAlpineTracksUploadSource(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/dashboard-alpine.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		`fileName: ""`,
+		`fileSizeLabel: ""`,
+		`html: ""`,
+		`setSelectedFile(file)`,
+		`formatFileSize(bytes)`,
+		`canUpload()`,
+		`guardUploadSubmit(event)`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("dashboard alpine upload state missing %q", want)
+		}
+	}
+}
+
+func TestToastAssetUsesBottomCenterPinesEvent(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/toast.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		`POSITION = "bottom-center"`,
+		`new CustomEvent("toast-show"`,
+		`window.peekToast`,
+		`window.peekCopyText`,
+		`[data-peek-toast]`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("toast asset missing %q", want)
+		}
 	}
 }
 
@@ -184,6 +237,9 @@ func TestRuntimeJSAvoidsHTMLStringInsertion(t *testing.T) {
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || path.Ext(name) != ".js" {
+			continue
+		}
+		if name == "alpine.min.js" {
 			continue
 		}
 		b, err := assetsFS.ReadFile("assets/" + name)

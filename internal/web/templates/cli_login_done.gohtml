@@ -1,20 +1,16 @@
 {{define "cli-login-done"}}<!doctype html>
-<html lang="en">
+<html lang="en" class="bg-background text-foreground antialiased">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CLI login &mdash; Peek</title>
-<link rel="stylesheet" href="{{asset "style.css"}}">
-<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+{{template "brand-head" .}}
+<link rel="stylesheet" href="{{asset "pines.css"}}">
 </head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-    <div class="hn-gate-form">
-      <h2>{{.Title}}</h2>
-      <p>{{.Message}}</p>
-    </div>
-  </div>
+<body class="grid min-h-screen place-items-center p-6">
+<div class="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
+  <h2 class="text-lg font-semibold tracking-tight text-card-foreground">{{.Title}}</h2>
+  <p class="mt-2 text-sm text-muted-foreground">{{.Message}}</p>
 </div>
 </body>
 </html>{{end}}
