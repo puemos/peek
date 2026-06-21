@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	webui "github.com/puemos/peek/internal/web"
 )
 
 func TestCSRFTokenSetsCookie(t *testing.T) {
@@ -36,7 +38,11 @@ func TestCSRFTokenReportsEntropyFailure(t *testing.T) {
 	stubSecureRandomRead(t, func([]byte) (int, error) {
 		return 0, errEntropy
 	})
-	s := &Server{}
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{renderer: renderer}
 	rec := httptest.NewRecorder()
 
 	token, ok := s.csrfToken(rec)
@@ -48,6 +54,12 @@ func TestCSRFTokenReportsEntropyFailure(t *testing.T) {
 	}
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "A secure form token could not be generated") {
+		t.Fatalf("body did not render web error: %s", rec.Body.String())
 	}
 	if got := rec.Result().Cookies(); len(got) != 0 {
 		t.Fatalf("unexpected cookies: %+v", got)
@@ -85,6 +97,9 @@ func TestLoginReturns500WhenCSRFGenerationFails(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "A secure form token could not be generated") {
+		t.Fatalf("body did not render web error: %s", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "<form") {
 		t.Fatalf("login form rendered after csrf failure: %s", rec.Body.String())

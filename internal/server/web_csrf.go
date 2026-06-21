@@ -45,5 +45,5 @@ func (s *Server) validateCSRF(r *http.Request, w http.ResponseWriter, val string
 
 func (s *Server) renderCSRFError(w http.ResponseWriter, err error) {
 	slog.Error("csrf token generation failed", "err", err)
-	http.Error(w, "internal server error", http.StatusInternalServerError)
+	s.renderWebError(w, http.StatusInternalServerError, "Internal server error", "A secure form token could not be generated. Try again.")
 }
