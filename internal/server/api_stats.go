@@ -1,9 +1,6 @@
 package server
 
-import (
-	"encoding/json"
-	"net/http"
-)
+import "net/http"
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
@@ -104,5 +101,5 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+slug+`-export.json"`)
-	_ = json.NewEncoder(w).Encode(export)
+	jsonOK(w, export)
 }
