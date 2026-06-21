@@ -77,6 +77,21 @@ func (s *Server) encryptedGetSetting(key string) (string, error) {
 	return v, nil
 }
 
+func decryptedStoreSetting(store *db.Store, secret, key string) string {
+	v, err := store.GetSetting(key)
+	if err != nil || v == "" {
+		return ""
+	}
+	if !secretSettingKeys[key] {
+		return v
+	}
+	dec, err := decryptSecret(secret, v)
+	if err != nil {
+		return ""
+	}
+	return dec
+}
+
 func (s *Server) encryptedSetSetting(key, val string) error {
 	if secretSettingKeys[key] && val != "" {
 		enc, err := encryptSecret(s.secret, val)

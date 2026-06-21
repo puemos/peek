@@ -9,11 +9,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/objectstore"
 )
 
 type uploadService struct {
 	store   *db.Store
-	storage Storage
+	storage objectstore.Storage
 	baseURL string
 }
 

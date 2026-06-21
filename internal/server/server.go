@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/objectstore"
 	webui "github.com/puemos/peek/internal/web"
 )
 
@@ -47,7 +48,7 @@ type Server struct {
 	secret   string
 	baseURL  string
 	dataDir  string
-	storage  Storage
+	storage  objectstore.Storage
 	renderer *webui.Renderer
 	secure   bool
 
@@ -121,16 +122,15 @@ func New(cfg Config) (*Server, error) {
 		storageBackend = cfg.Storage
 	}
 
-	var st Storage
+	var st objectstore.Storage
 	if storageBackend == "s3" {
 		if endpoint, err := store.GetSetting("s3_endpoint"); err == nil && endpoint != "" {
-			if err := validateS3Endpoint(endpoint, cfg.S3AllowPrivateEndpoint); err != nil {
+			if err := objectstore.ValidateS3Endpoint(endpoint, cfg.S3AllowPrivateEndpoint); err != nil {
 				return nil, err
 			}
 		}
-		st = NewS3Storage(secret, cfg.S3AllowPrivateEndpoint, func(key string) string {
-			v, _ := store.GetSetting(key)
-			return v
+		st = objectstore.NewS3Storage(cfg.S3AllowPrivateEndpoint, func(key string) string {
+			return decryptedStoreSetting(store, secret, key)
 		})
 		slog.Info("storage backend: s3 (config managed via settings API / dashboard)")
 	} else {
@@ -138,7 +138,7 @@ func New(cfg Config) (*Server, error) {
 		if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 			return nil, err
 		}
-		st = &FileStorage{Dir: uploadsDir}
+		st = &objectstore.FileStorage{Dir: uploadsDir}
 		slog.Info("storage backend: file", "dir", uploadsDir)
 	}
 

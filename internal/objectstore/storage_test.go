@@ -1,4 +1,4 @@
-package server
+package objectstore
 
 import (
 	"net/http"
@@ -17,7 +17,7 @@ func TestValidateS3EndpointRejectsUnsafeDefaults(t *testing.T) {
 	}
 	for _, endpoint := range tests {
 		t.Run(endpoint, func(t *testing.T) {
-			if err := validateS3Endpoint(endpoint, false); err == nil {
+			if err := ValidateS3Endpoint(endpoint, false); err == nil {
 				t.Fatalf("expected %s to be rejected", endpoint)
 			}
 		})
@@ -25,13 +25,13 @@ func TestValidateS3EndpointRejectsUnsafeDefaults(t *testing.T) {
 }
 
 func TestValidateS3EndpointAllowsExplicitPrivateOptIn(t *testing.T) {
-	if err := validateS3Endpoint("http://127.0.0.1:9000", true); err != nil {
+	if err := ValidateS3Endpoint("http://127.0.0.1:9000", true); err != nil {
 		t.Fatalf("expected private dev endpoint with opt-in to pass: %v", err)
 	}
 }
 
 func TestValidateS3EndpointAllowsPublicHTTPS(t *testing.T) {
-	if err := validateS3Endpoint("https://8.8.8.8", false); err != nil {
+	if err := ValidateS3Endpoint("https://8.8.8.8", false); err != nil {
 		t.Fatalf("expected public https endpoint to pass: %v", err)
 	}
 }

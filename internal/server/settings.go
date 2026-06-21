@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/puemos/peek/internal/objectstore"
 	webui "github.com/puemos/peek/internal/web"
 )
 
@@ -66,7 +67,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if k == "s3_endpoint" && v != "" {
-			if err := validateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
+			if err := objectstore.ValidateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
 				jsonError(w, http.StatusBadRequest, "invalid S3 endpoint: "+err.Error())
 				return
 			}
@@ -127,7 +128,7 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 			}
 		} else {
 			if k == "s3_endpoint" {
-				if err := validateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
+				if err := objectstore.ValidateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
 					http.Redirect(w, r, "/dashboard?err=invalid+s3+endpoint:+ "+url.PathEscape(err.Error()), http.StatusSeeOther)
 					return
 				}
