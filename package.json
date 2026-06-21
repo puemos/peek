@@ -2,7 +2,8 @@
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "gen-assets": "scripts/gen-assets.sh"
+    "gen-assets": "scripts/gen-assets.sh",
+    "gen-screenshots": "scripts/gen-screenshots.sh"
   },
   "devDependencies": {
     "playwright-core": "1.60.0"

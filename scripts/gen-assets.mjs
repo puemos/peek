@@ -13,12 +13,15 @@ const { BASE, SLUG, VIDEO_RAW, CHROME } = process.env;
 const VIDEO_W = 1920;
 const VIDEO_H = 1080;
 const REPORT_ZOOM = "1.18";
+const DEMO_HOST = "https://peek.acme.com";
+const SEEDED_COMMENT_COUNT = 2;
 
 for (const [key, value] of Object.entries({ BASE, SLUG, VIDEO_RAW, CHROME })) {
   if (!value) throw new Error(`missing required env var: ${key}`);
 }
 
 const shareURL = `${BASE}/p/${SLUG}`;
+const visibleShareURL = `${DEMO_HOST}/p/${SLUG}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function launchBrowser() {
@@ -33,7 +36,7 @@ async function hold(ms) {
   await sleep(ms);
 }
 
-async function typeIntoElement(page, selector, text, delay = 44) {
+async function typeIntoElement(page, selector, text, delay = 18) {
   for (const ch of text) {
     await page.locator(selector).evaluate((el, value) => {
       el.textContent += value;
@@ -112,26 +115,26 @@ async function showTerminalIntro(page) {
 </body>
 </html>`);
 
-  await hold(760);
+  await hold(350);
   await typeIntoElement(page, "#cmd", "peek upload codebase-health-report.html");
-  await hold(540);
+  await hold(220);
 
   const frames = ["|", "/", "-", "\\"];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 4; i++) {
     await page.locator("#loader").evaluate((el, value) => {
       el.textContent = value;
     }, `${frames[i % frames.length]} uploading codebase-health-report.html`);
-    await hold(220);
+    await hold(140);
   }
 
   await page.locator("#loader").evaluate((el) => {
     el.textContent = "uploaded";
   });
-  await hold(280);
+  await hold(140);
   await page.locator("#output").evaluate((el, url) => {
     el.textContent = url;
-  }, shareURL);
-  await hold(1900);
+  }, visibleShareURL);
+  await hold(850);
 }
 
 async function openSharedPage(page) {
@@ -151,15 +154,20 @@ async function openSharedPage(page) {
     html.style.zoom = zoom;
   }, REPORT_ZOOM);
   await page.locator("#hn-count").waitFor({ state: "visible" });
-  await page.waitForFunction(() => {
-    const count = document.getElementById("hn-count");
-    return count && Number(count.textContent || "0") === 0;
-  });
+  await page.waitForFunction((expected) => {
+    const el = document.getElementById("hn-count");
+    return el && Number(el.textContent || "0") === expected;
+  }, SEEDED_COMMENT_COUNT);
+  await page.frameLocator("#hn-frame").locator(".hn-pin").nth(SEEDED_COMMENT_COUNT - 1).waitFor({ state: "visible" });
 }
 
-async function selectLatencyClaim(page) {
+async function selectTextTarget(page, selector) {
   const report = page.frameLocator("#hn-frame");
-  await report.locator("#latency-claim").evaluate((el) => {
+  await report.locator(selector).evaluate((el) => {
+    el.scrollIntoView({ block: "center", inline: "nearest" });
+  });
+  await hold(180);
+  await report.locator(selector).evaluate((el) => {
     const range = document.createRange();
     range.selectNodeContents(el);
     const selection = window.getSelection();
@@ -169,6 +177,63 @@ async function selectLatencyClaim(page) {
   });
   await report.locator(".hn-sel-btn").waitFor({ state: "visible" });
   return report;
+}
+
+async function typeComment(page, chunks) {
+  await page.locator("#hn-body").click();
+  for (const [text, pause] of chunks) {
+    await page.keyboard.insertText(text);
+    await hold(pause);
+  }
+}
+
+async function submitComment(page, report, expectedCount) {
+  await page.locator('#hn-comment-form button[type="submit"]').click();
+  await page.locator("#hn-composer").waitFor({ state: "hidden" });
+  await page.locator("#hn-panel.hn-panel-open").waitFor({ state: "hidden" });
+  await page.waitForFunction((count) => {
+    const el = document.getElementById("hn-count");
+    return el && Number(el.textContent || "0") === count;
+  }, expectedCount);
+  await report.locator(".hn-pin").nth(expectedCount - 1).waitFor({ state: "visible" });
+  await hold(760);
+}
+
+async function addSelectedTextComment(page, selector, chunks, expectedCount) {
+  const report = await selectTextTarget(page, selector);
+  await hold(650);
+  await report.locator(".hn-sel-btn").evaluate((btn) => {
+    btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+  });
+  await page.locator("#hn-body").waitFor({ state: "visible" });
+  await hold(420);
+  await typeComment(page, chunks);
+  await submitComment(page, report, expectedCount);
+}
+
+async function addElementComment(page, selector, chunks, expectedCount) {
+  const report = page.frameLocator("#hn-frame");
+  await page.locator("#hn-comment-btn").click();
+  await page.locator("#hn-hint").waitFor({ state: "visible" });
+  await hold(520);
+  await report.locator(selector).click();
+  await page.locator("#hn-body").waitFor({ state: "visible" });
+  await hold(420);
+  await typeComment(page, chunks);
+  await submitComment(page, report, expectedCount);
+}
+
+async function showVisitSparkChart(page) {
+  await page.keyboard.press("Escape");
+  await page.locator("#hn-panel.hn-panel-open").waitFor({ state: "hidden" });
+  await page.waitForFunction(() => {
+    const count = document.getElementById("hn-views-count");
+    return count && Number((count.textContent || "").replace(/\D/g, "")) > 0;
+  });
+  await page.locator("#hn-views-btn").click();
+  await page.locator("#hn-sparkline").waitFor({ state: "visible" });
+  await page.locator("#hn-sparkline-svg path").first().waitFor({ state: "attached" });
+  await hold(2200);
 }
 
 async function recordDemo(browser) {
@@ -192,37 +257,24 @@ async function recordDemo(browser) {
     await showTerminalIntro(page);
 
     await openSharedPage(page);
-    await hold(1300);
+    await hold(900);
 
-    await page.locator("#hn-panel-btn").click();
-    await page.locator("#hn-panel.hn-panel-open").waitFor({ state: "visible" });
-    await page.locator("#hn-comment-list .hn-empty-state").waitFor({ state: "visible" });
-    await hold(1300);
-    await page.locator("#hn-panel-btn").click();
-    await hold(560);
+    await addSelectedTextComment(page, "#latency-claim", [
+      ["Can we attach the benchmark run ", 240],
+      ["that shows this 38% jump?", 640],
+    ], SEEDED_COMMENT_COUNT + 1);
 
-    const report = await selectLatencyClaim(page);
-    await hold(1200);
+    await addSelectedTextComment(page, "#f2", [
+      ["Please link this to the incident review ", 240],
+      ["before sharing broadly.", 640],
+    ], SEEDED_COMMENT_COUNT + 2);
 
-    await report.locator(".hn-sel-btn").click();
-    await page.locator("#hn-body").waitFor({ state: "visible" });
-    await hold(800);
-    await page.keyboard.insertText("Can we ");
-    await hold(260);
-    await page.keyboard.insertText("attach the benchmark run ");
-    await hold(340);
-    await page.keyboard.insertText("that shows this 38% jump?");
-    await hold(760);
-    await page.locator('#hn-comment-form button[type="submit"]').click();
-    await page.locator("#hn-panel.hn-panel-open").waitFor({ state: "visible" });
-    await page.waitForFunction(() => {
-      const count = document.getElementById("hn-count");
-      return count && Number(count.textContent || "0") === 1;
-    });
-    await hold(1200);
+    await addElementComment(page, "#issues", [
+      ["Can we add owner and due date here?", 720],
+    ], SEEDED_COMMENT_COUNT + 3);
 
-    await page.locator("#hn-comment-list li.hn-locatable").first().click();
-    await hold(2600);
+    await hold(900);
+    await showVisitSparkChart(page);
   } finally {
     await context.close();
     if (video) await video.saveAs(VIDEO_RAW);

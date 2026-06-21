@@ -16,9 +16,25 @@ unformatted=$(test -z "$files" || gofmt -l $files)
 test -z "$unformatted" || (printf '%s\n' "$unformatted" && exit 1)
 """
 
+[tasks.tailwind]
+description = "Generate optimized Tailwind CSS from templates"
+run = """
+ARCH=$(uname -m) && OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+if [ "$ARCH" = "arm64" ]; then ARCH="arm64"; else ARCH="x64"; fi
+if [ "$OS" = "darwin" ]; then OS="macos"; fi
+TW=bin/tailwindcss
+if [ ! -x "$TW" ]; then
+  echo "Downloading Tailwind CSS standalone CLI..."
+  curl -sL -o "$TW" "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.1/tailwindcss-${OS}-${ARCH}"
+  chmod +x "$TW"
+fi
+"$TW" -i internal/web/tailwind-input.css -o internal/web/assets/pines.css --minify
+"""
+
 [tasks.build]
 description = "Build both binaries (Peek server + CLI) into bin/"
 run = "go build -o bin/peekd ./cmd/peekd && go build -o bin/peek ./cmd/peek"
+depends = ["tailwind"]
 
 [tasks.vet]
 description = "Run go vet on all packages"

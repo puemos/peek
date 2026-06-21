@@ -2,11 +2,15 @@
 
 [![CI](https://github.com/puemos/peek/actions/workflows/ci.yml/badge.svg)](https://github.com/puemos/peek/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/puemos/peek?sort=semver)](https://github.com/puemos/peek/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
 
+<img src="assets/logo.png" alt="Peek" width="180">
+
 Share an HTML page inside your company, get a link, collect feedback right on the page.
 
 Peek is a self-hosted internal review tool. Upload any HTML file and get a live preview URL where reviewers can leave comments pinned to elements, anchored to selected text, or on the whole page. Single static Go binary, pure-Go SQLite, no CGO.
 
 ![Peek viewer with pinned comments](assets/hero.png)
+
+![Peek demo: upload from the CLI, comment in context, and view visits](assets/demo.gif)
 
 ## Quick start
 
