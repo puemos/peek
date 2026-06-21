@@ -178,7 +178,7 @@
               <form method="POST" action="/dashboard/users/{{.ID}}/disabled" class="m-0">
                 <input type="hidden" name="csrf" value="{{$.CSRF}}">
                 <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
-                <button type="submit" class="peek-row-button peek-row-button-danger">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
+                <button type="submit" class="peek-row-button{{if not .Disabled}} peek-row-button-danger{{end}}">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
               </form>
             </div>
           </td>
