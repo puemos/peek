@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"time"
 
 	"github.com/puemos/peek/internal/models"
@@ -80,14 +79,7 @@ func (s *Store) ConsumeInvite(id int64) error {
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return sql.ErrNoRows
-	}
-	return err
+	return requireRowsAffected(res)
 }
 
 func (s *Store) RevokeInvite(id int64) error {
@@ -95,12 +87,5 @@ func (s *Store) RevokeInvite(id int64) error {
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return sql.ErrNoRows
-	}
-	return err
+	return requireRowsAffected(res)
 }

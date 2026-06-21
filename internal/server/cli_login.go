@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -69,7 +70,11 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if time.Now().After(d.ExpiresAt) {
-		_ = s.store.ExpireCLILogin(d.ID)
+		if d.Status == "pending" {
+			if err := s.store.ExpireCLILogin(d.ID); err != nil {
+				slog.Warn("cli login expire failed", "device_id", d.ID, "err", err)
+			}
+		}
 		jsonOK(w, map[string]any{"status": "expired"})
 		return
 	}
@@ -147,11 +152,16 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.FormValue("decision") == "deny" {
-		_ = s.store.DenyCLILogin(d.ID)
+		if err := s.store.DenyCLILogin(d.ID); err != nil {
+			slog.Warn("cli login deny failed", "device_id", d.ID, "err", err)
+			s.renderHTML(w, http.StatusOK, webui.TemplateCLILogin, webui.CLILoginData{Code: code, CSRF: s.newCSRF(w), User: owner.Name, Error: "Denial failed."})
+			return
+		}
 		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login denied", Message: "Return to your terminal to continue."})
 		return
 	}
 	if err := s.store.ApproveCLILogin(d.ID, owner.ID); err != nil {
+		slog.Warn("cli login approve failed", "device_id", d.ID, "account_id", owner.ID, "err", err)
 		s.renderHTML(w, http.StatusOK, webui.TemplateCLILogin, webui.CLILoginData{Code: code, CSRF: s.newCSRF(w), User: owner.Name, Error: "Approval failed."})
 		return
 	}

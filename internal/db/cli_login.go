@@ -41,13 +41,19 @@ func (s *Store) getCLILoginWhere(where string, arg any) (*models.CLILoginDevice,
 }
 
 func (s *Store) ApproveCLILogin(id, accountID int64) error {
-	_, err := s.Exec(`UPDATE cli_login_devices SET status='approved', account_id=? WHERE id=? AND status='pending'`, accountID, id)
-	return err
+	res, err := s.Exec(`UPDATE cli_login_devices SET status='approved', account_id=? WHERE id=? AND status='pending'`, accountID, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func (s *Store) DenyCLILogin(id int64) error {
-	_, err := s.Exec(`UPDATE cli_login_devices SET status='denied' WHERE id=? AND status='pending'`, id)
-	return err
+	res, err := s.Exec(`UPDATE cli_login_devices SET status='denied' WHERE id=? AND status='pending'`, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func (s *Store) ConsumeCLILogin(id int64) error {
@@ -55,17 +61,13 @@ func (s *Store) ConsumeCLILogin(id int64) error {
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
+	return requireRowsAffected(res)
 }
 
 func (s *Store) ExpireCLILogin(id int64) error {
-	_, err := s.Exec(`UPDATE cli_login_devices SET status='expired' WHERE id=? AND status='pending'`, id)
-	return err
+	res, err := s.Exec(`UPDATE cli_login_devices SET status='expired' WHERE id=? AND status='pending'`, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }

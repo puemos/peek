@@ -370,11 +370,54 @@ func TestInviteAndCLILoginConsumptionAreOneTime(t *testing.T) {
 	if err := store.ApproveCLILogin(device.ID, admin.AccountID); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.ApproveCLILogin(device.ID, admin.AccountID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI approve should fail, got %v", err)
+	}
+	if err := store.DenyCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("denying approved CLI login should fail, got %v", err)
+	}
+	if err := store.ExpireCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expiring approved CLI login should fail, got %v", err)
+	}
 	if err := store.ConsumeCLILogin(device.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ConsumeCLILogin(device.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second CLI consume should fail, got %v", err)
+	}
+
+	if err := store.CreateCLILoginDevice("deny-device", "HJKLMNPQ", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	denyDevice, err := store.GetCLILoginByDevice("deny-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DenyCLILogin(denyDevice.ID); err != nil {
+		t.Fatalf("deny CLI login: %v", err)
+	}
+	if err := store.DenyCLILogin(denyDevice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI deny should fail, got %v", err)
+	}
+	if err := store.ApproveCLILogin(denyDevice.ID, admin.AccountID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("approving denied CLI login should fail, got %v", err)
+	}
+
+	if err := store.CreateCLILoginDevice("expire-device", "RSTUVWXY", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	expireDevice, err := store.GetCLILoginByDevice("expire-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ExpireCLILogin(expireDevice.ID); err != nil {
+		t.Fatalf("expire CLI login: %v", err)
+	}
+	if err := store.ExpireCLILogin(expireDevice.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("second CLI expire should fail, got %v", err)
+	}
+	if err := store.ApproveCLILogin(expireDevice.ID, admin.AccountID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("approving expired CLI login should fail, got %v", err)
 	}
 }
 
