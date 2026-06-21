@@ -13,6 +13,10 @@ import (
 )
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
+	actor, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	var body struct {
 		Name     string `json:"name"`
 		ExpiresH int    `json:"expires_hours"`
@@ -34,7 +38,6 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
-	actor, _ := s.store.GetToken(bearerToken(r))
 	s.auditRequest(r, actorName(actor), "token.create", "name="+body.Name)
 	jsonOK(w, map[string]any{"token": t, "name": body.Name})
 }
@@ -60,6 +63,10 @@ func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
+	actor, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "bad token id")
@@ -78,7 +85,6 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
-	actor, _ := s.store.GetToken(bearerToken(r))
 	s.auditRequest(r, actorName(actor), "token.revoke", "id="+strconv.FormatInt(id, 10)+" name="+t.Name)
 	jsonOK(w, map[string]any{"revoked": id})
 }

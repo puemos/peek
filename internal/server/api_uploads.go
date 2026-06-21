@@ -19,8 +19,10 @@ type uploadResp struct {
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 
 	maxUpload := s.settingInt64("max_upload", 2<<20)
 
@@ -84,8 +86,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	var (
 		list []models.Upload
 		err  error
@@ -120,14 +124,16 @@ func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
 	}
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
 	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
@@ -144,14 +150,16 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
 	}
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
 	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
@@ -190,8 +198,10 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) {
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	uploads, err := s.store.ListUploadsByOwner(owner.AccountID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")

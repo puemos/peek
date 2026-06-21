@@ -3,14 +3,16 @@ package server
 import "net/http"
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
 	}
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
 	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
@@ -45,14 +47,16 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
+	owner, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	slug := r.PathValue("slug")
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
 	}
-	tok := bearerToken(r)
-	owner, _ := s.store.GetToken(tok)
 	if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return

@@ -59,6 +59,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	actor, ok := requireAPIToken(w, r)
+	if !ok {
+		return
+	}
 	var body map[string]string
 	if err := decodeJSON(w, r, &body, defaultJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
@@ -82,7 +86,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	actor, _ := s.store.GetToken(bearerToken(r))
 	s.auditRequest(r, actorName(actor), "settings.update", strings.Join(s.settingKeys(body), ","))
 	jsonOK(w, map[string]string{"status": "ok"})
 }

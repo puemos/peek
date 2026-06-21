@@ -1,9 +1,16 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strings"
+
+	"github.com/puemos/peek/internal/models"
 )
+
+type contextKey string
+
+const apiTokenContextKey contextKey = "api-token"
 
 func (s *Server) withMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +62,7 @@ func (s *Server) authToken(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, http.StatusForbidden, "account disabled")
 			return
 		}
-		next(w, r)
+		next(w, withAPIToken(r, t))
 	}
 }
 
@@ -79,8 +86,26 @@ func (s *Server) authAdmin(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, http.StatusForbidden, "admin only")
 			return
 		}
-		next(w, r)
+		next(w, withAPIToken(r, t))
 	}
+}
+
+func withAPIToken(r *http.Request, t *models.Token) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), apiTokenContextKey, t))
+}
+
+func apiToken(r *http.Request) (*models.Token, bool) {
+	t, ok := r.Context().Value(apiTokenContextKey).(*models.Token)
+	return t, ok && t != nil
+}
+
+func requireAPIToken(w http.ResponseWriter, r *http.Request) (*models.Token, bool) {
+	t, ok := apiToken(r)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "auth context missing")
+		return nil, false
+	}
+	return t, true
 }
 
 func bearerToken(r *http.Request) string {

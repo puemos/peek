@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/models"
 )
 
 func TestSettingKeysAreSorted(t *testing.T) {
@@ -76,6 +77,7 @@ func TestUpdateSettingsRejectsUnknownKeysBeforeWriting(t *testing.T) {
 	s := &Server{store: store, secret: strings.Repeat("0", 64)}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"max_upload":"2048","not_a_setting":"x"}`))
+	req = withAPIToken(req, &models.Token{Name: "admin", IsAdmin: true})
 	rec := httptest.NewRecorder()
 
 	s.handleUpdateSettings(rec, req)

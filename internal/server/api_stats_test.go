@@ -33,7 +33,7 @@ func TestExportUploadReportsVisitQueryFailure(t *testing.T) {
 	s := &Server{store: store}
 	req := httptest.NewRequest(http.MethodGet, "/api/uploads/page/export", nil)
 	req.SetPathValue("slug", "page")
-	req.Header.Set("Authorization", "Bearer "+token)
+	req = withAPIToken(req, owner)
 	rec := httptest.NewRecorder()
 
 	s.handleExportUpload(rec, req)
