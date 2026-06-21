@@ -116,7 +116,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
-	renderer, err := webui.NewRenderer(webui.AssetURL)
+	renderer, err := webui.NewRenderer()
 	if err != nil {
 		return nil, err
 	}

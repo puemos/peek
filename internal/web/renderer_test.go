@@ -6,7 +6,7 @@ import (
 )
 
 func TestRendererExecutesAllTemplates(t *testing.T) {
-	renderer, err := NewRenderer(func(name string) string {
+	renderer, err := newRenderer(func(name string) string {
 		return "/" + name + "?v=test"
 	})
 	if err != nil {

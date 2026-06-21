@@ -31,13 +31,17 @@ const PageCSP = "default-src 'self'; style-src 'self'; script-src 'self'; frame-
 //go:embed templates/*.gohtml
 var templateFS embed.FS
 
-type AssetPath func(name string) string
+type assetPath func(name string) string
 
 type Renderer struct {
 	tmpl *template.Template
 }
 
-func NewRenderer(assetPath AssetPath) (*Renderer, error) {
+func NewRenderer() (*Renderer, error) {
+	return newRenderer(AssetURL)
+}
+
+func newRenderer(assetPath assetPath) (*Renderer, error) {
 	if assetPath == nil {
 		assetPath = func(name string) string { return "/" + name }
 	}
