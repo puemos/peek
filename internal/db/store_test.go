@@ -100,6 +100,18 @@ func TestCreateGetUpload(t *testing.T) {
 	}
 }
 
+func TestUploadMutationsReportMissingRows(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.SetUploadPassword(999, "hash"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("set password on missing upload should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.DeleteUpload(999); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("delete missing upload should fail with sql.ErrNoRows, got %v", err)
+	}
+}
+
 func TestAddListComments(t *testing.T) {
 	s := openTestStore(t)
 	defer s.Close()

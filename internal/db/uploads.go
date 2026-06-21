@@ -126,13 +126,19 @@ func (s *Store) ListAllUploads() ([]models.Upload, error) {
 }
 
 func (s *Store) SetUploadPassword(id int64, hash string) error {
-	_, err := s.Exec(`UPDATE uploads SET password_hash=? WHERE id=?`, hash, id)
-	return err
+	res, err := s.Exec(`UPDATE uploads SET password_hash=? WHERE id=?`, hash, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func (s *Store) DeleteUpload(id int64) error {
-	_, err := s.Exec(`DELETE FROM uploads WHERE id=?`, id)
-	return err
+	res, err := s.Exec(`DELETE FROM uploads WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func scanUploads(rows *sql.Rows) ([]models.Upload, error) {
