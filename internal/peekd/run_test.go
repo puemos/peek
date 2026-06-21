@@ -95,3 +95,37 @@ func TestParseServeConfigMapsFlagsAndEnv(t *testing.T) {
 		t.Fatal("TrustedProxy = false")
 	}
 }
+
+func TestParseServeConfigRejectsInvalidIntegerEnv(t *testing.T) {
+	t.Setenv("PEEK_MAX_UPLOAD", "two-mib")
+
+	_, _, err := parseServeConfig(nil)
+	if err == nil || err.Error() != "PEEK_MAX_UPLOAD must be an integer" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestParseServeConfigRejectsInvalidBoolEnv(t *testing.T) {
+	t.Setenv("PEEK_TRUSTED_PROXY", "maybe")
+
+	_, _, err := parseServeConfig(nil)
+	if err == nil || err.Error() != "PEEK_TRUSTED_PROXY must be a boolean" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestParseServeConfigAcceptsCaseInsensitiveBoolEnv(t *testing.T) {
+	t.Setenv("PEEK_TRUSTED_PROXY", "ON")
+	t.Setenv("PEEK_S3_ALLOW_PRIVATE_ENDPOINT", "Yes")
+
+	cfg, showVersion, err := parseServeConfig([]string{"--data", t.TempDir()})
+	if err != nil {
+		t.Fatalf("parseServeConfig: %v", err)
+	}
+	if showVersion {
+		t.Fatal("showVersion = true")
+	}
+	if !cfg.TrustedProxy || !cfg.S3AllowPrivateEndpoint {
+		t.Fatalf("bool config = %+v", cfg)
+	}
+}

@@ -62,10 +62,31 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 	fs := flag.NewFlagSet("peekd", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
+	maxUploadDefault, err := getenvInt64("PEEK_MAX_UPLOAD", 2<<20)
+	if err != nil {
+		return serveConfig{}, false, err
+	}
+	s3AllowPrivateEndpointDefault, err := getenvBool("PEEK_S3_ALLOW_PRIVATE_ENDPOINT")
+	if err != nil {
+		return serveConfig{}, false, err
+	}
+	maxTotalSizeDefault, err := getenvInt64("PEEK_MAX_TOTAL_SIZE", 0)
+	if err != nil {
+		return serveConfig{}, false, err
+	}
+	retentionDaysDefault, err := getenvInt("PEEK_RETENTION_DAYS", 0)
+	if err != nil {
+		return serveConfig{}, false, err
+	}
+	trustedProxyDefault, err := getenvBool("PEEK_TRUSTED_PROXY")
+	if err != nil {
+		return serveConfig{}, false, err
+	}
+
 	addr := fs.String("addr", getenv("PEEK_ADDR", ":7700"), "listen address")
 	dataDir := fs.String("data", getenv("PEEK_DATA", "./data"), "data directory")
 	baseURL := fs.String("base-url", getenv("PEEK_BASE_URL", "http://localhost:7700"), "public base URL")
-	maxUpload := fs.Int64("max-upload", getenvInt("PEEK_MAX_UPLOAD", 2<<20), "max upload size in bytes (per file)")
+	maxUpload := fs.Int64("max-upload", maxUploadDefault, "max upload size in bytes (per file)")
 	secret := fs.String("secret", getenv("PEEK_SECRET", ""), "server secret for HMAC signing and encryption (auto-generated if empty)")
 
 	storageFlag := fs.String("storage", getenv("PEEK_STORAGE", "file"), "storage backend: file or s3")
@@ -74,11 +95,11 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 	s3Region := fs.String("s3-region", getenv("PEEK_S3_REGION", "us-east-1"), "S3 region")
 	s3AccessKey := fs.String("s3-access-key", getenv("PEEK_S3_ACCESS_KEY", ""), "S3 access key")
 	s3SecretKey := fs.String("s3-secret-key", getenv("PEEK_S3_SECRET_KEY", ""), "S3 secret key")
-	s3AllowPrivateEndpoint := fs.Bool("s3-allow-private-endpoint", getenvBool("PEEK_S3_ALLOW_PRIVATE_ENDPOINT"), "allow private/link-local S3 endpoint addresses for explicit dev deployments")
+	s3AllowPrivateEndpoint := fs.Bool("s3-allow-private-endpoint", s3AllowPrivateEndpointDefault, "allow private/link-local S3 endpoint addresses for explicit dev deployments")
 
-	maxTotalSize := fs.Int64("max-total-size", getenvInt("PEEK_MAX_TOTAL_SIZE", 0), "max total storage bytes across all uploads (0 = unlimited)")
-	retentionDays := fs.Int("retention-days", getenvIntAsInt("PEEK_RETENTION_DAYS", 0), "auto-delete uploads older than N days (0 = off)")
-	trustedProxy := fs.Bool("trusted-proxy", getenvBool("PEEK_TRUSTED_PROXY"), "trust X-Forwarded-For header (set when behind a reverse proxy)")
+	maxTotalSize := fs.Int64("max-total-size", maxTotalSizeDefault, "max total storage bytes across all uploads (0 = unlimited)")
+	retentionDays := fs.Int("retention-days", retentionDaysDefault, "auto-delete uploads older than N days (0 = off)")
+	trustedProxy := fs.Bool("trusted-proxy", trustedProxyDefault, "trust X-Forwarded-For header (set when behind a reverse proxy)")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return serveConfig{}, false, err
