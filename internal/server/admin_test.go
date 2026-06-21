@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -47,6 +49,30 @@ func TestDashboardRevokeInviteReportsSuccessAfterUpdate(t *testing.T) {
 	}
 	if rec.Header().Get("Location") != "/dashboard?ok=invite+revoked" {
 		t.Fatalf("location = %q", rec.Header().Get("Location"))
+	}
+}
+
+func TestDashboardInviteRowsLogsDecryptFailure(t *testing.T) {
+	s, store, accountID := newAdminTestServer(t)
+	s.secret = "not-a-valid-secret"
+	if _, err := store.CreateInvite("raw", "ciphertext", "user@example.test", accountID, time.Now().Add(inviteTTL)); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+
+	rows := s.dashboardInviteRows()
+
+	if len(rows) != 1 {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if rows[0].Link != "" {
+		t.Fatalf("link should be empty when decrypt fails: %+v", rows[0])
+	}
+	if !strings.Contains(logs.String(), "dashboard invite decrypt failed") {
+		t.Fatalf("decrypt failure was not logged: %s", logs.String())
 	}
 }
 

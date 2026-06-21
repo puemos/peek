@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -146,13 +147,17 @@ func (s *Server) handleDashboardUserDisabled(w http.ResponseWriter, r *http.Requ
 func (s *Server) dashboardInviteRows() []inviteDashRow {
 	invites, err := s.store.ListInvites()
 	if err != nil {
+		slog.Error("dashboard invite list failed", "err", err)
 		return nil
 	}
 	out := make([]inviteDashRow, 0, len(invites))
 	for _, inv := range invites {
 		status := "pending"
 		canRevoke := true
-		raw, _ := decryptSecret(s.secret, inv.Token)
+		raw, err := decryptSecret(s.secret, inv.Token)
+		if err != nil {
+			slog.Warn("dashboard invite decrypt failed", "invite_id", inv.ID, "err", err)
+		}
 		link := ""
 		if raw != "" {
 			link = s.baseURL + "/invite/" + raw
@@ -185,6 +190,7 @@ func (s *Server) dashboardInviteRows() []inviteDashRow {
 func (s *Server) dashboardAccountRows(selfID int64) []accountDashRow {
 	accounts, err := s.store.ListAccounts()
 	if err != nil {
+		slog.Error("dashboard account list failed", "err", err)
 		return nil
 	}
 	out := make([]accountDashRow, 0, len(accounts))
