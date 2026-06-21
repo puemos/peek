@@ -192,17 +192,13 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	total, unique, err := s.store.CountVisits(u.ID)
 	if err != nil {
 		slog.Error("dashboard stats count failed", "slug", slug, "err", err)
-		s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
-			Slug: slug, Filename: u.Filename, Error: "stats could not be loaded",
-		})
+		s.renderDashboardStatsError(w, slug, u.Filename)
 		return
 	}
 	recent, err := s.store.RecentVisits(u.ID, 100)
 	if err != nil {
 		slog.Error("dashboard stats visits failed", "slug", slug, "err", err)
-		s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
-			Slug: slug, Filename: u.Filename, Error: "stats could not be loaded",
-		})
+		s.renderDashboardStatsError(w, slug, u.Filename)
 		return
 	}
 	visits := make([]statsVisit, 0, len(recent))
@@ -219,5 +215,11 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	s.renderHTML(w, http.StatusOK, webui.TemplateStats, statsData{
 		Slug: slug, Filename: u.Filename,
 		TotalVisits: total, UniqueVisitors: unique, Recent: visits,
+	})
+}
+
+func (s *Server) renderDashboardStatsError(w http.ResponseWriter, slug, filename string) {
+	s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
+		Slug: slug, Filename: filename, Error: "stats could not be loaded",
 	})
 }
