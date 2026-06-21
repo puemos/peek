@@ -42,7 +42,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			CreatedHuman: u.CreatedAt.Format("2006-01-02 15:04"),
 		})
 	}
-	csrf := s.newCSRF(w)
+	csrf, ok := s.csrfToken(w)
+	if !ok {
+		return
+	}
 	allSettings := s.dashboardSettingsMap()
 	sortedMeta := dashboardSettingsRows(allSettings)
 	dashData_ := dashData{
@@ -87,7 +90,12 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		dashboardError(w, r, "file too large or invalid form")
 		return
 	}
-	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
+	validCSRF, err := s.validateCSRF(r, w, r.FormValue("csrf"))
+	if err != nil {
+		s.renderCSRFError(w, err)
+		return
+	}
+	if !validCSRF {
 		dashboardError(w, r, "invalid session")
 		return
 	}

@@ -18,19 +18,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == "GET" {
-		csrf := s.newCSRF(w)
-		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "", r))
+		s.renderLoginForm(w, http.StatusOK, "", r)
 		return
 	}
 	// POST
 	if err := r.ParseForm(); err != nil {
-		csrf := s.newCSRF(w)
-		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid session.", r))
+		s.renderLoginForm(w, http.StatusOK, "Invalid session.", r)
 		return
 	}
-	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		csrf := s.newCSRF(w)
-		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid session.", r))
+	validCSRF, csrfErr := s.validateCSRF(r, w, r.FormValue("csrf"))
+	if csrfErr != nil {
+		s.renderCSRFError(w, csrfErr)
+		return
+	}
+	if !validCSRF {
+		s.renderLoginForm(w, http.StatusOK, "Invalid session.", r)
 		return
 	}
 
@@ -48,8 +50,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		err = fmt.Errorf("unsupported login method")
 	}
 	if err != nil {
-		csrf := s.newCSRF(w)
-		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid credentials.", r))
+		s.renderLoginForm(w, http.StatusOK, "Invalid credentials.", r)
 		return
 	}
 	s.setWebSession(w, accountID)
@@ -120,8 +121,25 @@ func (s *Server) loginData(csrf, errMsg string, r *http.Request) loginData {
 	}
 }
 
+func (s *Server) renderLoginForm(w http.ResponseWriter, status int, errMsg string, r *http.Request) {
+	csrf, ok := s.csrfToken(w)
+	if !ok {
+		return
+	}
+	s.renderHTML(w, status, webui.TemplateLogin, s.loginData(csrf, errMsg, r))
+}
+
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid session", http.StatusBadRequest)
+		return
+	}
+	validCSRF, err := s.validateCSRF(r, w, r.FormValue("csrf"))
+	if err != nil {
+		s.renderCSRFError(w, err)
+		return
+	}
+	if !validCSRF {
 		http.Error(w, "invalid session", http.StatusBadRequest)
 		return
 	}

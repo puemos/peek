@@ -96,8 +96,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderOAuthError(w http.ResponseWriter, r *http.Request, status int, msg string) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
-	csrf := s.newCSRF(w)
-	s.renderHTML(w, status, webui.TemplateLogin, s.loginData(csrf, msg, r))
+	s.renderLoginForm(w, status, msg, r)
 }
 
 func oauthAccountErrorMessage(err error) string {

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -32,7 +31,7 @@ func loadOrCreateSecret(path string) (string, error) {
 		return "", fmt.Errorf("read secret: %w", err)
 	}
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := secureRandomRead(b); err != nil {
 		return "", fmt.Errorf("generate secret: %w", err)
 	}
 	s := hex.EncodeToString(b)

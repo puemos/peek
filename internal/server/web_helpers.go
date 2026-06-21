@@ -38,7 +38,12 @@ func (s *Server) parseDashboardForm(w http.ResponseWriter, r *http.Request) bool
 		dashboardError(w, r, "invalid session")
 		return false
 	}
-	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
+	validCSRF, err := s.validateCSRF(r, w, r.FormValue("csrf"))
+	if err != nil {
+		s.renderCSRFError(w, err)
+		return false
+	}
+	if !validCSRF {
 		dashboardError(w, r, "invalid session")
 		return false
 	}

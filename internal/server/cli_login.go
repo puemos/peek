@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/rand"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -127,8 +126,7 @@ func (s *Server) handleCLILoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	csrf := s.newCSRF(w)
-	s.renderHTML(w, http.StatusOK, webui.TemplateCLILogin, webui.CLILoginData{Code: code, CSRF: csrf, User: owner.Name})
+	s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name})
 }
 
 func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
@@ -141,8 +139,17 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		s.renderHTML(w, http.StatusOK, webui.TemplateCLILogin, webui.CLILoginData{Code: code, CSRF: s.newCSRF(w), User: owner.Name, Error: "Invalid session."})
+	if err := r.ParseForm(); err != nil {
+		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Invalid session."})
+		return
+	}
+	validCSRF, err := s.validateCSRF(r, w, r.FormValue("csrf"))
+	if err != nil {
+		s.renderCSRFError(w, err)
+		return
+	}
+	if !validCSRF {
+		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Invalid session."})
 		return
 	}
 	d, err := s.store.GetCLILoginByUserCode(code)
@@ -153,7 +160,7 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("decision") == "deny" {
 		if err := s.store.DenyCLILogin(d.ID); err != nil {
 			slog.Warn("cli login deny failed", "device_id", d.ID, "err", err)
-			s.renderHTML(w, http.StatusOK, webui.TemplateCLILogin, webui.CLILoginData{Code: code, CSRF: s.newCSRF(w), User: owner.Name, Error: "Denial failed."})
+			s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Denial failed."})
 			return
 		}
 		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login denied", Message: "Return to your terminal to continue."})
@@ -161,17 +168,26 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.ApproveCLILogin(d.ID, owner.ID); err != nil {
 		slog.Warn("cli login approve failed", "device_id", d.ID, "account_id", owner.ID, "err", err)
-		s.renderHTML(w, http.StatusOK, webui.TemplateCLILogin, webui.CLILoginData{Code: code, CSRF: s.newCSRF(w), User: owner.Name, Error: "Approval failed."})
+		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Approval failed."})
 		return
 	}
 	s.audit("cli login approved account=%d code=%s", owner.ID, code)
 	s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login approved", Message: "Return to your terminal to continue."})
 }
 
+func (s *Server) renderCLILoginForm(w http.ResponseWriter, status int, data webui.CLILoginData) {
+	csrf, ok := s.csrfToken(w)
+	if !ok {
+		return
+	}
+	data.CSRF = csrf
+	s.renderHTML(w, status, webui.TemplateCLILogin, data)
+}
+
 func randomUserCode() (string, error) {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := secureRandomRead(b); err != nil {
 		return "", err
 	}
 	for i := range b {
