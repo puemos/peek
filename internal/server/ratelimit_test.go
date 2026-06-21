@@ -23,7 +23,7 @@ func TestLimiterAllowsUpToMax(t *testing.T) {
 }
 
 func TestLimiterResetsAfterWindow(t *testing.T) {
-	l := newLimiter(2, 50*time.Millisecond)
+	l, advance := newTestLimiter(2, time.Minute)
 	if !l.allow("k") {
 		t.Fatalf("first request should be allowed")
 	}
@@ -33,7 +33,7 @@ func TestLimiterResetsAfterWindow(t *testing.T) {
 	if l.allow("k") {
 		t.Fatalf("third request should be rejected before window reset")
 	}
-	time.Sleep(60 * time.Millisecond)
+	advance(time.Minute + time.Nanosecond)
 	if !l.allow("k") {
 		t.Fatalf("request should be allowed after window reset")
 	}
@@ -53,14 +53,19 @@ func TestLimiterPerKeyIsolation(t *testing.T) {
 }
 
 func TestLimiterCapacityCleanup(t *testing.T) {
-	l := newLimiter(1, 50*time.Millisecond)
+	l, advance := newTestLimiter(1, time.Minute)
 	for i := 0; i < 10001; i++ {
 		l.allow(fmt.Sprintf("k%d", i))
 	}
 	// After exceeding capacity, expired windows should be cleaned.
-	time.Sleep(60 * time.Millisecond)
+	advance(time.Minute + time.Nanosecond)
 	if !l.allow("cleanup-key") {
 		t.Fatalf("request should be allowed after cleanup of expired windows")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.hits) != 1 {
+		t.Fatalf("expired limiter windows were not cleaned up, entries=%d", len(l.hits))
 	}
 }
 
@@ -149,5 +154,16 @@ func assertJSONRateLimit(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 	if body.Error != "too many requests, try again shortly" {
 		t.Fatalf("error = %q", body.Error)
+	}
+}
+
+func newTestLimiter(max int, win time.Duration) (*limiter, func(time.Duration)) {
+	now := time.Unix(1700000000, 0)
+	l := newLimiter(max, win)
+	l.now = func() time.Time {
+		return now
+	}
+	return l, func(d time.Duration) {
+		now = now.Add(d)
 	}
 }
