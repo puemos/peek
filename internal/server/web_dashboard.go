@@ -26,10 +26,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var list []models.Upload
+	var listErr error
 	if owner.IsAdmin {
-		list, _ = s.store.ListAllUploads()
+		list, listErr = s.store.ListAllUploads()
 	} else {
-		list, _ = s.store.ListUploadsByOwner(owner.ID)
+		list, listErr = s.store.ListUploadsByOwner(owner.ID)
+	}
+	if listErr != nil {
+		slog.Error("dashboard upload list failed", "account_id", owner.ID, "admin", owner.IsAdmin, "err", listErr)
 	}
 	uploads := make([]dashUpload, 0, len(list))
 	for _, u := range list {
@@ -49,6 +53,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Settings:     allSettings,
 		SettingsMeta: sortedMeta,
 		Uploads:      uploads,
+	}
+	if listErr != nil {
+		dashData_.UploadError = "uploads could not be loaded"
 	}
 	if owner.IsAdmin {
 		dashData_.Invites = s.dashboardInviteRows()

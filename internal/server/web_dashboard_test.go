@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/puemos/peek/internal/db"
+	webui "github.com/puemos/peek/internal/web"
 )
 
 type dashboardDeleteStorage struct {
@@ -33,6 +34,39 @@ func (s *dashboardDeleteStorage) Open(_ context.Context, _ string) (io.ReadClose
 func (s *dashboardDeleteStorage) Delete(_ context.Context, slug string) error {
 	s.deleted = append(s.deleted, slug)
 	return s.err
+}
+
+func TestDashboardReportsUploadListFailure(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	account, err := store.CreateAccount("user@example.test", "User", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Exec(`DROP TABLE uploads`); err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := webui.NewRenderer(assetURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, renderer: renderer, secret: strings.Repeat("0", 64)}
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboard(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "uploads could not be loaded") {
+		t.Fatalf("dashboard did not report list failure: %s", rec.Body.String())
+	}
 }
 
 func TestDashboardDeleteStopsWhenDatabaseDeleteFails(t *testing.T) {
