@@ -31,8 +31,12 @@ func (s *S3Storage) region() string {
 func (s *S3Storage) accessKey() string { return s.getSetting("s3_access_key") }
 func (s *S3Storage) secretKey() string { return s.getSetting("s3_secret_key") }
 
-func (s *S3Storage) objectKey(slug string) string {
-	return "uploads/" + slug + ".html"
+func (s *S3Storage) objectKey(slug string) (string, error) {
+	name, err := objectName(slug)
+	if err != nil {
+		return "", err
+	}
+	return "uploads/" + name, nil
 }
 
 func (s *S3Storage) objectURL(key string) string {
@@ -40,12 +44,18 @@ func (s *S3Storage) objectURL(key string) string {
 }
 
 func (s *S3Storage) Save(ctx context.Context, slug string, data []byte) error {
-	key := s.objectKey(slug)
+	key, err := s.objectKey(slug)
+	if err != nil {
+		return err
+	}
 	return s.putObject(ctx, key, data)
 }
 
 func (s *S3Storage) Open(ctx context.Context, slug string) (io.ReadCloser, error) {
-	key := s.objectKey(slug)
+	key, err := s.objectKey(slug)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := s.getObject(ctx, key)
 	if err != nil {
 		return nil, err
@@ -54,7 +64,10 @@ func (s *S3Storage) Open(ctx context.Context, slug string) (io.ReadCloser, error
 }
 
 func (s *S3Storage) Delete(ctx context.Context, slug string) error {
-	key := s.objectKey(slug)
+	key, err := s.objectKey(slug)
+	if err != nil {
+		return err
+	}
 	return s.deleteObject(ctx, key)
 }
 
