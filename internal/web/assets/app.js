@@ -451,6 +451,7 @@
   });
 
   window.addEventListener("message", function (e) {
+    if (e.source !== frame.contentWindow) return;
     var d = e.data;
     if (!d || !d.hn) return;
     if (d.hn === "pick") {

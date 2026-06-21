@@ -47,3 +47,13 @@ func TestServeAssetNotFound(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 }
+
+func TestParentAppMessageHandlerChecksFrameSource(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "if (e.source !== frame.contentWindow) return;") {
+		t.Fatal("parent message handler must reject messages not sent by the sandbox iframe")
+	}
+}
