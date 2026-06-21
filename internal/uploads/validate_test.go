@@ -1,6 +1,8 @@
 package uploads
 
 import (
+	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/puemos/peek/internal/models"
@@ -86,26 +88,30 @@ func TestGenerateSlugUniqueness(t *testing.T) {
 			t.Fatalf("expected error after retries exhausted")
 		}
 	})
+	t.Run("lookup failure", func(t *testing.T) {
+		wantErr := errors.New("database unavailable")
+		mock := &mockSlugChecker{err: wantErr}
+		_, err := generateSlug(mock)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("expected lookup error, got %v", err)
+		}
+	})
 }
 
 type mockSlugChecker struct {
 	existing         map[string]bool
 	counter          int
 	returnErrorAfter int
+	err              error
 }
 
 func (m *mockSlugChecker) GetUpload(slug string) (*models.Upload, error) {
 	m.counter++
+	if m.err != nil {
+		return nil, m.err
+	}
 	if m.returnErrorAfter > 0 && m.counter < m.returnErrorAfter {
 		return &models.Upload{Slug: slug}, nil
 	}
-	return nil, errSlugAvailable
-}
-
-var errSlugAvailable = &slugAvailableError{}
-
-type slugAvailableError struct{}
-
-func (*slugAvailableError) Error() string {
-	return "slug available"
+	return nil, sql.ErrNoRows
 }

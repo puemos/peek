@@ -2,8 +2,10 @@ package uploads
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 
 	"github.com/puemos/peek/internal/models"
 )
@@ -16,8 +18,10 @@ func generateSlug(store slugChecker) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if _, err := store.GetUpload(s); err != nil {
+		if _, err := store.GetUpload(s); errors.Is(err, sql.ErrNoRows) {
 			return s, nil
+		} else if err != nil {
+			return "", fmt.Errorf("check slug availability: %w", err)
 		}
 	}
 	return "", errors.New("slug collision after retries")
