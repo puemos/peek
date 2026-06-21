@@ -5,12 +5,26 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/puemos/peek/internal/db"
 )
+
+func TestSettingKeysAreSorted(t *testing.T) {
+	s := &Server{}
+	got := s.settingKeys(map[string]string{
+		"retention_days": "30",
+		"max_upload":     "1024",
+		"s3_endpoint":    "https://example.test",
+	})
+	want := []string{"max_upload", "retention_days", "s3_endpoint"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("settingKeys() = %+v, want %+v", got, want)
+	}
+}
 
 func TestDashboardSettingsInvalidS3EndpointRedirectEscapesQuery(t *testing.T) {
 	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
