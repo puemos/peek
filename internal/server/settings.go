@@ -1,8 +1,10 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/puemos/peek/internal/objectstore"
@@ -68,26 +70,109 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}
+	updates := make(map[string]string, len(body))
 	for k, v := range body {
-		if _, ok := settingsMeta[k]; !ok {
-			jsonError(w, http.StatusBadRequest, "unknown setting: "+k)
+		normalized, err := s.normalizeSettingValue(k, v)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if k == "s3_endpoint" && v != "" {
-			if err := objectstore.ValidateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
-				jsonError(w, http.StatusBadRequest, "invalid S3 endpoint: "+err.Error())
-				return
-			}
-		}
+		updates[k] = normalized
 	}
-	for k, v := range body {
+	for _, k := range s.settingKeys(updates) {
+		v := updates[k]
 		if err := s.encryptedSetSetting(k, v); err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
 		}
 	}
-	s.auditRequest(r, actorName(actor), "settings.update", strings.Join(s.settingKeys(body), ","))
+	s.auditRequest(r, actorName(actor), "settings.update", strings.Join(s.settingKeys(updates), ","))
 	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) normalizeSettingValue(key, value string) (string, error) {
+	meta, ok := settingsMeta[key]
+	if !ok {
+		return "", fmt.Errorf("unknown setting: %s", key)
+	}
+	value = strings.TrimSpace(value)
+	if meta.IsBool {
+		return normalizeBoolSetting(key, value)
+	}
+	switch key {
+	case "max_upload":
+		return normalizePositiveInt64Setting(key, value)
+	case "max_total_size", "max_storage_per_token":
+		return normalizeNonNegativeInt64Setting(key, value)
+	case "max_uploads_per_token", "retention_days":
+		return normalizeNonNegativeIntSetting(key, value)
+	case "storage":
+		switch strings.ToLower(value) {
+		case "file", "s3":
+			return strings.ToLower(value), nil
+		default:
+			return "", fmt.Errorf("%s must be file or s3", key)
+		}
+	case "s3_endpoint":
+		if value != "" {
+			if err := objectstore.ValidateS3Endpoint(value, s.s3AllowPrivateEndpoint); err != nil {
+				return "", fmt.Errorf("invalid s3 endpoint: %w", err)
+			}
+		}
+	}
+	return value, nil
+}
+
+func normalizeBoolSetting(key, value string) (string, error) {
+	switch strings.ToLower(value) {
+	case "", "0", "false", "no", "off":
+		return "", nil
+	case "1", "true", "yes", "on":
+		return "true", nil
+	default:
+		return "", fmt.Errorf("%s must be a boolean", key)
+	}
+}
+
+func normalizePositiveInt64Setting(key, value string) (string, error) {
+	n, err := parseInt64Setting(key, value)
+	if err != nil {
+		return "", err
+	}
+	if n <= 0 {
+		return "", fmt.Errorf("%s must be a positive integer", key)
+	}
+	return strconv.FormatInt(n, 10), nil
+}
+
+func normalizeNonNegativeInt64Setting(key, value string) (string, error) {
+	n, err := parseInt64Setting(key, value)
+	if err != nil {
+		return "", err
+	}
+	if n < 0 {
+		return "", fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	return strconv.FormatInt(n, 10), nil
+}
+
+func normalizeNonNegativeIntSetting(key, value string) (string, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || value == "" {
+		return "", fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	if n < 0 {
+		return "", fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	return strconv.Itoa(n), nil
+}
+
+func parseInt64Setting(key, value string) (int64, error) {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || value == "" {
+		return 0, fmt.Errorf("%s must be an integer", key)
+	}
+	return n, nil
 }
 
 func (s *Server) settingKeys(m map[string]string) []string {
@@ -109,41 +194,39 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 	if !s.parseDashboardForm(w, r) {
 		return
 	}
+	updates := map[string]string{}
 	for k, meta := range settingsMeta {
-		v := r.FormValue(k)
 		if meta.IsBool {
-			if v != "" {
-				if err := s.encryptedSetSetting(k, "true"); err != nil {
-					dashboardError(w, r, "settings update failed")
-					return
-				}
-			} else {
-				if err := s.encryptedSetSetting(k, ""); err != nil {
-					dashboardError(w, r, "settings update failed")
-					return
-				}
+			normalized, err := s.normalizeSettingValue(k, r.FormValue(k))
+			if err != nil {
+				dashboardError(w, r, err.Error())
+				return
 			}
+			updates[k] = normalized
 			continue
 		}
-		if v == "" {
-			if meta.IsSecret {
-				continue
-			}
-			if err := s.encryptedSetSetting(k, v); err != nil {
-				dashboardError(w, r, "settings update failed")
-				return
-			}
-		} else {
-			if k == "s3_endpoint" {
-				if err := objectstore.ValidateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
-					dashboardError(w, r, "invalid s3 endpoint: "+err.Error())
-					return
-				}
-			}
-			if err := s.encryptedSetSetting(k, v); err != nil {
-				dashboardError(w, r, "settings update failed")
-				return
-			}
+		values, submitted := r.PostForm[k]
+		if !submitted {
+			continue
+		}
+		v := ""
+		if len(values) > 0 {
+			v = values[0]
+		}
+		if v == "" && meta.IsSecret {
+			continue
+		}
+		normalized, err := s.normalizeSettingValue(k, v)
+		if err != nil {
+			dashboardError(w, r, err.Error())
+			return
+		}
+		updates[k] = normalized
+	}
+	for _, k := range s.settingKeys(updates) {
+		if err := s.encryptedSetSetting(k, updates[k]); err != nil {
+			dashboardError(w, r, "settings update failed")
+			return
 		}
 	}
 	s.auditRequest(r, owner.Name, "settings.update", "via dashboard")
