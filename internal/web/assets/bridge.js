@@ -11,14 +11,16 @@
   "use strict";
 
   var ACCENT = "#5e6ad2";
-  var MODE_ON = false;
-  var HIGHLIGHT = null;
-  var PINS = [];           // [{selector, quote, n, el, node, range}]
-  var pinLayer = null;
-  var selBtn = null;
-  var rafPending = false;
-  var selTimer = null;
   var supportsHL = !!(window.Highlight && window.CSS && CSS.highlights);
+  var state = {
+    modeOn: false,
+    highlight: null,
+    pins: [],           // [{selector, quote, n, el, node, range}]
+    pinLayer: null,
+    selBtn: null,
+    rafPending: false,
+    selTimer: null
+  };
 
   // --- injected styles (parent /style.css is not loaded in this iframe) ---
   function injectStyles() {
@@ -124,19 +126,19 @@
   function applyHighlights() {
     if (!supportsHL) return;
     var hl = new Highlight();
-    PINS.forEach(function (p) { if (p.range) hl.add(p.range); });
+    state.pins.forEach(function (p) { if (p.range) hl.add(p.range); });
     CSS.highlights.set("hn-highlight", hl);
   }
 
   // --- element picker highlight (comment mode) ---
   function highlight(el) {
-    if (HIGHLIGHT) HIGHLIGHT.classList.remove("hn-hover-outline");
-    HIGHLIGHT = el;
+    if (state.highlight) state.highlight.classList.remove("hn-hover-outline");
+    state.highlight = el;
     if (el && el.nodeType === 1) el.classList.add("hn-hover-outline");
   }
-  function onMouseMove(e) { if (!MODE_ON) return; highlight(e.target); }
+  function onMouseMove(e) { if (!state.modeOn) return; highlight(e.target); }
   function onClick(e) {
-    if (!MODE_ON) return;
+    if (!state.modeOn) return;
     e.preventDefault();
     e.stopPropagation();
     if (!e.target || e.target.nodeType !== 1) return;
@@ -147,22 +149,42 @@
     highlight(null);
   }
   function setMode(on) {
-    MODE_ON = on;
+    state.modeOn = on;
     document.body.style.cursor = on ? "crosshair" : "";
     if (on) hideSelButton();
     else highlight(null);
   }
 
+  function makeCommentIcon() {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("width", "14");
+    svg.setAttribute("height", "14");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+
+    var path = document.createElementNS(ns, "path");
+    path.setAttribute("d", "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z");
+    svg.appendChild(path);
+
+    return svg;
+  }
+
   // --- text selection -> floating Comment bubble ---
   function ensureSelButton() {
-    if (selBtn && selBtn.isConnected) return selBtn;
-    selBtn = document.createElement("button");
-    selBtn.className = "hn-sel-btn";
-    selBtn.type = "button";
-    selBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Comment';
-    selBtn.style.display = "none";
+    if (state.selBtn && state.selBtn.isConnected) return state.selBtn;
+    state.selBtn = document.createElement("button");
+    state.selBtn.className = "hn-sel-btn";
+    state.selBtn.type = "button";
+    state.selBtn.appendChild(makeCommentIcon());
+    state.selBtn.appendChild(document.createTextNode("Comment"));
+    state.selBtn.style.display = "none";
     // mousedown so the selection is still alive when we read it
-    selBtn.addEventListener("mousedown", function (e) {
+    state.selBtn.addEventListener("mousedown", function (e) {
       e.preventDefault();
       e.stopPropagation();
       var sel = window.getSelection();
@@ -180,8 +202,8 @@
       hideSelButton();
       sel.removeAllRanges();
     });
-    document.documentElement.appendChild(selBtn);
-    return selBtn;
+    document.documentElement.appendChild(state.selBtn);
+    return state.selBtn;
   }
   function showSelButton(rect) {
     var b = ensureSelButton();
@@ -190,11 +212,11 @@
     b.style.transform = "translateX(-50%)";
     b.style.display = "flex";
   }
-  function hideSelButton() { if (selBtn) selBtn.style.display = "none"; }
+  function hideSelButton() { if (state.selBtn) state.selBtn.style.display = "none"; }
   function onSelectionChange() {
-    clearTimeout(selTimer);
-    selTimer = setTimeout(function () {
-      if (MODE_ON) { hideSelButton(); return; }
+    clearTimeout(state.selTimer);
+    state.selTimer = setTimeout(function () {
+      if (state.modeOn) { hideSelButton(); return; }
       var sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideSelButton(); return; }
       var text = sel.toString().trim();
@@ -207,20 +229,20 @@
 
   // --- pins + highlights ---
   function ensureLayer() {
-    if (pinLayer && pinLayer.isConnected) return pinLayer;
-    pinLayer = document.getElementById("hn-pin-layer");
-    if (!pinLayer) {
-      pinLayer = document.createElement("div");
-      pinLayer.id = "hn-pin-layer";
-      document.documentElement.appendChild(pinLayer);
+    if (state.pinLayer && state.pinLayer.isConnected) return state.pinLayer;
+    state.pinLayer = document.getElementById("hn-pin-layer");
+    if (!state.pinLayer) {
+      state.pinLayer = document.createElement("div");
+      state.pinLayer.id = "hn-pin-layer";
+      document.documentElement.appendChild(state.pinLayer);
     }
-    return pinLayer;
+    return state.pinLayer;
   }
 
   function renderPins(items) {
     var layer = ensureLayer();
-    layer.innerHTML = "";
-    PINS = [];
+    var frag = document.createDocumentFragment();
+    state.pins = [];
     (items || []).forEach(function (it) {
       var node = resolve(it.selector);
       if (!node) return;
@@ -234,9 +256,10 @@
         e.stopPropagation();
         parent.postMessage({ hn: "pinclick", selector: it.selector, quote: it.quote || "" }, "*");
       });
-      layer.appendChild(pin);
-      PINS.push({ selector: it.selector, quote: it.quote || "", n: it.n, el: pin, node: node, range: range });
+      frag.appendChild(pin);
+      state.pins.push({ selector: it.selector, quote: it.quote || "", n: it.n, el: pin, node: node, range: range });
     });
+    layer.replaceChildren(frag);
     applyHighlights();
     positionPins();
   }
@@ -248,10 +271,10 @@
   }
 
   function positionPins() {
-    if (!PINS.length) return;
+    if (!state.pins.length) return;
     var sx = window.scrollX || window.pageXOffset;
     var sy = window.scrollY || window.pageYOffset;
-    PINS.forEach(function (p) {
+    state.pins.forEach(function (p) {
       var r = anchorRect(p);
       if (!r || (r.width === 0 && r.height === 0)) { p.el.style.display = "none"; return; }
       p.el.style.display = "";
@@ -261,15 +284,15 @@
   }
 
   function scheduleReposition() {
-    if (rafPending) return;
-    rafPending = true;
-    requestAnimationFrame(function () { rafPending = false; positionPins(); });
+    if (state.rafPending) return;
+    state.rafPending = true;
+    requestAnimationFrame(function () { state.rafPending = false; positionPins(); });
   }
 
   function locate(selector, quote) {
     var match = null;
-    for (var i = 0; i < PINS.length; i++) {
-      if (PINS[i].selector === selector && (PINS[i].quote || "") === (quote || "")) { match = PINS[i]; break; }
+    for (var i = 0; i < state.pins.length; i++) {
+      if (state.pins[i].selector === selector && (state.pins[i].quote || "") === (quote || "")) { match = state.pins[i]; break; }
     }
     var node = match ? match.node : resolve(selector);
     if (!node) return;
@@ -299,6 +322,7 @@
   });
 
   window.addEventListener("message", function (e) {
+    if (e.source !== parent) return;
     var d = e.data;
     if (!d || !d.hn) return;
     if (d.hn === "mode") setMode(d.on);

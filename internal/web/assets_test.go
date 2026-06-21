@@ -132,7 +132,69 @@ func TestParentAppMessageHandlerChecksFrameSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), "if (e.source !== frame.contentWindow) return;") {
+	if !strings.Contains(string(b), "if (e.source !== els.frame.contentWindow) return;") {
 		t.Fatal("parent message handler must reject messages not sent by the sandbox iframe")
+	}
+}
+
+func TestBridgeMessageHandlerChecksParentSource(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/bridge.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "if (e.source !== parent) return;") {
+		t.Fatal("bridge message handler must reject messages not sent by the parent page")
+	}
+}
+
+func TestParentAppStoresReviewerNameLocally(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if strings.Contains(src, "document.cookie") {
+		t.Fatal("parent app should not persist reviewer names in cookies")
+	}
+	if !strings.Contains(src, `localStorage.getItem("hn_name")`) || !strings.Contains(src, `localStorage.setItem("hn_name", n)`) {
+		t.Fatal("parent app should persist reviewer names in localStorage")
+	}
+}
+
+func TestDashboardClipboardHasFailureFeedback(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/dashboard.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if !strings.Contains(src, `showCopyFeedback(button, "copy failed")`) {
+		t.Fatal("dashboard copy actions should show failure feedback")
+	}
+	if !strings.Contains(src, `document.execCommand("copy")`) {
+		t.Fatal("dashboard copy actions should keep the textarea copy fallback")
+	}
+}
+
+func TestRuntimeJSAvoidsHTMLStringInsertion(t *testing.T) {
+	entries, err := assetsFS.ReadDir("assets")
+	if err != nil {
+		t.Fatalf("read embedded assets: %v", err)
+	}
+	banned := []string{"innerHTML", "outerHTML", "insertAdjacentHTML"}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || path.Ext(name) != ".js" {
+			continue
+		}
+		b, err := assetsFS.ReadFile("assets/" + name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		src := string(b)
+		for _, term := range banned {
+			if strings.Contains(src, term) {
+				t.Fatalf("%s should build dynamic UI with DOM APIs instead of %s", name, term)
+			}
+		}
 	}
 }

@@ -18,6 +18,8 @@ When adding behavior, put the invariant in the package that owns it and test it 
 
 Server-rendered HTML lives in `internal/web/templates/*.gohtml`. Browser CSS and JavaScript used by the app live in `internal/web/assets` and are embedded directly with Go `embed`; there is no bundler or generated app-asset step. If you add a CSS or JS file, add it to `assetManifest` in `internal/web/assets.go` so templates can reference it through `{{asset "name.ext"}}` and immutable cache URLs keep working. The web package tests verify that every embedded asset is represented in the manifest.
 
+Browser JavaScript should stay as small vanilla controllers: one IIFE per runtime asset, `"use strict"`, file-local `els` and `state` objects when the controller has meaningful DOM/state, and named helpers grouped by role. Keep fixed template nodes addressed by stable `hn-` IDs, repeated dynamic nodes addressed by classes, and UI matching data in `dataset`. Build dynamic UI with `textContent`, `document.createTextNode`, `document.createElement`, `document.createElementNS`, `DocumentFragment`, and `replaceChildren`; do not use HTML string insertion APIs. Validate both sides of `postMessage`, handle async errors explicitly, keep runtime layout updates in style properties, and do not add a frontend framework, bundler, or dependency without a concrete need.
+
 The `assets/` directory at the repository root is only README/demo media. `pnpm gen-assets` refreshes the MP4 demo video for project documentation; it does not build the embedded dashboard/viewer assets.
 
 ## Quality Gates

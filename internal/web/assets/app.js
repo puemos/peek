@@ -1,98 +1,105 @@
 // app.js — runs in the trusted parent page (same-origin as the server).
 // Drives the comment UI, talks to the server API, and orchestrates the
 // sandboxed iframe picker over postMessage. This is the only code that
-// touches auth/cookies; the iframe is opaque-origin and untrusted.
+// touches same-origin APIs; the iframe is opaque-origin and untrusted.
 (function () {
   "use strict";
 
   var SLUG = document.body.dataset.slug || "";
-  var MODE_ON = false;
-  var pendingPick = null;
-  var loaded = false;
-  var lastComments = [];
 
   var $ = function (id) { return document.getElementById(id); };
-  var frame = $("hn-frame");
-  var bar = $("hn-bar");
-  var commentBtn = $("hn-comment-btn");
-  var panelBtn = $("hn-panel-btn");
-  var panel = $("hn-panel");
-  var panelClose = $("hn-panel-close");
-  var exportWrap = $("hn-export");
-  var exportBtn = $("hn-export-btn");
-  var exportLabel = $("hn-export-label");
-  var exportMenu = $("hn-export-menu");
-  var exportMarkdownBtn = $("hn-export-markdown");
-  var exportJSONBtn = $("hn-export-json");
-  var list = $("hn-comment-list");
-  var count = $("hn-count");
-  var composer = $("hn-composer");
-  var composerForm = $("hn-comment-form");
-  var targetEl = $("hn-target");
-  var bodyInput = $("hn-body");
-  var cancelBtn = $("hn-cancel");
-  var hint = $("hn-hint");
-  var hintGeneral = $("hn-hint-general");
-  var errorEl = $("hn-error");
-  var commentingAs = $("hn-commenting-as");
-  var nameModal = $("hn-name-modal");
-  var nameForm = $("hn-name-form");
-  var nameModalInput = $("hn-name-input");
-  var nameSkip = $("hn-name-skip");
+  var els = {
+    frame: $("hn-frame"),
+    bar: $("hn-bar"),
+    commentBtn: $("hn-comment-btn"),
+    panelBtn: $("hn-panel-btn"),
+    panel: $("hn-panel"),
+    panelClose: $("hn-panel-close"),
+    exportWrap: $("hn-export"),
+    exportBtn: $("hn-export-btn"),
+    exportLabel: $("hn-export-label"),
+    exportMenu: $("hn-export-menu"),
+    exportMarkdownBtn: $("hn-export-markdown"),
+    exportJSONBtn: $("hn-export-json"),
+    list: $("hn-comment-list"),
+    count: $("hn-count"),
+    composer: $("hn-composer"),
+    composerForm: $("hn-comment-form"),
+    target: $("hn-target"),
+    bodyInput: $("hn-body"),
+    cancelBtn: $("hn-cancel"),
+    hint: $("hn-hint"),
+    hintGeneral: $("hn-hint-general"),
+    error: $("hn-error"),
+    commentingAs: $("hn-commenting-as"),
+    nameModal: $("hn-name-modal"),
+    nameForm: $("hn-name-form"),
+    nameModalInput: $("hn-name-input"),
+    nameSkip: $("hn-name-skip")
+  };
 
-  if (!SLUG || !frame || !commentBtn || !composerForm) {
-    if (window.console) console.warn("html-now: missing page config or elements");
+  var state = {
+    modeOn: false,
+    pendingPick: null,
+    commentsLoaded: false,
+    comments: [],
+    nameMemory: ""
+  };
+
+  if (!SLUG || !els.frame || !els.commentBtn || !els.composerForm) {
+    if (window.console) console.warn("peek: missing page config or elements");
     return;
   }
 
-  // --- name: asked once, then remembered ---
+  // --- name: asked once, then remembered locally ---
   function getName() {
-    var m = document.cookie.match(/(?:^|; )hn_name=([^;]+)/);
-    return m ? decodeURIComponent(m[1]).trim() : "";
+    try { return (localStorage.getItem("hn_name") || "").trim(); }
+    catch (e) { return state.nameMemory; }
   }
   function saveName(n) {
-    document.cookie = "hn_name=" + encodeURIComponent(n) + "; path=/; max-age=" + (365 * 24 * 3600) + "; samesite=lax";
+    state.nameMemory = n;
+    try { localStorage.setItem("hn_name", n); } catch (e) {}
   }
   function markAsked() { try { localStorage.setItem("hn_name_asked", "1"); } catch (e) {} }
   function wasAsked() { try { return !!localStorage.getItem("hn_name_asked"); } catch (e) { return false; } }
 
   function openNameModal() {
-    if (!nameModal) return;
-    nameModalInput.value = getName();
-    nameModal.hidden = false;
-    setTimeout(function () { nameModalInput.focus(); nameModalInput.select(); }, 30);
+    if (!els.nameModal) return;
+    els.nameModalInput.value = getName();
+    els.nameModal.hidden = false;
+    setTimeout(function () { els.nameModalInput.focus(); els.nameModalInput.select(); }, 30);
   }
   function closeNameModal() {
-    if (nameModal) nameModal.hidden = true;
+    if (els.nameModal) els.nameModal.hidden = true;
     markAsked();
     setCommentingAs();
   }
-  if (nameForm) nameForm.addEventListener("submit", function (e) {
+  if (els.nameForm) els.nameForm.addEventListener("submit", function (e) {
     e.preventDefault();
-    var n = nameModalInput.value.trim();
+    var n = els.nameModalInput.value.trim();
     if (n) saveName(n);
     closeNameModal();
   });
-  if (nameSkip) nameSkip.addEventListener("click", closeNameModal);
+  if (els.nameSkip) els.nameSkip.addEventListener("click", closeNameModal);
 
   // ask once, on first page load
   if (!getName() && !wasAsked()) openNameModal();
 
   function postToFrame(msg) {
-    if (frame.contentWindow) frame.contentWindow.postMessage(msg, "*");
+    if (els.frame.contentWindow) els.frame.contentWindow.postMessage(msg, "*");
   }
 
   // dim the island after inactivity (paused while commenting)
   var dimTimer = null;
   function resetDim() {
-    bar.classList.remove("hn-bar-dim");
+    els.bar.classList.remove("hn-bar-dim");
     clearTimeout(dimTimer);
-    if (MODE_ON) return;
-    dimTimer = setTimeout(function () { bar.classList.add("hn-bar-dim"); }, 2500);
+    if (state.modeOn) return;
+    dimTimer = setTimeout(function () { els.bar.classList.add("hn-bar-dim"); }, 2500);
   }
   resetDim();
-  bar.addEventListener("mouseenter", resetDim);
-  bar.addEventListener("mouseleave", resetDim);
+  els.bar.addEventListener("mouseenter", resetDim);
+  els.bar.addEventListener("mouseleave", resetDim);
 
   function api(method, path, body) {
     var opts = { method: method, credentials: "same-origin", headers: {} };
@@ -101,24 +108,100 @@
       opts.body = JSON.stringify(body);
     }
     return fetch(path, opts).then(function (r) {
-      if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || "error"); });
+      if (!r.ok) {
+        return r.text().then(function (text) {
+          var msg = text || ("HTTP " + r.status);
+          if (text) {
+            try {
+              var data = JSON.parse(text);
+              msg = data.error || data.message || msg;
+            } catch (e) {}
+          }
+          throw new Error(msg);
+        });
+      }
       return r.json();
     });
   }
 
   function setMode(on) {
-    MODE_ON = on;
-    commentBtn.classList.toggle("active", on);
+    state.modeOn = on;
+    els.commentBtn.classList.toggle("active", on);
     postToFrame({ hn: "mode", on: on });
     if (on) { showHint(); resetDim(); }
     else hideHint();
   }
-  function showHint() { if (hint) hint.hidden = false; }
-  function hideHint() { if (hint) hint.hidden = true; }
+  function showHint() { if (els.hint) els.hint.hidden = false; }
+  function hideHint() { if (els.hint) els.hint.hidden = true; }
 
   function updateCount(n) {
-    count.textContent = n;
-    count.classList.toggle("hn-badge-zero", n === 0);
+    els.count.textContent = n;
+    els.count.classList.toggle("hn-badge-zero", n === 0);
+  }
+
+  function appendText(el, text) {
+    el.appendChild(document.createTextNode(text));
+  }
+
+  function makeLoadingRow() {
+    var li = document.createElement("li");
+    li.className = "hn-loading";
+    li.textContent = "Loading comments…";
+    return li;
+  }
+
+  function makeLoadErrorRow(err) {
+    var li = document.createElement("li");
+    li.className = "hn-loading";
+    li.textContent = "Couldn’t load comments: " + err.message;
+    return li;
+  }
+
+  function makeEmptyState() {
+    var empty = document.createElement("li");
+    empty.className = "hn-empty-state";
+
+    var icon = document.createElement("div");
+    icon.className = "hn-empty-icon";
+    icon.textContent = "💬";
+    empty.appendChild(icon);
+
+    var title = document.createElement("p");
+    title.textContent = "No comments yet";
+    empty.appendChild(title);
+
+    var details = document.createElement("span");
+    appendText(details, "Hit ");
+    var strong = document.createElement("strong");
+    strong.textContent = "Comment";
+    details.appendChild(strong);
+    appendText(details, " to pin one to an element or leave a note on the page.");
+    empty.appendChild(details);
+
+    return empty;
+  }
+
+  function makeMeta(c, nmap) {
+    var meta = document.createElement("div");
+    meta.className = "hn-meta";
+    if (c.selector) {
+      var num = document.createElement("span");
+      num.className = "hn-cnum";
+      num.textContent = nmap[keyOf(c)];
+      meta.appendChild(num);
+    }
+
+    var author = document.createElement("strong");
+    author.textContent = c.author || "";
+    meta.appendChild(author);
+    appendText(meta, " · ");
+
+    var when = document.createElement("span");
+    when.title = new Date(c.created_at * 1000).toLocaleString();
+    when.textContent = timeAgo(c.created_at);
+    meta.appendChild(when);
+
+    return meta;
   }
 
   // A comment's anchor key: element selector + the exact text quote. Two
@@ -150,9 +233,9 @@
   }
 
   function render(comments) {
-    lastComments = comments;
+    state.comments = comments;
     updateCount(comments.length);
-    if (exportWrap) exportWrap.hidden = comments.length === 0;
+    if (els.exportWrap) els.exportWrap.hidden = comments.length === 0;
     if (!comments.length) closeExportMenu();
     var nmap = numberMap(comments);
 
@@ -165,14 +248,10 @@
     });
     postToFrame({ hn: "comments", items: items });
 
-    list.innerHTML = "";
+    var frag = document.createDocumentFragment();
     if (!comments.length) {
-      var empty = document.createElement("li");
-      empty.className = "hn-empty-state";
-      empty.innerHTML = "<div class=\"hn-empty-icon\">💬</div>" +
-        "<p>No comments yet</p>" +
-        "<span>Hit <strong>Comment</strong> to pin one to an element or leave a note on the page.</span>";
-      list.appendChild(empty);
+      frag.appendChild(makeEmptyState());
+      els.list.replaceChildren(frag);
       return;
     }
 
@@ -181,17 +260,7 @@
       li.dataset.selector = c.selector || "";
       li.dataset.quote = c.element_text || "";
 
-      var meta = document.createElement("div");
-      meta.className = "hn-meta";
-      var when = "<span title=\"" + escapeHtml(new Date(c.created_at * 1000).toLocaleString()) + "\">" + escapeHtml(timeAgo(c.created_at)) + "</span>";
-      meta.innerHTML = "<strong>" + escapeHtml(c.author) + "</strong> · " + when;
-      if (c.selector) {
-        var num = document.createElement("span");
-        num.className = "hn-cnum";
-        num.textContent = nmap[keyOf(c)];
-        meta.insertBefore(num, meta.firstChild);
-      }
-      li.appendChild(meta);
+      li.appendChild(makeMeta(c, nmap));
 
       if (c.selector && c.element_text) {
         var target = document.createElement("div");
@@ -215,14 +284,9 @@
         li.classList.add("hn-locatable");
         li.addEventListener("click", function () { locateAndFlag(c.selector, c.element_text || "", li); });
       }
-      list.appendChild(li);
+      frag.appendChild(li);
     });
-  }
-
-  function escapeHtml(s) {
-    var d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
+    els.list.replaceChildren(frag);
   }
 
   // Render the loaded comments — each with the on-page anchor it points at —
@@ -266,11 +330,11 @@
   }
 
   function setExportMenu(open) {
-    if (!exportBtn || !exportMenu) return;
-    exportMenu.hidden = !open;
-    exportBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (!els.exportBtn || !els.exportMenu) return;
+    els.exportMenu.hidden = !open;
+    els.exportBtn.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) {
-      var first = exportMenu.querySelector("button");
+      var first = els.exportMenu.querySelector("button");
       if (first) first.focus();
     }
   }
@@ -278,20 +342,20 @@
   function closeExportMenu() { setExportMenu(false); }
 
   function toggleExportMenu() {
-    if (!lastComments.length) return;
-    setExportMenu(exportMenu ? exportMenu.hidden : false);
+    if (!state.comments.length) return;
+    setExportMenu(els.exportMenu ? els.exportMenu.hidden : false);
   }
 
   function showExportFeedback(text) {
-    if (!exportBtn) return;
-    var target = exportLabel || exportBtn;
+    if (!els.exportBtn) return;
+    var target = els.exportLabel || els.exportBtn;
     var prev = target.textContent;
     target.textContent = text;
     setTimeout(function () { target.textContent = prev; }, 1500);
   }
 
   function copyExport(text) {
-    if (!lastComments.length) return;
+    if (!state.comments.length) return;
     closeExportMenu();
     copyText(text).then(function () {
       showExportFeedback("Copied!");
@@ -301,66 +365,73 @@
   }
 
   function exportMarkdown() {
-    copyExport(commentsToMarkdown(lastComments));
+    copyExport(commentsToMarkdown(state.comments));
   }
 
   function exportJSON() {
-    copyExport(JSON.stringify(lastComments, null, 2));
+    copyExport(JSON.stringify(state.comments, null, 2));
   }
 
   function loadComments() {
-    if (!loaded) list.innerHTML = "<li class=\"hn-loading\">Loading comments…</li>";
+    if (!state.commentsLoaded) {
+      els.list.replaceChildren(makeLoadingRow());
+    }
     api("GET", "/api/uploads/" + SLUG + "/comments").then(function (c) {
-      loaded = true;
+      state.commentsLoaded = true;
       render(c);
-    }).catch(function () { loaded = true; });
+    }).catch(function (err) {
+      state.commentsLoaded = true;
+      els.list.replaceChildren(makeLoadErrorRow(err));
+    });
   }
 
-  function openPanel() { panel.classList.add("hn-panel-open"); }
+  function openPanel() { els.panel.classList.add("hn-panel-open"); }
   function closePanel() {
-    panel.classList.remove("hn-panel-open");
+    els.panel.classList.remove("hn-panel-open");
     closeExportMenu();
   }
 
   function locateAndFlag(selector, quote, li) {
     postToFrame({ hn: "locate", selector: selector, quote: quote });
     if (li) {
-      var prev = list.querySelector(".hn-row-active");
+      var prev = els.list.querySelector(".hn-row-active");
       if (prev) prev.classList.remove("hn-row-active");
       li.classList.add("hn-row-active");
     }
   }
 
   function setCommentingAs() {
-    if (!commentingAs) return;
+    if (!els.commentingAs) return;
     var n = getName();
-    commentingAs.innerHTML = "Commenting as <strong>" + escapeHtml(n || "Anonymous") + "</strong>";
+    var strong = document.createElement("strong");
+    strong.textContent = n || "Anonymous";
+    els.commentingAs.replaceChildren(document.createTextNode("Commenting as "), strong);
   }
 
   function showComposer(pick) {
-    pendingPick = pick;
+    state.pendingPick = pick;
     if (pick.selector) {
-      targetEl.className = "hn-target";
-      targetEl.textContent = pick.element_text ? "“" + pick.element_text + "”" : "↳ " + pick.selector;
-      targetEl.title = pick.selector;
+      els.target.className = "hn-target";
+      els.target.textContent = pick.element_text ? "“" + pick.element_text + "”" : "↳ " + pick.selector;
+      els.target.title = pick.selector;
     } else {
-      targetEl.className = "hn-target hn-target-general";
-      targetEl.textContent = "Commenting on the page";
-      targetEl.removeAttribute("title");
+      els.target.className = "hn-target hn-target-general";
+      els.target.textContent = "Commenting on the page";
+      els.target.removeAttribute("title");
     }
-    bodyInput.value = "";
-    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ""; }
+    els.bodyInput.value = "";
+    if (els.error) { els.error.hidden = true; els.error.textContent = ""; }
     setCommentingAs();
-    composer.hidden = false;
+    els.composer.hidden = false;
     positionComposer(pick.rect);
-    bodyInput.focus();
+    els.bodyInput.focus();
   }
 
   // Anchor the composer near the picked element; centered above the bar for general.
   function positionComposer(rect) {
-    composer.style.transform = "";
-    var cw = composer.offsetWidth || 360;
-    var ch = composer.offsetHeight || 200;
+    els.composer.style.transform = "";
+    var cw = els.composer.offsetWidth || 360;
+    var ch = els.composer.offsetHeight || 200;
     var margin = 12;
     if (rect && (rect.width || rect.height)) {
       var left = rect.right + margin;
@@ -370,74 +441,74 @@
       if (left + cw > window.innerWidth - margin) left = window.innerWidth - cw - margin;
       if (top + ch > window.innerHeight - 88) top = window.innerHeight - ch - 88;
       if (top < margin) top = margin;
-      composer.style.left = left + "px";
-      composer.style.top = top + "px";
-      composer.style.bottom = "auto";
+      els.composer.style.left = left + "px";
+      els.composer.style.top = top + "px";
+      els.composer.style.bottom = "auto";
       return;
     }
-    composer.style.left = "50%";
-    composer.style.top = "auto";
-    composer.style.bottom = "88px";
-    composer.style.transform = "translateX(-50%)";
+    els.composer.style.left = "50%";
+    els.composer.style.top = "auto";
+    els.composer.style.bottom = "88px";
+    els.composer.style.transform = "translateX(-50%)";
   }
 
   function hideComposer() {
-    composer.hidden = true;
-    pendingPick = null;
+    els.composer.hidden = true;
+    state.pendingPick = null;
   }
 
-  commentBtn.addEventListener("click", function () {
-    setMode(!MODE_ON);
-    if (MODE_ON) closePanel();
+  els.commentBtn.addEventListener("click", function () {
+    setMode(!state.modeOn);
+    if (state.modeOn) closePanel();
   });
-  panelBtn.addEventListener("click", function () {
-    if (panel.classList.contains("hn-panel-open")) closePanel();
+  els.panelBtn.addEventListener("click", function () {
+    if (els.panel.classList.contains("hn-panel-open")) closePanel();
     else { openPanel(); setMode(false); }
   });
-  panelClose.addEventListener("click", closePanel);
-  if (exportBtn) exportBtn.addEventListener("click", function (e) {
+  els.panelClose.addEventListener("click", closePanel);
+  if (els.exportBtn) els.exportBtn.addEventListener("click", function (e) {
     e.stopPropagation();
     toggleExportMenu();
   });
-  if (exportMarkdownBtn) exportMarkdownBtn.addEventListener("click", function (e) {
+  if (els.exportMarkdownBtn) els.exportMarkdownBtn.addEventListener("click", function (e) {
     e.stopPropagation();
     exportMarkdown();
   });
-  if (exportJSONBtn) exportJSONBtn.addEventListener("click", function (e) {
+  if (els.exportJSONBtn) els.exportJSONBtn.addEventListener("click", function (e) {
     e.stopPropagation();
     exportJSON();
   });
-  if (exportWrap) exportWrap.addEventListener("click", function (e) { e.stopPropagation(); });
+  if (els.exportWrap) els.exportWrap.addEventListener("click", function (e) { e.stopPropagation(); });
   document.addEventListener("click", function (e) {
-    if (exportWrap && !exportWrap.contains(e.target)) closeExportMenu();
+    if (els.exportWrap && !els.exportWrap.contains(e.target)) closeExportMenu();
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") closeExportMenu();
   });
-  cancelBtn.addEventListener("click", function () { hideComposer(); setMode(false); });
-  if (commentingAs) commentingAs.addEventListener("click", openNameModal);
-  if (hintGeneral) hintGeneral.addEventListener("click", function () {
+  els.cancelBtn.addEventListener("click", function () { hideComposer(); setMode(false); });
+  if (els.commentingAs) els.commentingAs.addEventListener("click", openNameModal);
+  if (els.hintGeneral) els.hintGeneral.addEventListener("click", function () {
     setMode(false);
     showComposer({ selector: "", element_text: "", rect: null });
   });
 
   // Cmd/Ctrl+Enter submits from the textarea.
-  bodyInput.addEventListener("keydown", function (e) {
+  els.bodyInput.addEventListener("keydown", function (e) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      composerForm.requestSubmit ? composerForm.requestSubmit() : composerForm.dispatchEvent(new Event("submit", { cancelable: true }));
+      els.composerForm.requestSubmit ? els.composerForm.requestSubmit() : els.composerForm.dispatchEvent(new Event("submit", { cancelable: true }));
     }
   });
 
-  composerForm.addEventListener("submit", function (e) {
+  els.composerForm.addEventListener("submit", function (e) {
     e.preventDefault();
-    if (!pendingPick) return;
-    var body = bodyInput.value.trim();
+    if (!state.pendingPick) return;
+    var body = els.bodyInput.value.trim();
     if (!body) return;
-    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ""; }
+    if (els.error) { els.error.hidden = true; els.error.textContent = ""; }
     api("POST", "/api/uploads/" + SLUG + "/comments", {
-      selector: pendingPick.selector,
-      element_text: pendingPick.element_text,
+      selector: state.pendingPick.selector,
+      element_text: state.pendingPick.element_text,
       name: getName(),
       body: body
     }).then(function (c) {
@@ -446,12 +517,12 @@
       render(c);
       openPanel();
     }).catch(function (err) {
-      if (errorEl) { errorEl.textContent = "Couldn’t post: " + err.message; errorEl.hidden = false; }
+      if (els.error) { els.error.textContent = "Couldn’t post: " + err.message; els.error.hidden = false; }
     });
   });
 
   window.addEventListener("message", function (e) {
-    if (e.source !== frame.contentWindow) return;
+    if (e.source !== els.frame.contentWindow) return;
     var d = e.data;
     if (!d || !d.hn) return;
     if (d.hn === "pick") {
@@ -460,13 +531,13 @@
     } else if (d.hn === "pinclick") {
       setMode(false);
       openPanel();
-      var rows = list.querySelectorAll("li[data-selector]");
+      var rows = els.list.querySelectorAll("li[data-selector]");
       var match = null;
       for (var i = 0; i < rows.length; i++) {
         if (rows[i].dataset.selector === d.selector && (rows[i].dataset.quote || "") === (d.quote || "")) { match = rows[i]; break; }
       }
       if (match) {
-        var prev = list.querySelector(".hn-row-active");
+        var prev = els.list.querySelector(".hn-row-active");
         if (prev) prev.classList.remove("hn-row-active");
         match.classList.add("hn-row-active");
         match.scrollIntoView({ block: "nearest" });
@@ -477,12 +548,12 @@
   // escape closes the name modal first, otherwise composer / mode / panel
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    if (nameModal && !nameModal.hidden) { closeNameModal(); return; }
+    if (els.nameModal && !els.nameModal.hidden) { closeNameModal(); return; }
     hideComposer();
     setMode(false);
     closePanel();
   });
 
-  frame.addEventListener("load", loadComments);
+  els.frame.addEventListener("load", loadComments);
   loadComments();
 })();

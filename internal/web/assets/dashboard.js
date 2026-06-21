@@ -1,4 +1,6 @@
 (function () {
+  "use strict";
+
   function setUploadMode(mode) {
     var fileInput = document.getElementById("hn-file-input");
     var pasteInput = document.getElementById("hn-paste-input");
@@ -7,18 +9,39 @@
     pasteInput.hidden = mode === "file";
   }
 
-  function copied(button) {
+  function showCopyFeedback(button, text) {
     var original = button.textContent;
-    button.textContent = "copied!";
+    button.textContent = text;
     setTimeout(function () {
       button.textContent = original;
     }, 1500);
   }
 
-  function copyText(button, text) {
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error("copy failed"));
+    });
+  }
+
+  function copyButtonURL(button, text) {
     if (!text) return;
-    navigator.clipboard.writeText(text).then(function () {
-      copied(button);
+    copyText(text).then(function () {
+      showCopyFeedback(button, "copied!");
+    }).catch(function () {
+      showCopyFeedback(button, "copy failed");
     });
   }
 
@@ -35,7 +58,7 @@
     if (button.classList.contains("hn-copy-relative")) {
       url = window.location.origin + url;
     }
-    copyText(button, url);
+    copyButtonURL(button, url);
   });
 
   document.addEventListener("submit", function (event) {
