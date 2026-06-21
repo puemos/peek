@@ -1,8 +1,12 @@
 package peekd
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 func TestHealthcheckURL(t *testing.T) {
@@ -51,6 +55,49 @@ func TestBackupArgs(t *testing.T) {
 func TestBackupArgsRejectsExtraArgs(t *testing.T) {
 	if _, _, err := backupArgs([]string{"one.db", "two.db"}); err == nil {
 		t.Fatal("expected extra backup args to fail")
+	}
+}
+
+func TestBackupDatabaseCreatesRestorableSnapshot(t *testing.T) {
+	dataDir := t.TempDir()
+	source, err := db.Open(filepath.Join(dataDir, "peek.db"))
+	if err != nil {
+		t.Fatalf("open source store: %v", err)
+	}
+	t.Cleanup(func() { _ = source.Close() })
+	if err := source.CreateToken("admin-token", "admin", true, 0); err != nil {
+		t.Fatalf("seed source token: %v", err)
+	}
+	token, err := source.GetToken("admin-token")
+	if err != nil {
+		t.Fatalf("get source token: %v", err)
+	}
+	if err := source.CreateUploadChecked("snapshot-page", token.AccountID, token.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+		t.Fatalf("seed source upload: %v", err)
+	}
+
+	backupPath := filepath.Join(t.TempDir(), "peek-backup.db")
+	if err := backupDatabase(dataDir, backupPath); err != nil {
+		t.Fatalf("backupDatabase: %v", err)
+	}
+	info, err := os.Stat(backupPath)
+	if err != nil {
+		t.Fatalf("stat backup: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("backup is empty")
+	}
+
+	backup, err := db.Open(backupPath)
+	if err != nil {
+		t.Fatalf("open backup store: %v", err)
+	}
+	defer backup.Close()
+	if got, err := backup.GetToken("admin-token"); err != nil || got.Name != "admin" || !got.IsAdmin {
+		t.Fatalf("backup token = %+v, err=%v", got, err)
+	}
+	if got, err := backup.GetUpload("snapshot-page"); err != nil || got.Filename != "page.html" || got.Size != 42 {
+		t.Fatalf("backup upload = %+v, err=%v", got, err)
 	}
 }
 
