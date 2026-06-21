@@ -3,6 +3,7 @@ package uploads
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"testing"
@@ -51,6 +52,13 @@ func TestServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid password error")
 	}
+	var uploadErr *Error
+	if !errors.As(err, &uploadErr) {
+		t.Fatalf("error = %T %[1]v, want *uploads.Error", err)
+	}
+	if uploadErr.Kind != KindPasswordTooLong {
+		t.Fatalf("kind = %q, want %q", uploadErr.Kind, KindPasswordTooLong)
+	}
 	if len(st.saved) != 0 {
 		t.Fatalf("invalid password wrote storage object: %+v", st.saved)
 	}
@@ -71,6 +79,13 @@ func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected quota error")
+	}
+	var uploadErr *Error
+	if !errors.As(err, &uploadErr) {
+		t.Fatalf("error = %T %[1]v, want *uploads.Error", err)
+	}
+	if uploadErr.Kind != KindTotalQuotaExceeded {
+		t.Fatalf("kind = %q, want %q", uploadErr.Kind, KindTotalQuotaExceeded)
 	}
 	if len(st.deleted) != 1 {
 		t.Fatalf("expected one cleanup delete, got %+v", st.deleted)

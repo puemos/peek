@@ -74,11 +74,8 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Limits:         s.uploadLimits(),
 	})
 	if err != nil {
-		if ue, ok := err.(*uploads.Error); ok {
-			jsonError(w, ue.Status, ue.Message)
-		} else {
-			jsonError(w, http.StatusInternalServerError, "upload failed")
-		}
+		status, msg := uploadHTTPError(err)
+		jsonError(w, status, msg)
 		return
 	}
 	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))

@@ -131,11 +131,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		Limits:         s.uploadLimits(),
 	})
 	if err != nil {
-		if ue, ok := err.(*uploads.Error); ok {
-			dashboardError(w, r, ue.Message)
-		} else {
-			dashboardError(w, r, "upload failed")
-		}
+		dashboardError(w, r, uploadErrorMessage(err))
 		return
 	}
 	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
