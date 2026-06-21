@@ -23,22 +23,23 @@ func (s *Server) setCookie(w http.ResponseWriter, c *http.Cookie) {
 	http.SetCookie(w, c)
 }
 
-func loadOrCreateSecret(path string) string {
-	if f, err := os.Open(path); err == nil {
-		defer f.Close()
-		b := make([]byte, 128)
-		n, _ := f.Read(b)
-		if n >= 32 {
-			return string(b[:n])
+func loadOrCreateSecret(path string) (string, error) {
+	if b, err := os.ReadFile(path); err == nil {
+		if len(b) >= 32 {
+			return string(b), nil
 		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read secret: %w", err)
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("generating secret: " + err.Error())
+		return "", fmt.Errorf("generate secret: %w", err)
 	}
 	s := hex.EncodeToString(b)
-	_ = os.WriteFile(path, []byte(s), 0o600)
-	return s
+	if err := os.WriteFile(path, []byte(s), 0o600); err != nil {
+		return "", fmt.Errorf("write secret: %w", err)
+	}
+	return s, nil
 }
 
 const setupCodeFile = "setup.key"

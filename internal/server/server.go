@@ -82,7 +82,11 @@ func New(cfg Config) (*Server, error) {
 
 	secret := cfg.Secret
 	if secret == "" {
-		secret = loadOrCreateSecret(filepath.Join(cfg.DataDir, "secret.key"))
+		var err error
+		secret, err = loadOrCreateSecret(filepath.Join(cfg.DataDir, "secret.key"))
+		if err != nil {
+			return nil, err
+		}
 	}
 	store, err := db.Open(filepath.Join(cfg.DataDir, "peek.db"))
 	if err != nil {
