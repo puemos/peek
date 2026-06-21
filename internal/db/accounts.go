@@ -85,8 +85,11 @@ func (s *Store) ListAccounts() ([]models.Account, error) {
 }
 
 func (s *Store) SetAccountAdmin(id int64, isAdmin bool) error {
-	_, err := s.Exec(`UPDATE accounts SET is_admin=?, updated_at=? WHERE id=?`, boolToInt(isAdmin), time.Now().Unix(), id)
-	return err
+	res, err := s.Exec(`UPDATE accounts SET is_admin=?, updated_at=? WHERE id=?`, boolToInt(isAdmin), time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func (s *Store) SetAccountAdminChecked(id int64, isAdmin bool) error {
@@ -115,19 +118,18 @@ func (s *Store) SetAccountAdminChecked(id int64, isAdmin bool) error {
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if err := requireRowsAffected(res); err != nil {
 		return err
-	}
-	if n == 0 {
-		return sql.ErrNoRows
 	}
 	return tx.Commit()
 }
 
 func (s *Store) SetAccountDisabled(id int64, disabled bool) error {
-	_, err := s.Exec(`UPDATE accounts SET disabled=?, updated_at=? WHERE id=?`, boolToInt(disabled), time.Now().Unix(), id)
-	return err
+	res, err := s.Exec(`UPDATE accounts SET disabled=?, updated_at=? WHERE id=?`, boolToInt(disabled), time.Now().Unix(), id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func (s *Store) SetAccountDisabledChecked(id int64, disabled bool) error {
@@ -156,12 +158,8 @@ func (s *Store) SetAccountDisabledChecked(id int64, disabled bool) error {
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if err := requireRowsAffected(res); err != nil {
 		return err
-	}
-	if n == 0 {
-		return sql.ErrNoRows
 	}
 	return tx.Commit()
 }

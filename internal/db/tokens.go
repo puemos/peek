@@ -90,8 +90,11 @@ func (s *Store) getTokenWhere(where string, arg any) (*models.Token, error) {
 }
 
 func (s *Store) DeleteToken(id int64) error {
-	_, err := s.Exec(`DELETE FROM tokens WHERE id=?`, id)
-	return err
+	res, err := s.Exec(`DELETE FROM tokens WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	return requireRowsAffected(res)
 }
 
 func (s *Store) DeleteTokenChecked(id int64) (*models.Token, error) {
@@ -129,12 +132,8 @@ func (s *Store) DeleteTokenChecked(id int64) (*models.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if err := requireRowsAffected(res); err != nil {
 		return nil, err
-	}
-	if n == 0 {
-		return nil, sql.ErrNoRows
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

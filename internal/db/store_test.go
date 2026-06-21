@@ -112,6 +112,30 @@ func TestUploadMutationsReportMissingRows(t *testing.T) {
 	}
 }
 
+func TestAccountAndTokenMutationsReportMissingRows(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+
+	if err := s.SetAccountAdmin(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("set admin on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.SetAccountAdminChecked(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checked set admin on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.SetAccountDisabled(999, true); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("set disabled on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.SetAccountDisabledChecked(999, false); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checked set disabled on missing account should fail with sql.ErrNoRows, got %v", err)
+	}
+	if err := s.DeleteToken(999); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("delete missing token should fail with sql.ErrNoRows, got %v", err)
+	}
+	if _, err := s.DeleteTokenChecked(999); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("checked delete missing token should fail with sql.ErrNoRows, got %v", err)
+	}
+}
+
 func TestAddListComments(t *testing.T) {
 	s := openTestStore(t)
 	defer s.Close()
