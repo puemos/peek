@@ -60,3 +60,23 @@ func TestCmdLoginRejectsTokenWhenOAuthRequired(t *testing.T) {
 		t.Fatalf("expected OAuth-required error, got %v", err)
 	}
 }
+
+func TestCmdLoginRejectsConflictingTokenInputs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	tokenFile := filepath.Join(t.TempDir(), "token.txt")
+	if err := os.WriteFile(tokenFile, []byte("tok-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := [][]string{
+		{"--host", "http://example.test", "--token", "tok", "--token-file", tokenFile},
+		{"--host", "http://example.test", "--token", "tok", "--token-stdin"},
+		{"--host", "http://example.test", "--token-file", tokenFile, "--token-stdin"},
+	}
+	for _, args := range tests {
+		err := cmdLogin(args)
+		if err == nil || err.Error() != "use only one of --token, --token-file, or --token-stdin" {
+			t.Fatalf("cmdLogin(%v) error = %v", args, err)
+		}
+	}
+}

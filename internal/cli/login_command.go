@@ -73,6 +73,9 @@ func cmdLogin(args []string) error {
 			return fmt.Errorf("unknown flag: %s", args[i])
 		}
 	}
+	if err := validateSingleTokenInput(usedTokenFlag, tokenFile != "", tokenStdin); err != nil {
+		return err
+	}
 	if host == "" {
 		fmt.Fprint(os.Stderr, "Host (e.g. https://example.com): ")
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -132,5 +135,22 @@ func cmdLogin(args []string) error {
 		return err
 	}
 	fmt.Println("saved.")
+	return nil
+}
+
+func validateSingleTokenInput(tokenFlag, tokenFile, tokenStdin bool) error {
+	n := 0
+	if tokenFlag {
+		n++
+	}
+	if tokenFile {
+		n++
+	}
+	if tokenStdin {
+		n++
+	}
+	if n > 1 {
+		return fmt.Errorf("use only one of --token, --token-file, or --token-stdin")
+	}
 	return nil
 }

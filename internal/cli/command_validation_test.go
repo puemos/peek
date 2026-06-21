@@ -65,3 +65,12 @@ func TestPasswordRejectsUnknownFlagBeforeSlug(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestConfigSetRejectsConflictingTokenInputs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	err := configSet([]string{"--host", "http://example.test", "--token", "tok", "--token-stdin"})
+	if err == nil || err.Error() != "use only one of --token, --token-file, or --token-stdin" {
+		t.Fatalf("error = %v", err)
+	}
+}

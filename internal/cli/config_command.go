@@ -70,6 +70,9 @@ func configSet(args []string) error {
 			return fmt.Errorf("unknown flag: %s", args[i])
 		}
 	}
+	if err := validateSingleTokenInput(usedTokenFlag, tokenFile != "", tokenStdin); err != nil {
+		return err
+	}
 	if tokenFile != "" {
 		b, err := os.ReadFile(tokenFile)
 		if err != nil {
