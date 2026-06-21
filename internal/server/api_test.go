@@ -268,6 +268,142 @@ func TestUploadAndListAndDelete(t *testing.T) {
 	}
 }
 
+func TestInternalReviewWorkflow(t *testing.T) {
+	srv, adminToken, dir := newTestServer(t)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload?filename=review.html", strings.NewReader("<!DOCTYPE html><html><body><h1 id=\"hero\">Hello</h1></body></html>"))
+	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
+	uploadReq.Header.Set("Content-Type", "text/html; charset=utf-8")
+	resp, err := http.DefaultClient.Do(uploadReq)
+	if err != nil {
+		t.Fatalf("upload request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload failed: %d %s", resp.StatusCode, body)
+	}
+	var up struct {
+		Slug string `json:"slug"`
+		URL  string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &up); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	if up.Slug == "" {
+		t.Fatalf("missing slug in upload response: %+v", up)
+	}
+
+	pageResp, err := http.Get(ts.URL + "/p/" + up.Slug)
+	if err != nil {
+		t.Fatalf("page request: %v", err)
+	}
+	pageBody, _ := io.ReadAll(pageResp.Body)
+	pageResp.Body.Close()
+	if pageResp.StatusCode != http.StatusOK {
+		t.Fatalf("page failed: %d %s", pageResp.StatusCode, pageBody)
+	}
+	if !strings.Contains(string(pageBody), "/raw/"+up.Slug) {
+		t.Fatalf("page did not reference raw iframe URL: %s", pageBody)
+	}
+
+	commentReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/uploads/"+up.Slug+"/comments", strings.NewReader(`{"name":"Ada","body":"Looks good","selector":"#hero","element_text":"Hello"}`))
+	commentReq.Header.Set("Content-Type", "application/json")
+	for _, c := range pageResp.Cookies() {
+		commentReq.AddCookie(c)
+	}
+	resp, err = http.DefaultClient.Do(commentReq)
+	if err != nil {
+		t.Fatalf("comment request: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("comment failed: %d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"author":"Ada"`) || !strings.Contains(string(body), `"selector":"#hero"`) {
+		t.Fatalf("comment response missing saved comment: %s", body)
+	}
+
+	commentsReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/uploads/"+up.Slug+"/comments", nil)
+	commentsReq.Header.Set("Authorization", "Bearer "+adminToken)
+	resp, err = http.DefaultClient.Do(commentsReq)
+	if err != nil {
+		t.Fatalf("owner comments request: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("owner comments failed: %d %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"body":"Looks good"`) {
+		t.Fatalf("owner comments response missing comment: %s", body)
+	}
+
+	export := waitForExport(t, ts.URL, adminToken, up.Slug)
+	if export.Filename != "review.html" || export.TotalVisits < 1 || len(export.Comments) != 1 {
+		t.Fatalf("unexpected export: %+v", export)
+	}
+	if export.Comments[0].Author != "Ada" || export.Comments[0].Body != "Looks good" {
+		t.Fatalf("unexpected exported comment: %+v", export.Comments)
+	}
+
+	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/uploads/"+up.Slug, nil)
+	delReq.Header.Set("Authorization", "Bearer "+adminToken)
+	resp, err = http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete failed: %d %s", resp.StatusCode, body)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "uploads", up.Slug+".html")); !os.IsNotExist(err) {
+		t.Fatalf("uploaded object should be removed, stat err=%v", err)
+	}
+}
+
+type workflowExport struct {
+	Filename    string `json:"filename"`
+	TotalVisits int    `json:"total_visits"`
+	Comments    []struct {
+		Author string `json:"author"`
+		Body   string `json:"body"`
+	} `json:"comments"`
+}
+
+func waitForExport(t *testing.T, host, token, slug string) workflowExport {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		req, _ := http.NewRequest(http.MethodGet, host+"/api/uploads/"+slug+"/export", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("export request: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("export failed: %d %s", resp.StatusCode, body)
+		}
+		var out workflowExport
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("decode export: %v", err)
+		}
+		if out.TotalVisits > 0 {
+			return out
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("export never included page visit: %+v", out)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestCreateTokenWithExpiryAndList(t *testing.T) {
 	srv, adminToken, _ := newTestServer(t)
 	ts := httptest.NewServer(srv.Handler())
