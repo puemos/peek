@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 type retentionCleanupStorage struct {
@@ -169,7 +170,7 @@ func newRetentionCleanupTestServer(t *testing.T) (*Server, *db.Store, *retention
 
 func seedExpiredRetentionUpload(t *testing.T, store *db.Store, ownerID int64, slug string) {
 	t.Helper()
-	if err := store.CreateUpload(slug, ownerID, 0, slug+".html", 42, ""); err != nil {
+	if err := store.CreateUploadChecked(slug, ownerID, 0, slug+".html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	createdAt := time.Now().Add(-48 * time.Hour).Unix()

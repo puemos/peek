@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 func TestAddCommentLogsVisitorUpsertFailure(t *testing.T) {
@@ -15,7 +17,7 @@ func TestAddCommentLogsVisitorUpsertFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateUpload("page", account.ID, 0, "page.html", 42, ""); err != nil {
+	if err := s.store.CreateUploadChecked("page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.store.Exec(`DROP TABLE visitors`); err != nil {

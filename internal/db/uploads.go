@@ -9,16 +9,6 @@ import (
 	"github.com/puemos/peek/internal/uploadquota"
 )
 
-func (s *Store) CreateUpload(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string) error {
-	var tokenArg any
-	if ownerTokenID > 0 {
-		tokenArg = ownerTokenID
-	}
-	_, err := s.Exec(`INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
-		slug, ownerAccountID, tokenArg, filename, size, passwordHash, time.Now().Unix())
-	return err
-}
-
 func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error {
 	tx, err := s.Begin()
 	if err != nil {

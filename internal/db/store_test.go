@@ -81,7 +81,7 @@ func TestCreateGetUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get token: %v", err)
 	}
-	if err := s.CreateUpload("slug1", tok.AccountID, tok.ID, "page.html", 42, ""); err != nil {
+	if err := s.CreateUploadChecked("slug1", tok.AccountID, tok.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("create upload: %v", err)
 	}
 	got, err := s.GetUpload("slug1")
@@ -143,7 +143,7 @@ func TestAddListComments(t *testing.T) {
 		t.Fatalf("create token: %v", err)
 	}
 	tok, _ := s.GetToken("owner")
-	if err := s.CreateUpload("slug2", tok.AccountID, tok.ID, "page.html", 0, ""); err != nil {
+	if err := s.CreateUploadChecked("slug2", tok.AccountID, tok.ID, "page.html", 0, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("create upload: %v", err)
 	}
 	up, _ := s.GetUpload("slug2")
@@ -338,7 +338,7 @@ INSERT INTO uploads(slug,owner_token_id,filename,size,created_at) VALUES('abc',1
 	if up.OwnerAccountID != tok.AccountID || up.OwnerTokenID != tok.ID {
 		t.Fatalf("upload ownership not migrated: upload=%+v token=%+v", up, tok)
 	}
-	if err := store.CreateUpload("oauth", tok.AccountID, 0, "oauth.html", 5, ""); err != nil {
+	if err := store.CreateUploadChecked("oauth", tok.AccountID, 0, "oauth.html", 5, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("account-owned upload without token should be allowed: %v", err)
 	}
 	n, err := store.CountUploadsByOwner(tok.AccountID)
@@ -522,7 +522,7 @@ func TestUploadSlugExists(t *testing.T) {
 	if exists {
 		t.Fatal("slug should not exist before upload")
 	}
-	if err := s.CreateUpload("page", tok.AccountID, tok.ID, "page.html", 10, ""); err != nil {
+	if err := s.CreateUploadChecked("page", tok.AccountID, tok.ID, "page.html", 10, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	exists, err = s.UploadSlugExists("page")

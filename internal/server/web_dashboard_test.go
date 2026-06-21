@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/uploadquota"
 	webui "github.com/puemos/peek/internal/web"
 )
 
@@ -113,7 +114,7 @@ func TestDashboardStatsReportsVisitQueryFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUpload("page", account.ID, 0, "page.html", 42, ""); err != nil {
+	if err := store.CreateUploadChecked("page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Exec(`DROP TABLE visits`); err != nil {
@@ -268,7 +269,7 @@ func newDashboardDeleteTestServer(t *testing.T) (*Server, *db.Store, *dashboardD
 
 func seedDashboardDeleteUpload(t *testing.T, store *db.Store, ownerID int64) {
 	t.Helper()
-	if err := store.CreateUpload("page", ownerID, 0, "page.html", 42, ""); err != nil {
+	if err := store.CreateUploadChecked("page", ownerID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 }

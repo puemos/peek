@@ -14,6 +14,7 @@ import (
 
 	"github.com/puemos/peek/internal/db"
 	"github.com/puemos/peek/internal/server"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 func newTestServer(t *testing.T) (*server.Server, string, string) {
@@ -98,7 +99,7 @@ func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user token: %v", err)
 	}
-	if err := store.CreateUpload("owned-page", owner.AccountID, owner.ID, "page.html", 42, ""); err != nil {
+	if err := store.CreateUploadChecked("owned-page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("seed upload: %v", err)
 	}
 	upload, err := store.GetUpload("owned-page")

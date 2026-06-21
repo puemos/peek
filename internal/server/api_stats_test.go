@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/puemos/peek/internal/db"
+	"github.com/puemos/peek/internal/uploadquota"
 )
 
 func TestExportUploadReportsVisitQueryFailure(t *testing.T) {
@@ -24,7 +25,7 @@ func TestExportUploadReportsVisitQueryFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUpload("page", owner.AccountID, owner.ID, "page.html", 42, ""); err != nil {
+	if err := store.CreateUploadChecked("page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Exec(`DROP TABLE visits`); err != nil {
