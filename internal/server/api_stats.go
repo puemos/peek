@@ -57,9 +57,21 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
-	total, unique, _ := s.store.CountVisits(u.ID)
-	recent, _ := s.store.RecentVisits(u.ID, 500)
-	comments, _ := s.store.ListComments(u.ID)
+	total, unique, err := s.store.CountVisits(u.ID)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	recent, err := s.store.RecentVisits(u.ID, 500)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	comments, err := s.store.ListComments(u.ID)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "db error")
+		return
+	}
 
 	type exportComment struct {
 		Author    string `json:"author"`
