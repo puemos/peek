@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/puemos/peek/internal/objectstore"
@@ -129,7 +128,7 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 		} else {
 			if k == "s3_endpoint" {
 				if err := objectstore.ValidateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
-					http.Redirect(w, r, "/dashboard?err=invalid+s3+endpoint:+ "+url.PathEscape(err.Error()), http.StatusSeeOther)
+					dashboardError(w, r, "invalid s3 endpoint: "+err.Error())
 					return
 				}
 			}
