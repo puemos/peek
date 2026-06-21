@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,7 +14,16 @@ import (
 )
 
 func isLocalBaseURL(u string) bool {
-	return strings.Contains(u, "localhost") || strings.Contains(u, "127.0.0.1") || strings.Contains(u, "[::1]")
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // setCookie applies the deployment-wide Secure flag, then writes the cookie.
