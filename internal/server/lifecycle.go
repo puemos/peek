@@ -23,14 +23,20 @@ func (s *Server) Close() error {
 func (s *Server) audit(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	slog.Info("audit", "action", "system", "detail", msg)
-	_ = s.store.AddAuditLog("", "system", msg, "")
+	s.persistAuditLog("", "system", msg, "")
 }
 
 // auditRequest logs an audit event with the actor's IP from the request.
 func (s *Server) auditRequest(r *http.Request, actor, action, detail string) {
 	ip := s.clientIP(r)
 	slog.Info("audit", "actor", actor, "action", action, "detail", detail, "ip", ip)
-	_ = s.store.AddAuditLog(actor, action, detail, ip)
+	s.persistAuditLog(actor, action, detail, ip)
+}
+
+func (s *Server) persistAuditLog(actor, action, detail, ip string) {
+	if err := s.store.AddAuditLog(actor, action, detail, ip); err != nil {
+		slog.Error("audit log write failed", "actor", actor, "action", action, "detail", detail, "ip", ip, "err", err)
+	}
 }
 
 func (s *Server) startRetentionCleanup(ctx context.Context) {

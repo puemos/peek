@@ -6,6 +6,9 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -58,6 +61,33 @@ func TestRetentionCleanupRemovesUploadAfterStorageDelete(t *testing.T) {
 	}
 	if _, err := store.GetUpload("expired-page"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected upload to be deleted, err=%v", err)
+	}
+}
+
+func TestAuditRequestLogsPersistenceFailure(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if _, err := store.Exec(`DROP TABLE audit_log`); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, secret: strings.Repeat("0", 64)}
+
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
+	s.auditRequest(req, "Ada", "upload.create", "slug=page")
+
+	if !strings.Contains(logs.String(), "audit log write failed") {
+		t.Fatalf("audit persistence failure was not logged: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "action=upload.create") {
+		t.Fatalf("audit action was not logged: %s", logs.String())
 	}
 }
 
