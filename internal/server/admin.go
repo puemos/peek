@@ -37,31 +37,30 @@ func (s *Server) handleDashboardCreateInvite(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+	if !s.parseDashboardForm(w, r) {
 		return
 	}
 	email := normalizeOAuthEmail(r.FormValue("email"))
 	if email == "" || !strings.Contains(email, "@") {
-		http.Redirect(w, r, "/dashboard?err=email+required", http.StatusSeeOther)
+		dashboardError(w, r, "email required")
 		return
 	}
 	raw, err := randID(24)
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=invite+failed", http.StatusSeeOther)
+		dashboardError(w, r, "invite failed")
 		return
 	}
 	ciphertext, err := encryptSecret(s.secret, raw)
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=invite+failed", http.StatusSeeOther)
+		dashboardError(w, r, "invite failed")
 		return
 	}
 	if _, err := s.store.CreateInvite(raw, ciphertext, email, owner.ID, time.Now().Add(inviteTTL)); err != nil {
-		http.Redirect(w, r, "/dashboard?err=invite+failed", http.StatusSeeOther)
+		dashboardError(w, r, "invite failed")
 		return
 	}
 	s.audit("invite created email=%q by=%s", email, owner.Name)
-	http.Redirect(w, r, "/dashboard?ok=invite+created", http.StatusSeeOther)
+	dashboardOK(w, r, "invite created")
 }
 
 func (s *Server) handleDashboardRevokeInvite(w http.ResponseWriter, r *http.Request) {
@@ -70,25 +69,24 @@ func (s *Server) handleDashboardRevokeInvite(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+	if !s.parseDashboardForm(w, r) {
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=bad+invite", http.StatusSeeOther)
+		dashboardError(w, r, "bad invite")
 		return
 	}
 	if err := s.store.RevokeInvite(id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Redirect(w, r, "/dashboard?err=bad+invite", http.StatusSeeOther)
+			dashboardError(w, r, "bad invite")
 			return
 		}
-		http.Redirect(w, r, "/dashboard?err=invite+revoke+failed", http.StatusSeeOther)
+		dashboardError(w, r, "invite revoke failed")
 		return
 	}
 	s.audit("invite revoked id=%d by=%s", id, owner.Name)
-	http.Redirect(w, r, "/dashboard?ok=invite+revoked", http.StatusSeeOther)
+	dashboardOK(w, r, "invite revoked")
 }
 
 func (s *Server) handleDashboardUserAdmin(w http.ResponseWriter, r *http.Request) {
@@ -97,26 +95,25 @@ func (s *Server) handleDashboardUserAdmin(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+	if !s.parseDashboardForm(w, r) {
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=bad+user", http.StatusSeeOther)
+		dashboardError(w, r, "bad user")
 		return
 	}
 	makeAdmin := r.FormValue("admin") == "true"
 	if err := s.store.SetAccountAdminChecked(id, makeAdmin); err != nil {
 		if errors.Is(err, db.ErrLastAdmin) {
-			http.Redirect(w, r, "/dashboard?err=cannot+remove+last+admin", http.StatusSeeOther)
+			dashboardError(w, r, "cannot remove last admin")
 			return
 		}
-		http.Redirect(w, r, "/dashboard?err=user+update+failed", http.StatusSeeOther)
+		dashboardError(w, r, "user update failed")
 		return
 	}
 	s.audit("account admin=%t id=%d by=%s", makeAdmin, id, owner.Name)
-	http.Redirect(w, r, "/dashboard?ok=user+updated", http.StatusSeeOther)
+	dashboardOK(w, r, "user updated")
 }
 
 func (s *Server) handleDashboardUserDisabled(w http.ResponseWriter, r *http.Request) {
@@ -125,26 +122,25 @@ func (s *Server) handleDashboardUserDisabled(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+	if !s.parseDashboardForm(w, r) {
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=bad+user", http.StatusSeeOther)
+		dashboardError(w, r, "bad user")
 		return
 	}
 	disabled := r.FormValue("disabled") == "true"
 	if err := s.store.SetAccountDisabledChecked(id, disabled); err != nil {
 		if errors.Is(err, db.ErrLastAdmin) {
-			http.Redirect(w, r, "/dashboard?err=cannot+disable+last+admin", http.StatusSeeOther)
+			dashboardError(w, r, "cannot disable last admin")
 			return
 		}
-		http.Redirect(w, r, "/dashboard?err=user+update+failed", http.StatusSeeOther)
+		dashboardError(w, r, "user update failed")
 		return
 	}
 	s.audit("account disabled=%t id=%d by=%s", disabled, id, owner.Name)
-	http.Redirect(w, r, "/dashboard?ok=user+updated", http.StatusSeeOther)
+	dashboardOK(w, r, "user updated")
 }
 
 func (s *Server) dashboardInviteRows() []inviteDashRow {

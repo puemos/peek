@@ -4,7 +4,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -85,11 +84,11 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1024)
 	if err := r.ParseMultipartForm(maxUpload); err != nil {
-		http.Redirect(w, r, "/dashboard?err=file+too+large+or+invalid+form", http.StatusSeeOther)
+		dashboardError(w, r, "file too large or invalid form")
 		return
 	}
 	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+		dashboardError(w, r, "invalid session")
 		return
 	}
 
@@ -101,7 +100,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	if mode == "paste" {
 		html := strings.TrimSpace(r.FormValue("html"))
 		if html == "" {
-			http.Redirect(w, r, "/dashboard?err=no+html+pasted", http.StatusSeeOther)
+			dashboardError(w, r, "no html pasted")
 			return
 		}
 		data = []byte(html)
@@ -111,13 +110,13 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	} else {
 		file, header, err := r.FormFile("file")
 		if err != nil {
-			http.Redirect(w, r, "/dashboard?err=no+file+selected", http.StatusSeeOther)
+			dashboardError(w, r, "no file selected")
 			return
 		}
 		defer file.Close()
 		data, err = io.ReadAll(io.LimitReader(file, maxUpload+1))
 		if err != nil || int64(len(data)) > maxUpload {
-			http.Redirect(w, r, "/dashboard?err=file+too+large", http.StatusSeeOther)
+			dashboardError(w, r, "file too large")
 			return
 		}
 		if filename == "" {
@@ -138,7 +137,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
 	shareURL := up.URL
-	http.Redirect(w, r, "/dashboard?uploaded="+url.QueryEscape(shareURL), http.StatusSeeOther)
+	dashboardUploaded(w, r, shareURL)
 }
 
 func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
@@ -148,18 +147,16 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	r.ParseForm()
-	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+	if !s.parseDashboardForm(w, r) {
 		return
 	}
 	u, err := s.store.GetUpload(slug)
 	if err != nil {
-		http.Redirect(w, r, "/dashboard?err=not+found", http.StatusSeeOther)
+		dashboardError(w, r, "not found")
 		return
 	}
 	if u.OwnerAccountID != owner.ID && !owner.IsAdmin {
-		http.Redirect(w, r, "/dashboard?err=not+owner", http.StatusSeeOther)
+		dashboardError(w, r, "not owner")
 		return
 	}
 	if err := s.store.DeleteUpload(u.ID); err != nil {
@@ -171,7 +168,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("dashboard upload storage cleanup failed", "slug", slug, "err", err)
 	}
 	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	dashboardHome(w, r)
 }
 
 func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {

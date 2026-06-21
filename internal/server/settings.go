@@ -96,9 +96,7 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	r.ParseForm()
-	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
-		http.Redirect(w, r, "/dashboard?err=invalid+session", http.StatusSeeOther)
+	if !s.parseDashboardForm(w, r) {
 		return
 	}
 	for k, meta := range settingsMeta {
@@ -106,12 +104,12 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 		if meta.IsBool {
 			if v != "" {
 				if err := s.encryptedSetSetting(k, "true"); err != nil {
-					http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+					dashboardError(w, r, "settings update failed")
 					return
 				}
 			} else {
 				if err := s.encryptedSetSetting(k, ""); err != nil {
-					http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+					dashboardError(w, r, "settings update failed")
 					return
 				}
 			}
@@ -122,7 +120,7 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 				continue
 			}
 			if err := s.encryptedSetSetting(k, v); err != nil {
-				http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+				dashboardError(w, r, "settings update failed")
 				return
 			}
 		} else {
@@ -133,13 +131,13 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 				}
 			}
 			if err := s.encryptedSetSetting(k, v); err != nil {
-				http.Redirect(w, r, "/dashboard?err=settings+update+failed", http.StatusSeeOther)
+				dashboardError(w, r, "settings update failed")
 				return
 			}
 		}
 	}
 	s.auditRequest(r, owner.Name, "settings.update", "via dashboard")
-	http.Redirect(w, r, "/dashboard?ok=settings+saved", http.StatusSeeOther)
+	dashboardOK(w, r, "settings saved")
 }
 
 func (s *Server) dashboardSettingsMap() map[string]string {
