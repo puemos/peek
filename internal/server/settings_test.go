@@ -64,6 +64,37 @@ func TestGetSettingsRowsAreSorted(t *testing.T) {
 	}
 }
 
+func TestUpdateSettingsRejectsUnknownKeysBeforeWriting(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SetSetting("max_upload", "1024"); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, secret: strings.Repeat("0", 64)}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"max_upload":"2048","not_a_setting":"x"}`))
+	rec := httptest.NewRecorder()
+
+	s.handleUpdateSettings(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "unknown setting: not_a_setting") {
+		t.Fatalf("response did not identify unknown setting: %s", rec.Body.String())
+	}
+	got, err := store.GetSetting("max_upload")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1024" {
+		t.Fatalf("max_upload was partially updated to %q", got)
+	}
+}
+
 func TestDashboardSettingsInvalidS3EndpointRedirectEscapesQuery(t *testing.T) {
 	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
 	if err != nil {

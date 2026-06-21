@@ -66,7 +66,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	for k, v := range body {
 		if _, ok := settingsMeta[k]; !ok {
-			continue
+			jsonError(w, http.StatusBadRequest, "unknown setting: "+k)
+			return
 		}
 		if k == "s3_endpoint" && v != "" {
 			if err := objectstore.ValidateS3Endpoint(v, s.s3AllowPrivateEndpoint); err != nil {
@@ -74,6 +75,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+	for k, v := range body {
 		if err := s.encryptedSetSetting(k, v); err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
