@@ -15,7 +15,7 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 		}
 		// Global rate limit to protect against request floods.
 		if !s.globalLimiter.allow(s.clientIP(r)) {
-			http.Error(w, "Too many requests. Try again shortly.", http.StatusTooManyRequests)
+			rateLimitError(w, r)
 			return
 		}
 		reqTotal.Add(1)

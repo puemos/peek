@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -83,6 +84,34 @@ func TestRateLimitWrapperReturns429(t *testing.T) {
 	}
 }
 
+func TestRateLimitWrapperReturnsJSONForAPI(t *testing.T) {
+	s := &Server{globalLimiter: newLimiter(1, time.Minute)}
+	handler := s.rateLimit(s.globalLimiter, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
+
+	handler(httptest.NewRecorder(), req)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	assertJSONRateLimit(t, rec)
+}
+
+func TestGlobalRateLimitReturnsJSONForAPI(t *testing.T) {
+	s := &Server{globalLimiter: newLimiter(1, time.Minute)}
+	handler := s.withMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/uploads", nil)
+
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assertJSONRateLimit(t, rec)
+}
+
 func TestLimiterConcurrentAccess(t *testing.T) {
 	l := newLimiter(10, time.Minute)
 	const goroutines = 50
@@ -101,5 +130,24 @@ func TestLimiterConcurrentAccess(t *testing.T) {
 	w := l.hits["concurrent-key"]
 	if w == nil || w.count > 10 {
 		t.Fatalf("expected count <= max after concurrency, got %d", w.count)
+	}
+}
+
+func assertJSONRateLimit(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("content-type = %q", got)
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error != "too many requests, try again shortly" {
+		t.Fatalf("error = %q", body.Error)
 	}
 }
