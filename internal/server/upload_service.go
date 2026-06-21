@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) uploadService() uploads.Service {
-	return uploads.Service{Store: s.store, Storage: s.storage, BaseURL: s.baseURL}
+	return uploads.Service{Repository: s.store, Storage: s.storage, BaseURL: s.baseURL}
 }
 
 func (s *Server) uploadLimits() db.UploadLimits {

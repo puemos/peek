@@ -25,7 +25,7 @@ Server-side rendering goes through `internal/web.Renderer` and `.gohtml` templat
 
 ## Storage
 
-Uploads are created through `internal/uploads.Service`, which coordinates HTML validation, password hashing, slug generation, object storage writes, and database inserts. `internal/objectstore.Storage` is intentionally small: `Save`, `Open`, and `Delete`. S3 endpoint validation lives with S3 transport code, while the server remains responsible for decrypting secret settings before passing them into the storage package.
+Uploads are created through `internal/uploads.Service`, which coordinates HTML validation, password hashing, slug generation, object storage writes, and database inserts through a narrow upload repository interface. `internal/objectstore.Storage` is intentionally small: `Save`, `Open`, and `Delete`. S3 endpoint validation lives with S3 transport code, while the server remains responsible for decrypting secret settings before passing them into the storage package.
 
 ## Quality Gates
 

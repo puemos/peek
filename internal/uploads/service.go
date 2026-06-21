@@ -12,9 +12,14 @@ import (
 )
 
 type Service struct {
-	Store   *db.Store
-	Storage objectstore.Storage
-	BaseURL string
+	Repository Repository
+	Storage    objectstore.Storage
+	BaseURL    string
+}
+
+type Repository interface {
+	UploadSlugExists(slug string) (bool, error)
+	CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits db.UploadLimits) error
 }
 
 type CreateInput struct {
@@ -87,14 +92,14 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 		pwHash = string(h)
 	}
 
-	slug, err := generateSlug(svc.Store)
+	slug, err := generateSlug(svc.Repository)
 	if err != nil {
 		return nil, newError(KindSlugGeneration, "slug generation failed")
 	}
 	if err := svc.Storage.Save(ctx, slug, in.Data); err != nil {
 		return nil, newError(KindStorageWrite, "storage failed")
 	}
-	if err := svc.Store.CreateUploadChecked(slug, in.OwnerAccountID, in.OwnerTokenID, in.Filename, int64(len(in.Data)), pwHash, in.Limits); err != nil {
+	if err := svc.Repository.CreateUploadChecked(slug, in.OwnerAccountID, in.OwnerTokenID, in.Filename, int64(len(in.Data)), pwHash, in.Limits); err != nil {
 		_ = svc.Storage.Delete(ctx, slug)
 		return nil, storeError(err)
 	}

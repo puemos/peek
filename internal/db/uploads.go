@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/puemos/peek/internal/models"
@@ -76,6 +77,18 @@ func (s *Store) GetUpload(slug string) (*models.Upload, error) {
 	u.OwnerTokenID = tokenID.Int64
 	u.CreatedAt = time.Unix(ts, 0)
 	return u, nil
+}
+
+func (s *Store) UploadSlugExists(slug string) (bool, error) {
+	var id int64
+	err := s.QueryRow(`SELECT id FROM uploads WHERE slug=?`, slug).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Store) GetUploadByID(id int64) (*models.Upload, error) {

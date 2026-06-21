@@ -1,11 +1,8 @@
 package uploads
 
 import (
-	"database/sql"
 	"errors"
 	"testing"
-
-	"github.com/puemos/peek/internal/models"
 )
 
 func TestLooksLikeHTML(t *testing.T) {
@@ -105,13 +102,13 @@ type mockSlugChecker struct {
 	err              error
 }
 
-func (m *mockSlugChecker) GetUpload(slug string) (*models.Upload, error) {
+func (m *mockSlugChecker) UploadSlugExists(slug string) (bool, error) {
 	m.counter++
 	if m.err != nil {
-		return nil, m.err
+		return false, m.err
 	}
 	if m.returnErrorAfter > 0 && m.counter < m.returnErrorAfter {
-		return &models.Upload{Slug: slug}, nil
+		return true, nil
 	}
-	return nil, sql.ErrNoRows
+	return m.existing[slug], nil
 }

@@ -2,12 +2,9 @@ package uploads
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
-
-	"github.com/puemos/peek/internal/models"
 )
 
 const slugRetries = 5
@@ -18,17 +15,19 @@ func generateSlug(store slugChecker) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if _, err := store.GetUpload(s); errors.Is(err, sql.ErrNoRows) {
-			return s, nil
-		} else if err != nil {
+		exists, err := store.UploadSlugExists(s)
+		if err != nil {
 			return "", fmt.Errorf("check slug availability: %w", err)
+		}
+		if !exists {
+			return s, nil
 		}
 	}
 	return "", errors.New("slug collision after retries")
 }
 
 type slugChecker interface {
-	GetUpload(slug string) (*models.Upload, error)
+	UploadSlugExists(slug string) (bool, error)
 }
 
 func randID(nBytes int) (string, error) {

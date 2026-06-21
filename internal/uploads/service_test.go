@@ -40,7 +40,7 @@ func TestServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
 	store, owner := serviceTestStore(t)
 	defer store.Close()
 	st := newMemoryStorage()
-	svc := Service{Store: store, Storage: st, BaseURL: "http://localhost:7700"}
+	svc := Service{Repository: store, Storage: st, BaseURL: "http://localhost:7700"}
 
 	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,
@@ -68,7 +68,7 @@ func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 	store, owner := serviceTestStore(t)
 	defer store.Close()
 	st := newMemoryStorage()
-	svc := Service{Store: store, Storage: st, BaseURL: "http://localhost:7700"}
+	svc := Service{Repository: store, Storage: st, BaseURL: "http://localhost:7700"}
 
 	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,

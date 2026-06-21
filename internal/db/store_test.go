@@ -406,6 +406,35 @@ func TestCreateUploadCheckedEnforcesQuotas(t *testing.T) {
 	}
 }
 
+func TestUploadSlugExists(t *testing.T) {
+	s := openTestStore(t)
+	defer s.Close()
+	if err := s.CreateToken("owner", "owner", false, 0); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := s.GetToken("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exists, err := s.UploadSlugExists("page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Fatal("slug should not exist before upload")
+	}
+	if err := s.CreateUpload("page", tok.AccountID, tok.ID, "page.html", 10, ""); err != nil {
+		t.Fatal(err)
+	}
+	exists, err = s.UploadSlugExists("page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("slug should exist after upload")
+	}
+}
+
 func TestCheckedAdminUpdatesPreserveLastAdmin(t *testing.T) {
 	s := openTestStore(t)
 	defer s.Close()
