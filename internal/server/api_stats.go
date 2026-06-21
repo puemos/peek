@@ -139,8 +139,9 @@ func (s *Server) handleViews(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	since := time.Now().Add(-7 * 24 * time.Hour)
 	const daySeconds = 86400
+	const viewBucketCount = 7
+	since := bucketStart(time.Now().Add(-time.Duration(viewBucketCount-1)*24*time.Hour), daySeconds)
 	buckets, err := s.store.VisitBuckets(r.Context(), u.ID, since, daySeconds)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
@@ -150,7 +151,7 @@ func (s *Server) handleViews(w http.ResponseWriter, r *http.Request) {
 		T int64 `json:"t"`
 		N int   `json:"n"`
 	}
-	filled := fillBuckets(buckets, since, daySeconds, 7)
+	filled := fillBuckets(buckets, since, daySeconds, viewBucketCount)
 	jb := make([]bucketJSON, len(filled))
 	for i, b := range filled {
 		jb[i] = bucketJSON{T: b.Time.Unix(), N: b.Count}
@@ -160,6 +161,10 @@ func (s *Server) handleViews(w http.ResponseWriter, r *http.Request) {
 		"unique":  unique,
 		"buckets": jb,
 	})
+}
+
+func bucketStart(t time.Time, intervalSec int64) time.Time {
+	return time.Unix((t.Unix()/intervalSec)*intervalSec, 0)
 }
 
 type bucket struct {

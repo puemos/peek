@@ -250,6 +250,121 @@ func TestDashboardSettingsRejectsInvalidValuesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestDashboardSettingsPreservesHiddenOAuthAndS3Settings(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, secret: strings.Repeat("0", 64)}
+	if err := store.SetSetting(context.Background(), "oauth_google_enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting(context.Background(), "oauth_google_client_id", "google-client"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.encryptedSetSetting(context.Background(), "oauth_google_client_secret", "google-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting(context.Background(), "storage", "s3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting(context.Background(), "s3_endpoint", "https://storage.example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.encryptedSetSetting(context.Background(), "s3_secret_key", "s3-secret"); err != nil {
+		t.Fatal(err)
+	}
+
+	form := url.Values{
+		"csrf":    {"csrf-token"},
+		"storage": {"file"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dashboard/settings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	req.AddCookie(&http.Cookie{Name: csrfCookie, Value: "csrf-token"})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboardSettings(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := mustGetSetting(t, store, "oauth_google_enabled"); got != "" {
+		t.Fatalf("oauth_google_enabled = %q, want disabled", got)
+	}
+	if got := mustGetSetting(t, store, "oauth_google_client_id"); got != "google-client" {
+		t.Fatalf("oauth_google_client_id = %q", got)
+	}
+	if got, err := s.encryptedGetSetting(context.Background(), "oauth_google_client_secret"); err != nil || got != "google-secret" {
+		t.Fatalf("oauth_google_client_secret = %q, err = %v", got, err)
+	}
+	if got := mustGetSetting(t, store, "storage"); got != "file" {
+		t.Fatalf("storage = %q, want file", got)
+	}
+	if got := mustGetSetting(t, store, "s3_endpoint"); got != "https://storage.example.test" {
+		t.Fatalf("s3_endpoint = %q", got)
+	}
+	if got, err := s.encryptedGetSetting(context.Background(), "s3_secret_key"); err != nil || got != "s3-secret" {
+		t.Fatalf("s3_secret_key = %q, err = %v", got, err)
+	}
+}
+
+func TestDashboardSettingsConvertsMegabyteLimits(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, secret: strings.Repeat("0", 64)}
+
+	form := url.Values{
+		"csrf":                     {"csrf-token"},
+		"max_upload_mb":            {"3"},
+		"max_total_size_mb":        {"512"},
+		"max_storage_per_token_mb": {"128"},
+		"max_uploads_per_token":    {"12"},
+		"retention_days":           {"30"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dashboard/settings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	req.AddCookie(&http.Cookie{Name: csrfCookie, Value: "csrf-token"})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboardSettings(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := mustGetSetting(t, store, "max_upload"); got != "3145728" {
+		t.Fatalf("max_upload = %q", got)
+	}
+	if got := mustGetSetting(t, store, "max_total_size"); got != "536870912" {
+		t.Fatalf("max_total_size = %q", got)
+	}
+	if got := mustGetSetting(t, store, "max_storage_per_token"); got != "134217728" {
+		t.Fatalf("max_storage_per_token = %q", got)
+	}
+	if got := mustGetSetting(t, store, "max_uploads_per_token"); got != "12" {
+		t.Fatalf("max_uploads_per_token = %q", got)
+	}
+	if got := mustGetSetting(t, store, "retention_days"); got != "30" {
+		t.Fatalf("retention_days = %q", got)
+	}
+}
+
 func TestDashboardSettingsRejectsMalformedForm(t *testing.T) {
 	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
 	if err != nil {

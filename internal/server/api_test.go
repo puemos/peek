@@ -42,6 +42,20 @@ func newTestServer(t *testing.T) (*server.Server, string, string) {
 	return srv, adminToken, dir
 }
 
+func TestToastAssetRouteServesSharedCopyHelper(t *testing.T) {
+	app := newTestApp(t)
+	res := app.request(t, http.MethodGet, "/toast.js?v=test", nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body: %s", res.StatusCode, res.Body)
+	}
+	if got := res.Header.Get("Content-Type"); got != "text/javascript; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(string(res.Body), "window.peekCopyText") {
+		t.Fatalf("toast.js did not include shared copy helper: %s", res.Body)
+	}
+}
+
 func TestHealthEndpoints(t *testing.T) {
 	app := newTestApp(t)
 

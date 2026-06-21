@@ -14,6 +14,9 @@ import (
 
 type settingsRow = webui.SettingRow
 
+const dashboardMegabyte int64 = 1024 * 1024
+const maxDashboardMegabytes = int64(1<<63-1) / dashboardMegabyte
+
 var settingsMeta = map[string]settingsRow{
 	"auth_token_login_enabled":   {Label: "Access token login", Description: "Allow signing in to the web dashboard with an access token", IsBool: true},
 	"max_upload":                 {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
@@ -206,13 +209,13 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 			updates[k] = normalized
 			continue
 		}
-		values, submitted := r.PostForm[k]
+		v, submitted, err := dashboardSubmittedSettingValue(k, r.PostForm)
+		if err != nil {
+			dashboardError(w, r, err.Error())
+			return
+		}
 		if !submitted {
 			continue
-		}
-		v := ""
-		if len(values) > 0 {
-			v = values[0]
 		}
 		if v == "" && meta.IsSecret {
 			continue
@@ -234,6 +237,52 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 	dashboardOK(w, r, "settings saved")
 }
 
+func dashboardSubmittedSettingValue(key string, form map[string][]string) (string, bool, error) {
+	if dashboardSettingUsesMegabytes(key) {
+		if values, submitted := form[key+"_mb"]; submitted {
+			v := firstPostValue(values)
+			bytes, err := dashboardMegabytesToBytes(key, v)
+			return bytes, true, err
+		}
+	}
+	values, submitted := form[key]
+	if !submitted {
+		return "", false, nil
+	}
+	return firstPostValue(values), true, nil
+}
+
+func firstPostValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func dashboardMegabytesToBytes(key, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	mb, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || value == "" {
+		return "", fmt.Errorf("%s must be an integer", key)
+	}
+	if mb < 0 {
+		return strconv.FormatInt(mb, 10), nil
+	}
+	if mb > maxDashboardMegabytes {
+		return "", fmt.Errorf("%s is too large", key)
+	}
+	return strconv.FormatInt(mb*dashboardMegabyte, 10), nil
+}
+
+func dashboardSettingUsesMegabytes(key string) bool {
+	switch key {
+	case "max_upload", "max_total_size", "max_storage_per_token":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) dashboardSettingsMap(ctx context.Context) map[string]string {
 	raw, _ := s.encryptedGetAllSettings(ctx)
 	if raw == nil {
@@ -245,6 +294,136 @@ func (s *Server) dashboardSettingsMap(ctx context.Context) map[string]string {
 		}
 	}
 	return raw
+}
+
+func dashboardSettingsPanel(raw map[string]string) webui.DashboardSettings {
+	return webui.DashboardSettings{
+		Auth: webui.AuthSettings{
+			Token:  dashboardSettingRow(raw, "auth_token_login_enabled"),
+			Google: dashboardOAuthProviderSettings(raw, "google", "Google"),
+			GitHub: dashboardOAuthProviderSettings(raw, "github", "GitHub"),
+		},
+		Storage: dashboardStorageSettings(raw),
+		Limits: []webui.LimitSetting{
+			dashboardMegabyteLimit(raw, "max_upload", "maxUpload", "Max upload size", "Maximum size per HTML file upload", 1, maxInt64(1024, dashboardSettingMegabytes(raw, "max_upload")), 1),
+			dashboardMegabyteLimit(raw, "max_total_size", "maxTotalSize", "Total storage limit", "Cumulative storage across all uploads (0 = unlimited)", 0, maxInt64(102400, dashboardSettingMegabytes(raw, "max_total_size")), 1),
+			dashboardCountLimit(raw, "max_uploads_per_token", "maxUploadsPerOwner", "Max uploads per owner", "Maximum uploads per account/token owner (0 = unlimited)", "uploads", 0, maxInt64(1000, dashboardSettingInt64(raw, "max_uploads_per_token")), 1),
+			dashboardMegabyteLimit(raw, "max_storage_per_token", "maxStoragePerOwner", "Storage per owner", "Maximum storage per account/token owner (0 = unlimited)", 0, maxInt64(10240, dashboardSettingMegabytes(raw, "max_storage_per_token")), 1),
+			dashboardCountLimit(raw, "retention_days", "retentionDays", "Retention", "Auto-delete uploads older than this many days (0 = off)", "days", 0, maxInt64(365, dashboardSettingInt64(raw, "retention_days")), 1),
+		},
+	}
+}
+
+func dashboardOAuthProviderSettings(raw map[string]string, key, name string) webui.OAuthProviderSettings {
+	enabled := dashboardSettingRow(raw, "oauth_"+key+"_enabled")
+	return webui.OAuthProviderSettings{
+		Key:          key,
+		Name:         name,
+		Enabled:      enabled,
+		ClientID:     dashboardSettingRow(raw, "oauth_"+key+"_client_id"),
+		ClientSecret: dashboardSettingRow(raw, "oauth_"+key+"_client_secret"),
+		EnabledValue: settingValueBool(enabled.Value),
+	}
+}
+
+func dashboardStorageSettings(raw map[string]string) webui.StorageSettings {
+	value := strings.ToLower(strings.TrimSpace(raw["storage"]))
+	if value != "s3" {
+		value = "file"
+	}
+	return webui.StorageSettings{
+		Backend:    dashboardSettingRow(raw, "storage"),
+		Value:      value,
+		S3Selected: value == "s3",
+		S3Settings: []webui.SettingRow{
+			dashboardSettingRow(raw, "s3_endpoint"),
+			dashboardSettingRow(raw, "s3_bucket"),
+			dashboardSettingRow(raw, "s3_region"),
+			dashboardSettingRow(raw, "s3_access_key"),
+			dashboardSettingRow(raw, "s3_secret_key"),
+		},
+	}
+}
+
+func dashboardSettingRow(raw map[string]string, key string) settingsRow {
+	meta := settingsMeta[key]
+	meta.Key = key
+	meta.Value = raw[key]
+	if meta.IsSecret && meta.Value != "" {
+		meta.Value = ""
+		meta.Description = meta.Description + " (leave blank to keep current value)"
+	}
+	return meta
+}
+
+func dashboardMegabyteLimit(raw map[string]string, key, jsKey, label, description string, min, max, step int64) webui.LimitSetting {
+	return webui.LimitSetting{
+		Key:         key,
+		FormKey:     key + "_mb",
+		JSKey:       jsKey,
+		Label:       label,
+		Description: description,
+		Unit:        "MB",
+		Value:       dashboardSettingMegabytes(raw, key),
+		Min:         min,
+		Max:         max,
+		Step:        step,
+	}
+}
+
+func dashboardCountLimit(raw map[string]string, key, jsKey, label, description, unit string, min, max, step int64) webui.LimitSetting {
+	return webui.LimitSetting{
+		Key:         key,
+		FormKey:     key,
+		JSKey:       jsKey,
+		Label:       label,
+		Description: description,
+		Unit:        unit,
+		Value:       dashboardSettingInt64(raw, key),
+		Min:         min,
+		Max:         max,
+		Step:        step,
+	}
+}
+
+func dashboardSettingMegabytes(raw map[string]string, key string) int64 {
+	bytes := dashboardSettingInt64(raw, key)
+	if bytes <= 0 {
+		return 0
+	}
+	mb := bytes / dashboardMegabyte
+	if bytes%dashboardMegabyte != 0 {
+		mb++
+	}
+	return mb
+}
+
+func dashboardSettingInt64(raw map[string]string, key string) int64 {
+	value := strings.TrimSpace(raw[key])
+	if value == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func settingValueBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func dashboardSettingsRows(raw map[string]string) []settingsRow {
