@@ -196,7 +196,7 @@ Saved to `<user-config-dir>/peek/config.json` (e.g. `~/.config/peek` on Linux, `
 | Hot-linking / bypassing the password gate | `/raw` requires a short-lived HMAC-signed view token issued only by `/p/<slug>` and bound to the visitor cookie.                                                             |
 | Brute force / spam                        | Per-IP rate limits on `/login`, CLI login, the password gate, and comment posting.                                                                                           |
 | Malicious content / huge uploads          | HTML sniffed, binaries rejected, configurable max size, `MaxBytesReader`.                                                                                                    |
-| SSRF via S3 settings                      | S3 endpoints must be HTTP(S), HTTPS unless localhost, and cannot resolve to private/link-local IPs.                                                                          |
+| SSRF via S3 settings                      | S3 endpoints must be HTTP(S), HTTPS unless private endpoints are explicitly allowed, and cannot resolve to private/link-local IPs by default.                                |
 | Path traversal / SQLi                     | Random base64url slugs (filenames never user-derived); all queries parameterized.                                                                                            |
 | Password / IP leakage                     | Account and page passwords are bcrypt-hashed; analytics IPs SHA-256-hashed with the server secret.                                                                           |
 
