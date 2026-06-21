@@ -37,7 +37,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	uploads := make([]dashUpload, 0, len(list))
 	for _, u := range list {
 		uploads = append(uploads, dashUpload{
-			Slug: u.Slug, Filename: u.Filename,
+			Slug: u.Slug, Name: u.Name,
 			SizeHuman: humanSize(u.Size), Protected: u.PasswordHash != "",
 			CreatedHuman: u.CreatedAt.Format("2006-01-02 15:04"),
 		})
@@ -102,7 +102,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 
 	mode := r.FormValue("mode")
 	password := strings.TrimSpace(r.FormValue("password"))
-	filename := strings.TrimSpace(r.FormValue("filename"))
+	name := strings.TrimSpace(r.FormValue("name"))
 
 	var data []byte
 	if mode == "paste" {
@@ -112,8 +112,8 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = []byte(html)
-		if filename == "" {
-			filename = "pasted.html"
+		if name == "" {
+			name = "pasted"
 		}
 	} else {
 		file, header, err := r.FormFile("file")
@@ -127,14 +127,14 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 			dashboardError(w, r, "file too large")
 			return
 		}
-		if filename == "" {
-			filename = header.Filename
+		if name == "" {
+			name = header.Filename
 		}
 	}
 
 	up, err := s.uploadService().Create(r.Context(), uploads.CreateInput{
 		OwnerAccountID: owner.ID,
-		Filename:       filename,
+		Name:           name,
 		Password:       password,
 		Data:           data,
 		Limits:         s.uploadLimits(r.Context()),
@@ -144,7 +144,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		dashboardError(w, r, uploadErrorMessage(err))
 		return
 	}
-	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
+	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" name="+up.Name+" size="+strconv.Itoa(up.Size))
 	shareURL := up.URL
 	dashboardUploaded(w, r, shareURL)
 }
@@ -173,7 +173,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		dashboardError(w, r, "delete failed")
 		return
 	}
-	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
+	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" name="+u.Name)
 	dashboardHome(w, r)
 }
 
@@ -198,13 +198,13 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	total, unique, err := s.store.CountVisits(r.Context(), u.ID)
 	if err != nil {
 		slog.Error("dashboard stats count failed", "slug", slug, "err", err)
-		s.renderDashboardStatsError(w, slug, u.Filename)
+		s.renderDashboardStatsError(w, slug, u.Name)
 		return
 	}
 	recent, err := s.store.RecentVisits(r.Context(), u.ID, 100)
 	if err != nil {
 		slog.Error("dashboard stats visits failed", "slug", slug, "err", err)
-		s.renderDashboardStatsError(w, slug, u.Filename)
+		s.renderDashboardStatsError(w, slug, u.Name)
 		return
 	}
 	visits := make([]statsVisit, 0, len(recent))
@@ -219,13 +219,13 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	s.renderHTML(w, http.StatusOK, webui.TemplateStats, statsData{
-		Slug: slug, Filename: u.Filename,
+		Slug: slug, Name: u.Name,
 		TotalVisits: total, UniqueVisitors: unique, Recent: visits,
 	})
 }
 
-func (s *Server) renderDashboardStatsError(w http.ResponseWriter, slug, filename string) {
+func (s *Server) renderDashboardStatsError(w http.ResponseWriter, slug, name string) {
 	s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
-		Slug: slug, Filename: filename, Error: "stats could not be loaded",
+		Slug: slug, Name: name, Error: "stats could not be loaded",
 	})
 }

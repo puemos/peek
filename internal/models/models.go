@@ -63,7 +63,7 @@ type Upload struct {
 	OwnerTokenID   int64
 	OwnerAccountID int64
 	OwnerName      string
-	Filename       string
+	Name           string
 	Size           int64
 	PasswordHash   string // "" => no password
 	CreatedAt      time.Time
@@ -100,7 +100,7 @@ type Visitor struct {
 
 type Stats struct {
 	Slug           string
-	Filename       string
+	Name           string
 	TotalVisits    int
 	UniqueVisitors int
 	Recent         []Visit

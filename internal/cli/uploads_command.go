@@ -24,7 +24,7 @@ func cmdList(args []string) error {
 	}
 	var items []struct {
 		Slug      string `json:"slug"`
-		Filename  string `json:"filename"`
+		Name      string `json:"name"`
 		Owner     string `json:"owner"`
 		Size      int64  `json:"size"`
 		Protected bool   `json:"protected"`
@@ -38,13 +38,13 @@ func cmdList(args []string) error {
 		fmt.Println("no uploads yet.")
 		return nil
 	}
-	fmt.Printf("%-12s  %-6s  %-8s  %-20s  %s\n", "SLUG", "SIZE", "PROTECT", "FILENAME", "URL")
+	fmt.Printf("%-12s  %-6s  %-8s  %-20s  %s\n", "SLUG", "SIZE", "PROTECT", "NAME", "URL")
 	for _, it := range items {
 		prot := "no"
 		if it.Protected {
 			prot = "yes"
 		}
-		fmt.Printf("%-12s  %-6s  %-8s  %-20s  %s\n", it.Slug, humanSize(it.Size), prot, truncate(it.Filename, 20), it.URL)
+		fmt.Printf("%-12s  %-6s  %-8s  %-20s  %s\n", it.Slug, humanSize(it.Size), prot, truncate(it.Name, 20), it.URL)
 	}
 	return nil
 }

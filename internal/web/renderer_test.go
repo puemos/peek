@@ -34,7 +34,7 @@ func TestRendererExecutesAllTemplates(t *testing.T) {
 				CSRF:         "csrf",
 				User:         "Admin",
 				IsAdmin:      true,
-				Uploads:      []DashboardUpload{{Slug: "abc123", Filename: "page.html", SizeHuman: "1 KB", CreatedHuman: "2026-06-21 10:00"}},
+				Uploads:      []DashboardUpload{{Slug: "abc123", Name: "page.html", SizeHuman: "1 KB", CreatedHuman: "2026-06-21 10:00"}},
 				Invites:      []InviteDashboardRow{{ID: 1, Email: "person@example.com", Status: "pending", Expires: "2026-06-28 10:00", Link: "http://example.test/invite/token", CanRevoke: true}},
 				Accounts:     []AccountDashboardRow{{ID: 1, Name: "Admin", Email: "admin@example.com", Admin: true, IsSelf: true}},
 				Settings:     map[string]string{"max_upload": "2097152"},
@@ -44,12 +44,12 @@ func TestRendererExecutesAllTemplates(t *testing.T) {
 		},
 		{
 			name: TemplateStats,
-			data: StatsData{Slug: "abc123", Filename: "page.html", TotalVisits: 2, UniqueVisitors: 1, Recent: []StatsVisit{{Name: "Ada", IP: "hash", UA: "test", WhenHuman: "2026-06-21 10:00"}}},
+			data: StatsData{Slug: "abc123", Name: "page.html", TotalVisits: 2, UniqueVisitors: 1, Recent: []StatsVisit{{Name: "Ada", IP: "hash", UA: "test", WhenHuman: "2026-06-21 10:00"}}},
 			want: "Recent visits",
 		},
 		{
 			name: TemplatePage,
-			data: PageData{Filename: "page.html", Slug: "abc123", RawURL: "/raw/abc123?t=t&v=v"},
+			data: PageData{Name: "page.html", Slug: "abc123", RawURL: "/raw/abc123?t=t&v=v"},
 			want: "shared page",
 		},
 		{

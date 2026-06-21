@@ -136,7 +136,7 @@ func TestBackupDatabaseCreatesRestorableSnapshot(t *testing.T) {
 	if got, err := backup.GetToken(context.Background(), "admin-token"); err != nil || got.Name != "admin" || !got.IsAdmin {
 		t.Fatalf("backup token = %+v, err=%v", got, err)
 	}
-	if got, err := backup.GetUpload(context.Background(), "snapshot-page"); err != nil || got.Filename != "page.html" || got.Size != 42 {
+	if got, err := backup.GetUpload(context.Background(), "snapshot-page"); err != nil || got.Name != "page.html" || got.Size != 42 {
 		t.Fatalf("backup upload = %+v, err=%v", got, err)
 	}
 }

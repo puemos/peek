@@ -19,23 +19,23 @@ type Service struct {
 
 type Repository interface {
 	UploadSlugExists(ctx context.Context, slug string) (bool, error)
-	CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error
+	CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, name string, size int64, passwordHash string, limits uploadquota.Limits) error
 }
 
 type CreateInput struct {
 	OwnerAccountID int64
 	OwnerTokenID   int64
-	Filename       string
+	Name           string
 	Password       string
 	Data           []byte
 	Limits         uploadquota.Limits
 }
 
 type CreateResult struct {
-	Slug     string
-	URL      string
-	Filename string
-	Size     int
+	Slug string
+	URL  string
+	Name string
+	Size int
 }
 
 type ErrorKind string
@@ -80,9 +80,9 @@ func newError(kind ErrorKind, message string) error {
 }
 
 func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, error) {
-	in.Filename = strings.TrimSpace(in.Filename)
-	if in.Filename == "" {
-		in.Filename = "page.html"
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		in.Name = "page"
 	}
 	in.Password = strings.TrimSpace(in.Password)
 
@@ -105,14 +105,14 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 		pwHash = string(h)
 	}
 
-	slug, err := generateSlug(ctx, svc.Repository)
+	slug, err := generateSlugFromName(ctx, in.Name, svc.Repository)
 	if err != nil {
 		return nil, newError(KindSlugGeneration, "slug generation failed")
 	}
 	if err := svc.Storage.Save(ctx, slug, in.Data); err != nil {
 		return nil, newError(KindStorageWrite, "storage failed")
 	}
-	if err := svc.Repository.CreateUploadChecked(ctx, slug, in.OwnerAccountID, in.OwnerTokenID, in.Filename, int64(len(in.Data)), pwHash, in.Limits); err != nil {
+	if err := svc.Repository.CreateUploadChecked(ctx, slug, in.OwnerAccountID, in.OwnerTokenID, in.Name, int64(len(in.Data)), pwHash, in.Limits); err != nil {
 		uploadErr := storeError(err)
 		if cleanupErr := svc.Storage.Delete(ctx, slug); cleanupErr != nil {
 			return nil, errors.Join(uploadErr, &CleanupError{Slug: slug, Err: cleanupErr})
@@ -121,10 +121,10 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 	}
 
 	return &CreateResult{
-		Slug:     slug,
-		URL:      svc.BaseURL + "/p/" + slug,
-		Filename: in.Filename,
-		Size:     len(in.Data),
+		Slug: slug,
+		URL:  svc.BaseURL + "/p/" + slug,
+		Name: in.Name,
+		Size: len(in.Data),
 	}, nil
 }
 

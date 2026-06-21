@@ -23,7 +23,7 @@ func TestCmdStatsPrintsSummaryAndRecentVisits(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"slug":            "page",
-			"filename":        "report.html",
+			"name":            "report.html",
 			"total_visits":    3,
 			"unique_visitors": 2,
 			"recent": []map[string]any{
@@ -52,7 +52,7 @@ func TestCmdStatsPrintsSummaryAndRecentVisits(t *testing.T) {
 	}
 	for _, want := range []string{
 		"slug:            page",
-		"filename:        report.html",
+		"name:            report.html",
 		"total visits:    3",
 		"unique visitors: 2",
 		"recent visits:",

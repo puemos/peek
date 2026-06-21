@@ -48,7 +48,7 @@ func cmdUpload(args []string) error {
 		}
 	}
 	if file == "" {
-		return fmt.Errorf("usage: peek upload <file.html> [--password <pw>]")
+		return fmt.Errorf("usage: peek upload <file.html> [--password <pw>] [--name <name>]")
 	}
 	if password != "" && passwordStdin {
 		return fmt.Errorf("use only one of --password or --password-stdin")
@@ -82,7 +82,7 @@ func cmdUpload(args []string) error {
 	var resp *http.Response
 	if password != "" {
 		if name == "" {
-			name = filepath.Base(file)
+			name = fileNameWithoutExt(file)
 		}
 		body, contentType := streamMultipartUpload(f, name, password)
 		resp, err = c.req("POST", "/api/upload", body, contentType)
@@ -92,7 +92,7 @@ func cmdUpload(args []string) error {
 		}
 	} else {
 		if name == "" {
-			name = filepath.Base(file)
+			name = fileNameWithoutExt(file)
 		}
 		resp, err = c.req("POST", "/api/upload?filename="+url.QueryEscape(name), f, "text/html")
 		if err != nil {
@@ -140,4 +140,16 @@ func writeMultipartUpload(mw *multipart.Writer, file io.Reader, filename, passwo
 		return err
 	}
 	return mw.Close()
+}
+
+func fileNameWithoutExt(path string) string {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	if ext != "" {
+		base = base[:len(base)-len(ext)]
+	}
+	if base == "" {
+		base = "page"
+	}
+	return base
 }

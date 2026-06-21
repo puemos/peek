@@ -21,7 +21,7 @@ func cmdStats(args []string) error {
 	}
 	var st struct {
 		Slug           string `json:"slug"`
-		Filename       string `json:"filename"`
+		Name           string `json:"name"`
 		TotalVisits    int    `json:"total_visits"`
 		UniqueVisitors int    `json:"unique_visitors"`
 		Recent         []struct {
@@ -35,7 +35,7 @@ func cmdStats(args []string) error {
 		return err
 	}
 	fmt.Printf("slug:            %s\n", st.Slug)
-	fmt.Printf("filename:        %s\n", st.Filename)
+	fmt.Printf("name:            %s\n", st.Name)
 	fmt.Printf("total visits:    %d\n", st.TotalVisits)
 	fmt.Printf("unique visitors: %d\n", st.UniqueVisitors)
 	if len(st.Recent) > 0 {

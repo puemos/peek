@@ -18,7 +18,7 @@ func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
 		UploadSuccessURL: `");alert(1);//`,
 		Uploads: []dashUpload{{
 			Slug:         "abc123",
-			Filename:     `x" onmouseover="alert(1)`,
+			Name:         `x" onmouseover="alert(1)`,
 			SizeHuman:    "1 KB",
 			CreatedHuman: "2026-06-21 10:00",
 		}},

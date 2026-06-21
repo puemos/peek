@@ -10,7 +10,7 @@ import (
 	"github.com/puemos/peek/internal/uploadquota"
 )
 
-func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error {
+func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, name string, size int64, passwordHash string, limits uploadquota.Limits) error {
 	tx, err := s.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -50,7 +50,7 @@ func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccou
 		tokenArg = ownerTokenID
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
-		slug, ownerAccountID, tokenArg, filename, size, passwordHash, time.Now().Unix()); err != nil {
+		slug, ownerAccountID, tokenArg, name, size, passwordHash, time.Now().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -62,7 +62,7 @@ func (s *Store) GetUpload(ctx context.Context, slug string) (*models.Upload, err
 	var tokenID sql.NullInt64
 	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.slug=?`, slug).
-		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Filename, &u.Size, &u.PasswordHash, &ts)
+		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.PasswordHash, &ts)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (s *Store) GetUploadByID(ctx context.Context, id int64) (*models.Upload, er
 	var tokenID sql.NullInt64
 	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.id=?`, id).
-		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Filename, &u.Size, &u.PasswordHash, &ts)
+		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.PasswordHash, &ts)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func scanUploads(rows *sql.Rows) ([]models.Upload, error) {
 		var u models.Upload
 		var ts int64
 		var tokenID sql.NullInt64
-		if err := rows.Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Filename, &u.Size, &u.PasswordHash, &ts); err != nil {
+		if err := rows.Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.PasswordHash, &ts); err != nil {
 			return nil, err
 		}
 		u.OwnerTokenID = tokenID.Int64

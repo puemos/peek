@@ -44,7 +44,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		data     []byte
-		filename string
+		name     string
 		password string
 	)
 
@@ -65,12 +65,12 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusRequestEntityTooLarge, "file too large")
 			return
 		}
-		filename = header.Filename
+		name = header.Filename
 	} else {
 		password = strings.TrimSpace(r.URL.Query().Get("password"))
-		filename = r.URL.Query().Get("filename")
-		if filename == "" {
-			filename = "page.html"
+		name = r.URL.Query().Get("filename")
+		if name == "" {
+			name = "page"
 		}
 		var err error
 		data, err = io.ReadAll(io.LimitReader(r.Body, maxUpload+1))
@@ -83,7 +83,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	up, err := s.uploadService().Create(r.Context(), uploads.CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
-		Filename:       filename,
+		Name:           name,
 		Password:       password,
 		Data:           data,
 		Limits:         s.uploadLimits(r.Context()),
@@ -94,7 +94,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, status, msg)
 		return
 	}
-	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
+	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" name="+up.Name+" size="+strconv.Itoa(up.Size))
 
 	jsonOK(w, uploadResp{Slug: up.Slug, URL: up.URL})
 }
@@ -134,7 +134,7 @@ func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
 	}
 	type item struct {
 		Slug      string `json:"slug"`
-		Filename  string `json:"filename"`
+		Name      string `json:"name"`
 		Owner     string `json:"owner"`
 		Size      int64  `json:"size"`
 		Protected bool   `json:"protected"`
@@ -144,7 +144,7 @@ func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
 	out := make([]item, 0, len(list))
 	for _, u := range list {
 		out = append(out, item{
-			Slug: u.Slug, Filename: u.Filename, Owner: u.OwnerName,
+			Slug: u.Slug, Name: u.Name, Owner: u.OwnerName,
 			Size: u.Size, Protected: u.PasswordHash != "",
 			URL: s.baseURL + "/p/" + u.Slug, CreatedAt: u.CreatedAt.Unix(),
 		})
@@ -172,7 +172,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
-	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
+	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" name="+u.Name)
 	jsonOK(w, map[string]any{"deleted": slug})
 }
 

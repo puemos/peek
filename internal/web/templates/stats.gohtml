@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stats &mdash; {{.Filename}}</title>
+<title>Stats &mdash; {{.Name}}</title>
 <link rel="stylesheet" href="{{asset "style.css"}}">
 <link rel="stylesheet" href="{{asset "dashboard.css"}}">
 </head>
@@ -18,7 +18,7 @@
   <div class="hn-flash hn-flash-err">{{.Error}}</div>
   {{end}}
   <section class="hn-card">
-    <h2>{{.Filename}}</h2>
+    <h2>{{.Name}}</h2>
     <div class="hn-stats-grid">
       <div class="hn-stat"><span class="hn-stat-num">{{.TotalVisits}}</span><span class="hn-stat-label">total visits</span></div>
       <div class="hn-stat"><span class="hn-stat-num">{{.UniqueVisitors}}</span><span class="hn-stat-label">unique visitors</span></div>

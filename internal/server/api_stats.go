@@ -39,7 +39,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonOK(w, map[string]any{
 		"slug":            slug,
-		"filename":        u.Filename,
+		"name":            u.Name,
 		"total_visits":    total,
 		"unique_visitors": unique,
 		"recent":          rows,
@@ -93,7 +93,7 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	export := map[string]any{
 		"slug":            slug,
-		"filename":        u.Filename,
+		"name":            u.Name,
 		"size":            u.Size,
 		"protected":       u.PasswordHash != "",
 		"created_at":      u.CreatedAt.Unix(),

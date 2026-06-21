@@ -100,7 +100,7 @@ type LoginData struct {
 
 type DashboardUpload struct {
 	Slug         string
-	Filename     string
+	Name         string
 	SizeHuman    string
 	Protected    bool
 	CreatedHuman string
@@ -157,7 +157,7 @@ type StatsVisit struct {
 
 type StatsData struct {
 	Slug           string
-	Filename       string
+	Name           string
 	TotalVisits    int
 	UniqueVisitors int
 	Recent         []StatsVisit
@@ -165,7 +165,7 @@ type StatsData struct {
 }
 
 type PageData struct {
-	Filename  string
+	Name      string
 	Slug      string
 	RawURL    string
 	Protected bool

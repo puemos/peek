@@ -161,9 +161,9 @@ func TestUploadAndListAndDelete(t *testing.T) {
 	resp = app.request(t, http.MethodGet, "/api/uploads", nil, withAuth(app.AdminToken))
 	assertStatus(t, resp, http.StatusOK)
 	list := decodeResponseJSON[[]struct {
-		Slug     string `json:"slug"`
-		Filename string `json:"filename"`
-		Size     int64  `json:"size"`
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+		Size int64  `json:"size"`
 	}](t, resp)
 	if len(list) != 1 || list[0].Slug != up.Slug {
 		t.Fatalf("expected one upload with slug %q, got %+v", up.Slug, list)
@@ -212,7 +212,7 @@ func TestInternalReviewWorkflow(t *testing.T) {
 	resp = app.request(t, http.MethodGet, "/api/uploads/"+up.Slug+"/export", nil, withAuth(app.AdminToken))
 	assertStatus(t, resp, http.StatusOK)
 	export := decodeResponseJSON[workflowExport](t, resp)
-	if export.Filename != "review.html" || export.TotalVisits < 1 || len(export.Comments) != 1 {
+	if export.Name != "review.html" || export.TotalVisits < 1 || len(export.Comments) != 1 {
 		t.Fatalf("unexpected export: %+v", export)
 	}
 	if export.Comments[0].Author != "Ada" || export.Comments[0].Body != "Looks good" || export.Comments[0].AnchorKind != "text" {
@@ -227,7 +227,7 @@ func TestInternalReviewWorkflow(t *testing.T) {
 }
 
 type workflowExport struct {
-	Filename    string `json:"filename"`
+	Name        string `json:"name"`
 	TotalVisits int    `json:"total_visits"`
 	Comments    []struct {
 		Author     string `json:"author"`

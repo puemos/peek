@@ -115,7 +115,7 @@ func TestCmdUploadStreamsPasswordMultipart(t *testing.T) {
 	if got.ContentLength != -1 {
 		t.Fatalf("content length = %d, want streamed request", got.ContentLength)
 	}
-	if got.Filename != "page.html" {
+	if got.Filename != "page" {
 		t.Fatalf("filename = %q", got.Filename)
 	}
 	if got.Password != "secret" {

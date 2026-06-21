@@ -27,7 +27,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 
 	rawURL := "/raw/" + slug + "?t=" + makeViewToken(s.secret, slug, vid) + "&v=" + vid
 	d := pageData{
-		Filename: u.Filename, Slug: slug,
+		Name: u.Name, Slug: slug,
 		RawURL: rawURL, Protected: u.PasswordHash != "",
 	}
 	w.Header().Set("Content-Security-Policy", webui.PageCSP)

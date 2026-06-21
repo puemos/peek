@@ -89,7 +89,7 @@ func TestCreateGetUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get upload: %v", err)
 	}
-	if got.Slug != "slug1" || got.Filename != "page.html" || got.Size != 42 || got.OwnerTokenID != tok.ID || got.OwnerAccountID != tok.AccountID {
+	if got.Slug != "slug1" || got.Name != "page.html" || got.Size != 42 || got.OwnerTokenID != tok.ID || got.OwnerAccountID != tok.AccountID {
 		t.Fatalf("upload mismatch: %+v", got)
 	}
 	total, err := s.SumUploadSizesByOwner(context.Background(), tok.AccountID)

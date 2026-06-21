@@ -50,7 +50,7 @@ func TestServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
 	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
-		Filename:       "page.html",
+		Name:           "page.html",
 		Password:       makeString('a', 73),
 		Data:           []byte("<!doctype html><html></html>"),
 	})
@@ -78,7 +78,7 @@ func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
-		Filename:       "page.html",
+		Name:           "page.html",
 		Data:           []byte("<!doctype html><html></html>"),
 		Limits:         uploadquota.Limits{MaxTotalSize: 1},
 	})
@@ -111,7 +111,7 @@ func TestServiceReturnsCleanupErrorWhenStorageDeleteFails(t *testing.T) {
 	_, err := svc.Create(context.Background(), CreateInput{
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
-		Filename:       "page.html",
+		Name:           "page.html",
 		Data:           []byte("<!doctype html><html></html>"),
 		Limits:         uploadquota.Limits{MaxTotalSize: 1},
 	})

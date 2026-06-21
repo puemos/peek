@@ -55,7 +55,7 @@
         <textarea name="html" placeholder="<!doctype html>&#10;<html>&#10;  <body>&#10;    <h1>Hello</h1>&#10;  </body>&#10;</html>" rows="8"></textarea>
       </div>
       <div class="hn-upload-opts">
-        <input type="text" name="filename" placeholder="filename (optional)">
+        <input type="text" name="name" placeholder="name (optional)">
         <input type="password" name="password" placeholder="password (optional)">
       </div>
       <button type="submit">Upload &amp; get link</button>
@@ -67,18 +67,18 @@
     {{if .Uploads}}
     <div class="hn-table-wrap">
     <table class="hn-table">
-      <thead><tr><th>Filename</th><th>Size</th><th>Protected</th><th>Created</th><th>Link</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Size</th><th>Protected</th><th>Created</th><th>Link</th><th></th></tr></thead>
       <tbody>
       {{range .Uploads}}
         <tr>
-          <td class="hn-filename">{{.Filename}}</td>
+          <td class="hn-filename">{{.Name}}</td>
           <td class="hn-muted-cell">{{.SizeHuman}}</td>
           <td>{{if .Protected}}<span class="hn-tag hn-tag-on">protected</span>{{else}}<span class="hn-tag">public</span>{{end}}</td>
           <td class="hn-muted-cell">{{.CreatedHuman}}</td>
           <td><a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative" title="Copy link">copy</button></td>
           <td class="hn-actions">
             <a href="/dashboard/stats/{{.Slug}}" class="hn-btn-sm">stats</a>
-            <form method="POST" action="/dashboard/delete/{{.Slug}}" data-confirm="Delete {{.Filename}}? This cannot be undone.">
+            <form method="POST" action="/dashboard/delete/{{.Slug}}" data-confirm="Delete {{.Name}}? This cannot be undone.">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <button type="submit" class="hn-btn-sm hn-btn-danger">delete</button>
             </form>
