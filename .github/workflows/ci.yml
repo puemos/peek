@@ -6,15 +6,29 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOFLAGS: -mod=readonly
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          test -z "$unformatted" || (printf '%s\n' "$unformatted" && exit 1)
       - name: Vet
         run: go vet ./...
       - name: Build
