@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -61,7 +60,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, defaultJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}

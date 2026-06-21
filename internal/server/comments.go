@@ -3,7 +3,6 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -88,7 +87,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var in commentIn
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&in); err != nil {
+	if err := decodeJSON(w, r, &in, defaultJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}

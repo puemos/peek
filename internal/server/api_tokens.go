@@ -2,7 +2,6 @@ package server
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -18,7 +17,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		Name     string `json:"name"`
 		ExpiresH int    `json:"expires_hours"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+	if err := decodeJSON(w, r, &body, smallJSONBodyLimit); err != nil || strings.TrimSpace(body.Name) == "" {
 		jsonError(w, http.StatusBadRequest, "name required")
 		return
 	}

@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -55,7 +54,7 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DeviceCode string `json:"device_code"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, smallJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}

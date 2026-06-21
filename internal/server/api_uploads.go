@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -161,7 +160,7 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		Clear    bool   `json:"clear"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, smallJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}
