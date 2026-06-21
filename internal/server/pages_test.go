@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -22,6 +24,26 @@ func TestInjectBridgeAppendsToFragment(t *testing.T) {
 	}
 	if !strings.Contains(got, `src="/bridge.js?v=`) {
 		t.Fatalf("bridge script missing: %s", got)
+	}
+}
+
+func TestWriteRawHTMLLogsWriteFailure(t *testing.T) {
+	var logs bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldLogger) })
+	w := &failingJSONWriter{}
+
+	writeRawHTML(w, "page", []byte("<html></html>"))
+
+	if got := w.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if !strings.Contains(logs.String(), "write raw html response") {
+		t.Fatalf("write failure was not logged: %s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "slug=page") {
+		t.Fatalf("slug was not logged: %s", logs.String())
 	}
 }
 

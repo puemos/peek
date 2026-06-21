@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -96,6 +97,10 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data = injectBridge(data)
+	writeRawHTML(w, slug, data)
+}
+
+func writeRawHTML(w http.ResponseWriter, slug string, data []byte) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Allow the user's HTML to run inline scripts/styles & load resources, but
@@ -110,7 +115,9 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			"font-src https: http: data:; "+
 			"connect-src https: http:; "+
 			"frame-ancestors 'self'")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		slog.Error("write raw html response", "slug", slug, "err", err)
+	}
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
