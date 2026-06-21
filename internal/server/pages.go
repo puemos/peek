@@ -90,17 +90,25 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
+	insertOffset, err := bridgeInsertOffset(rc)
+	closeErr := rc.Close()
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	data = injectBridge(data)
-	writeRawHTML(w, slug, data)
+	if closeErr != nil {
+		slog.Warn("close raw html scan", "slug", slug, "err", closeErr)
+	}
+	rc, err = s.storage.Open(r.Context(), slug)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer rc.Close()
+	writeRawHTML(w, slug, rc, insertOffset)
 }
 
-func writeRawHTML(w http.ResponseWriter, slug string, data []byte) {
+func writeRawHTML(w http.ResponseWriter, slug string, body io.Reader, insertOffset int64) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Allow the user's HTML to run inline scripts/styles & load resources, but
@@ -115,7 +123,17 @@ func writeRawHTML(w http.ResponseWriter, slug string, data []byte) {
 			"font-src https: http: data:; "+
 			"connect-src https: http:; "+
 			"frame-ancestors 'self'")
-	if _, err := w.Write(data); err != nil {
+	if insertOffset > 0 {
+		if _, err := io.CopyN(w, body, insertOffset); err != nil {
+			slog.Error("write raw html response", "slug", slug, "err", err)
+			return
+		}
+	}
+	if _, err := w.Write(bridgeScriptTag()); err != nil {
+		slog.Error("write raw html response", "slug", slug, "err", err)
+		return
+	}
+	if _, err := io.Copy(w, body); err != nil {
 		slog.Error("write raw html response", "slug", slug, "err", err)
 	}
 }
@@ -135,15 +153,75 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 // injectBridge appends the picker script so the parent can drive element
 // selection over postMessage. Runs inside the sandboxed iframe.
 func injectBridge(b []byte) []byte {
+	offset, err := bridgeInsertOffset(bytes.NewReader(b))
+	if err != nil {
+		return b
+	}
+	tag := bridgeScriptTag()
+	return append(append(append([]byte{}, b[:offset]...), tag...), b[offset:]...)
+}
+
+func bridgeScriptTag() []byte {
+	return []byte(`<script src="` + webui.AssetURL("bridge.js") + `"></script>`)
+}
+
+func bridgeInsertOffset(r io.Reader) (int64, error) {
 	marker := []byte("</body>")
-	tag := []byte(`<script src="` + webui.AssetURL("bridge.js") + `"></script>`)
-	lower := bytes.ToLower(b)
-	if idx := bytes.LastIndex(lower, marker); idx >= 0 {
-		return append(append(b[:idx:idx], tag...), b[idx:]...)
-	}
 	marker2 := []byte("</html>")
-	if idx := bytes.LastIndex(lower, marker2); idx >= 0 {
-		return append(append(b[:idx:idx], tag...), b[idx:]...)
+	const maxTail = len("</body>") - 1
+	buf := make([]byte, 32*1024)
+	tail := make([]byte, 0, maxTail)
+	var (
+		total    int64
+		lastBody int64 = -1
+		lastHTML int64 = -1
+	)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			prevTotal := total
+			combined := make([]byte, 0, len(tail)+n)
+			combined = append(combined, tail...)
+			combined = append(combined, buf[:n]...)
+			combinedStart := total - int64(len(tail))
+			lower := bytes.ToLower(combined)
+			lastBody = lastMarkerOffset(lower, marker, combinedStart, prevTotal, lastBody)
+			lastHTML = lastMarkerOffset(lower, marker2, combinedStart, prevTotal, lastHTML)
+			total += int64(n)
+			if len(combined) > maxTail {
+				tail = append(tail[:0], combined[len(combined)-maxTail:]...)
+			} else {
+				tail = append(tail[:0], combined...)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, err
+		}
 	}
-	return append(b, tag...)
+	if lastBody >= 0 {
+		return lastBody, nil
+	}
+	if lastHTML >= 0 {
+		return lastHTML, nil
+	}
+	return total, nil
+}
+
+func lastMarkerOffset(lower, marker []byte, combinedStart, previousTotal, current int64) int64 {
+	for searchFrom := 0; searchFrom < len(lower); {
+		idx := bytes.Index(lower[searchFrom:], marker)
+		if idx < 0 {
+			return current
+		}
+		idx += searchFrom
+		absolute := combinedStart + int64(idx)
+		if absolute+int64(len(marker)) > previousTotal {
+			current = absolute
+		}
+		searchFrom = idx + 1
+	}
+	return current
 }
