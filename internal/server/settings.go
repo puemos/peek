@@ -53,6 +53,9 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, meta)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Key < out[j].Key
+	})
 	jsonOK(w, out)
 }
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,6 +24,43 @@ func TestSettingKeysAreSorted(t *testing.T) {
 	want := []string{"max_upload", "retention_days", "s3_endpoint"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("settingKeys() = %+v, want %+v", got, want)
+	}
+}
+
+func TestGetSettingsRowsAreSorted(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.SetSetting("s3_endpoint", "https://example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting("auth_token_login_enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSetting("max_upload", "1024"); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, secret: strings.Repeat("0", 64)}
+	rec := httptest.NewRecorder()
+
+	s.handleGetSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var rows []settingsRow
+	if err := json.NewDecoder(rec.Body).Decode(&rows); err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, row.Key)
+	}
+	want := []string{"auth_token_login_enabled", "max_upload", "s3_endpoint"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("keys = %+v, want %+v", keys, want)
 	}
 }
 
