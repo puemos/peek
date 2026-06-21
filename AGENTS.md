@@ -46,7 +46,7 @@ mise run run
 ## Smoke test
 ```sh
 ./bin/peek login --host http://localhost:7700
-./bin/peek upload <some.html>
+./bin/peek upload <some.html> --visibility public
 ./bin/peek list
 ./bin/peek stats <slug>
 ```

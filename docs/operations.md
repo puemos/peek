@@ -76,7 +76,7 @@ After deployment or upgrade:
 peekd healthcheck --addr https://peek.example.com
 peek login --host https://peek.example.com
 printf '<!doctype html><h1>Peek smoke</h1>' > /tmp/peek-smoke.html
-peek upload /tmp/peek-smoke.html
+peek upload /tmp/peek-smoke.html --visibility public
 peek list
 ```
 

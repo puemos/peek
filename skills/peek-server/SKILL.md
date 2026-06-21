@@ -133,8 +133,8 @@ promote/demote admins in the dashboard later.
 ### Manage page passwords
 
 ```sh
-peek password <slug> --set newpass   # protect a page
-peek password <slug> --clear         # remove protection
+peek visibility <slug> password --password newpass   # protect a page
+peek visibility <slug> public                        # remove protection
 ```
 
 ### Data export and deletion

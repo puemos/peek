@@ -4,9 +4,9 @@
 
 <img src="assets/logo.png" alt="Peek" width="180">
 
-Share an HTML page inside your company, get a link, collect feedback right on the page.
+Share an HTML page inside your company, get a link, and collect feedback directly on the page.
 
-Peek is a self-hosted internal review tool. Upload any HTML file and get a live preview URL where reviewers can leave comments pinned to elements, anchored to selected text, or on the whole page. Single static Go binary, pure-Go SQLite, no CGO.
+Peek is a self-hosted internal review tool for HTML reports, prototypes, build artifacts, and agent-generated pages. Upload a file from the CLI or dashboard, share the preview URL, and let reviewers leave comments pinned to elements, anchored to selected text, or attached to the whole page. It ships as a single static Go binary with pure-Go SQLite and no CGO.
 
 ![Peek viewer with pinned comments](assets/hero.png)
 
@@ -24,18 +24,23 @@ peekd --addr :7700 --data ./data --base-url http://localhost:7700
 peek login --host http://localhost:7700
 
 # 4. Share a page
-peek upload mypage.html
+peek upload mypage.html --visibility public
 #  -> http://localhost:7700/p/PhiUs-lMbZE_Sw
 
-# Password-protect it
-peek upload mypage.html --password s3cret
+# Or upload it with password protection
+peek upload mypage.html --visibility password --password s3cret
+```
 
-# Manage
+Common follow-up commands:
+
+```sh
 peek list
 peek stats PhiUs-lMbZE_Sw
-peek password PhiUs-lMbZE_Sw --set newpass   # or --clear
+peek comments PhiUs-lMbZE_Sw
+peek visibility PhiUs-lMbZE_Sw password --password newpass
+peek visibility PhiUs-lMbZE_Sw public
 peek delete PhiUs-lMbZE_Sw
-peek export PhiUs-lMbZE_Sw                    # export upload data
+peek export PhiUs-lMbZE_Sw
 ```
 
 ## Install
@@ -70,12 +75,12 @@ docker compose --profile s3 up -d # with MinIO storage
 
 ## Features
 
-- **Pinned, text-anchored, and page-level comments** with numbered on-page markers that track elements during scroll. Click any comment to jump to its anchor. Text highlights use the CSS Custom Highlight API without mutating the DOM.
-- **Sandboxed iframe rendering** (`sandbox="allow-scripts"`, no `allow-same-origin`): uploaded HTML cannot read cookies, hit the server, or touch the parent page.
-- **One static binary** with no runtime dependencies. Go stdlib + pure-Go SQLite.
-- **CLI, web dashboard, and agent skill**: upload from the terminal, a browser, or let a coding agent share HTML for your team.
-- **Privacy-respecting analytics**: total/unique visits, recent views with SHA-256 hashed IPs.
-- **Built for internal deployment**: first-run admin setup, invite-only OAuth (Google/GitHub), health/readiness checks, graceful shutdown, structured JSON logging, Prometheus metrics, audit log, token expiry, quota/retention controls, data export/deletion, S3 endpoint SSRF protection.
+- **In-context review**: pinned, text-anchored, and page-level comments with numbered on-page markers. Click a comment to jump back to its anchor.
+- **Safe HTML previews**: uploaded pages render in a sandboxed iframe (`sandbox="allow-scripts"`, no `allow-same-origin`) so they cannot read Peek cookies, call the server as the user, or touch the parent page.
+- **Terminal and browser workflows**: upload, list, delete, change visibility, inspect comments, and view stats from the CLI or web dashboard.
+- **Access controls for internal teams**: public links, password-gated pages, private account-only pages, first-run admin setup, local login, invite-only Google/GitHub OAuth, token expiry, and admin-managed users.
+- **Operational basics included**: health/readiness checks, structured JSON logging, Prometheus metrics, audit log, quota and retention controls, consistent SQLite backup, file or S3-compatible storage, and S3 endpoint SSRF protection.
+- **Small deployment footprint**: one static Go binary, pure-Go SQLite, no runtime dependencies.
 
 Peek is not a SaaS product. It avoids billing, public multi-tenant onboarding, marketplace workflows, and growth-oriented product surfaces.
 
@@ -95,15 +100,19 @@ Comments live in a side panel. Your name is asked once and remembered. Public pa
 peek login [--host <url>]              browser login when available; token fallback
 peek login --token-stdin               read an access token from stdin
 peek login --token-file <path>         read an access token from a file
+peek config set --host <url>           set the configured server
 peek config show                       show current host + masked token
-peek upload <file.html> --password <pw> [--name <filename>]
-peek upload <file.html> --password-stdin
-peek upload <file.html> --visibility public|private
+peek upload <file.html> --visibility public [--name <filename>]
+peek upload <file.html> --visibility private [--name <filename>]
+peek upload <file.html> --visibility password --password <pw> [--name <filename>]
+peek upload <file.html> --visibility password --password-stdin [--name <filename>]
 peek list
 peek delete <slug>
 peek delete-all                        delete all your uploads
-peek visibility <slug> public|private
-peek visibility <slug> password --password <pw> | --password-stdin
+peek visibility <slug> public          make an upload link-accessible
+peek visibility <slug> private         require a Peek account
+peek visibility <slug> password --password <pw>
+peek visibility <slug> password --password-stdin
 peek stats <slug>
 peek comments <slug>                   list comments on one of your uploads
 peek export <slug>                     export all data for an upload
@@ -113,7 +122,9 @@ peek token revoke <id>                 revoke a token by id (admin only)
 peek version                           show version
 ```
 
-Login methods, most secure first: `peek login` (browser) `PEEK_TOKEN=…` env `peek login --token-stdin` (pipe) `peek login --token-file <path>`. The `--token <value>` flag still works where token login is allowed but warns since it leaks into shell history.
+Upload visibility is set at creation time with `--visibility public|password|private`. Password uploads require `--password` or `--password-stdin`; `peek upload <file.html> --password <pw>` is also accepted as shorthand for password visibility. Use `peek visibility <slug> public` to remove the password gate and make the link public again, or `peek visibility <slug> private` to require a Peek account.
+
+Login methods, most secure first: `peek login` (browser), `PEEK_TOKEN=...` env override for CI, `peek login --token-stdin`, then `peek login --token-file <path>`. The `--token <value>` flag still works where token login is allowed but warns because it leaks into shell history and process lists.
 
 ## Configuration
 

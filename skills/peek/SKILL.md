@@ -65,7 +65,7 @@ If the user doesn't have a server, token, or invite yet, point them to the
 ### Upload an HTML file and get a share link
 
 ```sh
-peek upload path/to/page.html
+peek upload path/to/page.html --visibility public
 ```
 
 Output includes the shareable URL and the slug:
@@ -78,7 +78,7 @@ slug:     PhiUs-lMbZE_Sw
 ### Upload with password protection
 
 ```sh
-peek upload page.html --password s3cret
+peek upload page.html --visibility password --password s3cret
 ```
 
 ### Upload raw HTML without a file
@@ -90,7 +90,7 @@ cat > /tmp/preview.html << 'EOF'
 <!doctype html>
 <html><body><h1>Preview</h1></body></html>
 EOF
-peek upload /tmp/preview.html
+peek upload /tmp/preview.html --visibility public
 ```
 
 Or POST it straight from memory:
@@ -99,7 +99,7 @@ Or POST it straight from memory:
 echo '<!doctype html><html><body><h1>Hello</h1></body></html>' | \
   curl -s -X POST -H "Authorization: Bearer $PEEK_TOKEN" \
   -H "Content-Type: text/html" \
-  --data-binary @- "$PEEK_HOST/api/upload?filename=preview.html" | jq -r .url
+  --data-binary @- "$PEEK_HOST/api/upload?filename=preview.html&visibility=public" | jq -r .url
 ```
 
 ### Read the comments on a page
@@ -147,12 +147,12 @@ Open the share URL (`/p/<slug>`) and click the comments panel. Reviewers select 
 When you generate HTML and want to share it:
 
 1. Write the HTML to a temp file.
-2. Run `peek upload /tmp/preview.html`.
+2. Run `peek upload /tmp/preview.html --visibility public`.
 3. Extract the URL from the output (the `uploaded:` line) and give it to the user.
 4. Later, run `peek comments <slug>` to read the feedback they collected.
 
 ```sh
-peek upload /tmp/preview.html | grep '^uploaded:' | awk '{print $2}'
+peek upload /tmp/preview.html --visibility public | grep '^uploaded:' | awk '{print $2}'
 ```
 
 If `peek` isn't configured, fall back to curl with env vars:
@@ -162,7 +162,7 @@ curl -s -X POST \
   -H "Authorization: Bearer ${PEEK_TOKEN}" \
   -H "Content-Type: text/html" \
   --data-binary @/tmp/preview.html \
-  "${PEEK_HOST}/api/upload?filename=preview.html"
+  "${PEEK_HOST}/api/upload?filename=preview.html&visibility=public"
 ```
 
 The JSON response has the shape `{"slug":"...","url":"https://..."}`.
