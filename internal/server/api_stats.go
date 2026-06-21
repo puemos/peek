@@ -8,7 +8,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
@@ -17,12 +17,12 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
-	total, unique, err := s.store.CountVisits(u.ID)
+	total, unique, err := s.store.CountVisits(r.Context(), u.ID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	recent, err := s.store.RecentVisits(u.ID, 50)
+	recent, err := s.store.RecentVisits(r.Context(), u.ID, 50)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
@@ -52,7 +52,7 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
@@ -61,17 +61,17 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusForbidden, "not owner")
 		return
 	}
-	total, unique, err := s.store.CountVisits(u.ID)
+	total, unique, err := s.store.CountVisits(r.Context(), u.ID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	recent, err := s.store.RecentVisits(u.ID, 500)
+	recent, err := s.store.RecentVisits(r.Context(), u.ID, 500)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	comments, err := s.store.ListComments(u.ID)
+	comments, err := s.store.ListComments(r.Context(), u.ID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return

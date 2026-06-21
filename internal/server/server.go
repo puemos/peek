@@ -100,7 +100,8 @@ func New(cfg Config) (*Server, error) {
 	}()
 
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
-	if _, err := bootstrapSetup(store, cfg.DataDir, baseURL); err != nil {
+	startupCtx := context.Background()
+	if _, err := bootstrapSetup(startupCtx, store, cfg.DataDir, baseURL); err != nil {
 		return nil, err
 	}
 
@@ -112,7 +113,7 @@ func New(cfg Config) (*Server, error) {
 		"s3_access_key": cfg.S3AccessKey,
 		"s3_secret_key": cfg.S3SecretKey,
 	}
-	if err := initDefaultSettings(store, secret, cfg.MaxUpload, cfg.MaxTotalSize, cfg.RetentionDays, s3Defaults); err != nil {
+	if err := initDefaultSettings(startupCtx, store, secret, cfg.MaxUpload, cfg.MaxTotalSize, cfg.RetentionDays, s3Defaults); err != nil {
 		return nil, err
 	}
 
@@ -121,20 +122,20 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
-	storageBackend, _ := store.GetSetting("storage")
+	storageBackend, _ := store.GetSetting(startupCtx, "storage")
 	if storageBackend == "" {
 		storageBackend = cfg.Storage
 	}
 
 	var st objectstore.Storage
 	if storageBackend == "s3" {
-		if endpoint, err := store.GetSetting("s3_endpoint"); err == nil && endpoint != "" {
+		if endpoint, err := store.GetSetting(startupCtx, "s3_endpoint"); err == nil && endpoint != "" {
 			if err := objectstore.ValidateS3Endpoint(endpoint, cfg.S3AllowPrivateEndpoint); err != nil {
 				return nil, err
 			}
 		}
 		st = objectstore.NewS3Storage(cfg.S3AllowPrivateEndpoint, func(key string) string {
-			return decryptedStoreSetting(store, secret, key)
+			return decryptedStoreSetting(context.Background(), store, secret, key)
 		})
 		slog.Info("storage backend: s3 (config managed via settings API / dashboard)")
 	} else {

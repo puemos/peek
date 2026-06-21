@@ -53,7 +53,7 @@ func (s *Server) authToken(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, http.StatusUnauthorized, "missing token")
 			return
 		}
-		t, err := s.store.GetToken(tok)
+		t, err := s.store.GetToken(r.Context(), tok)
 		if err != nil {
 			jsonError(w, http.StatusUnauthorized, "invalid token")
 			return
@@ -73,7 +73,7 @@ func (s *Server) authAdmin(next http.HandlerFunc) http.HandlerFunc {
 			jsonError(w, http.StatusUnauthorized, "missing token")
 			return
 		}
-		t, err := s.store.GetToken(tok)
+		t, err := s.store.GetToken(r.Context(), tok)
 		if err != nil {
 			jsonError(w, http.StatusUnauthorized, "invalid token")
 			return

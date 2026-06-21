@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +57,7 @@ func TestDashboardRevokeInviteRejectsMissingInvite(t *testing.T) {
 
 func TestDashboardRevokeInviteReportsSuccessAfterUpdate(t *testing.T) {
 	s, store, accountID := newAdminTestServer(t)
-	inv, err := store.CreateInvite("raw", "ciphertext", "user@example.test", accountID, time.Now().Add(inviteTTL))
+	inv, err := store.CreateInvite(context.Background(), "raw", "ciphertext", "user@example.test", accountID, time.Now().Add(inviteTTL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestDashboardRevokeInviteReportsSuccessAfterUpdate(t *testing.T) {
 func TestDashboardInviteRowsLogsDecryptFailure(t *testing.T) {
 	s, store, accountID := newAdminTestServer(t)
 	s.secret = "not-a-valid-secret"
-	if _, err := store.CreateInvite("raw", "ciphertext", "user@example.test", accountID, time.Now().Add(inviteTTL)); err != nil {
+	if _, err := store.CreateInvite(context.Background(), "raw", "ciphertext", "user@example.test", accountID, time.Now().Add(inviteTTL)); err != nil {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
@@ -83,7 +84,7 @@ func TestDashboardInviteRowsLogsDecryptFailure(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(oldLogger) })
 
-	rows := s.dashboardInviteRows()
+	rows := s.dashboardInviteRows(context.Background())
 
 	if len(rows) != 1 {
 		t.Fatalf("rows = %+v", rows)
@@ -103,7 +104,7 @@ func newAdminTestServer(t *testing.T) (*Server, *db.Store, int64) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,7 +23,7 @@ func newTestServer(t *testing.T) (*server.Server, string, string) {
 	if err != nil {
 		t.Fatalf("open test store: %v", err)
 	}
-	if err := store.CreateToken(adminToken, "admin", true, 0); err != nil {
+	if err := store.CreateToken(context.Background(), adminToken, "admin", true, 0); err != nil {
 		t.Fatalf("seed admin token: %v", err)
 	}
 	if err := store.Close(); err != nil {
@@ -69,24 +70,24 @@ func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open test store: %v", err)
 	}
-	if err := store.CreateToken(userToken, "user", false, 0); err != nil {
+	if err := store.CreateToken(context.Background(), userToken, "user", false, 0); err != nil {
 		t.Fatalf("seed user token: %v", err)
 	}
-	owner, err := store.GetToken(userToken)
+	owner, err := store.GetToken(context.Background(), userToken)
 	if err != nil {
 		t.Fatalf("get user token: %v", err)
 	}
-	if err := store.CreateUploadChecked("owned-page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "owned-page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("seed upload: %v", err)
 	}
-	upload, err := store.GetUpload("owned-page")
+	upload, err := store.GetUpload(context.Background(), "owned-page")
 	if err != nil {
 		t.Fatalf("get upload: %v", err)
 	}
-	if err := store.AddComment(upload.ID, "", "", "Ada", "visitor", "Looks good"); err != nil {
+	if err := store.AddComment(context.Background(), upload.ID, "", "", "Ada", "visitor", "Looks good"); err != nil {
 		t.Fatalf("seed comment: %v", err)
 	}
-	if err := store.SetAccountDisabled(owner.AccountID, true); err != nil {
+	if err := store.SetAccountDisabled(context.Background(), owner.AccountID, true); err != nil {
 		t.Fatalf("disable account: %v", err)
 	}
 	if err := store.Close(); err != nil {

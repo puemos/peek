@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -35,7 +36,7 @@ var settingsMeta = map[string]settingsRow{
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	raw, err := s.encryptedGetAllSettings()
+	raw, err := s.encryptedGetAllSettings(r.Context())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
@@ -81,7 +82,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, k := range s.settingKeys(updates) {
 		v := updates[k]
-		if err := s.encryptedSetSetting(k, v); err != nil {
+		if err := s.encryptedSetSetting(r.Context(), k, v); err != nil {
 			jsonError(w, http.StatusInternalServerError, "db error")
 			return
 		}
@@ -224,7 +225,7 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 		updates[k] = normalized
 	}
 	for _, k := range s.settingKeys(updates) {
-		if err := s.encryptedSetSetting(k, updates[k]); err != nil {
+		if err := s.encryptedSetSetting(r.Context(), k, updates[k]); err != nil {
 			dashboardError(w, r, "settings update failed")
 			return
 		}
@@ -233,8 +234,8 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 	dashboardOK(w, r, "settings saved")
 }
 
-func (s *Server) dashboardSettingsMap() map[string]string {
-	raw, _ := s.encryptedGetAllSettings()
+func (s *Server) dashboardSettingsMap(ctx context.Context) map[string]string {
+	raw, _ := s.encryptedGetAllSettings(ctx)
 	if raw == nil {
 		raw = map[string]string{}
 	}
@@ -276,16 +277,16 @@ func dashboardSettingsRows(raw map[string]string) []settingsRow {
 	return out
 }
 
-func (s *Server) settingString(key string) string {
-	v, err := s.encryptedGetSetting(key)
+func (s *Server) settingString(ctx context.Context, key string) string {
+	v, err := s.encryptedGetSetting(ctx, key)
 	if err != nil {
 		return ""
 	}
 	return v
 }
 
-func (s *Server) settingBool(key string) bool {
-	switch s.settingString(key) {
+func (s *Server) settingBool(ctx context.Context, key string) bool {
+	switch s.settingString(ctx, key) {
 	case "1", "true", "yes", "on":
 		return true
 	default:

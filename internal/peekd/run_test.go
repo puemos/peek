@@ -1,6 +1,7 @@
 package peekd
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -104,14 +105,14 @@ func TestBackupDatabaseCreatesRestorableSnapshot(t *testing.T) {
 		t.Fatalf("open source store: %v", err)
 	}
 	t.Cleanup(func() { _ = source.Close() })
-	if err := source.CreateToken("admin-token", "admin", true, 0); err != nil {
+	if err := source.CreateToken(context.Background(), "admin-token", "admin", true, 0); err != nil {
 		t.Fatalf("seed source token: %v", err)
 	}
-	token, err := source.GetToken("admin-token")
+	token, err := source.GetToken(context.Background(), "admin-token")
 	if err != nil {
 		t.Fatalf("get source token: %v", err)
 	}
-	if err := source.CreateUploadChecked("snapshot-page", token.AccountID, token.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := source.CreateUploadChecked(context.Background(), "snapshot-page", token.AccountID, token.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("seed source upload: %v", err)
 	}
 
@@ -132,10 +133,10 @@ func TestBackupDatabaseCreatesRestorableSnapshot(t *testing.T) {
 		t.Fatalf("open backup store: %v", err)
 	}
 	defer backup.Close()
-	if got, err := backup.GetToken("admin-token"); err != nil || got.Name != "admin" || !got.IsAdmin {
+	if got, err := backup.GetToken(context.Background(), "admin-token"); err != nil || got.Name != "admin" || !got.IsAdmin {
 		t.Fatalf("backup token = %+v, err=%v", got, err)
 	}
-	if got, err := backup.GetUpload("snapshot-page"); err != nil || got.Filename != "page.html" || got.Size != 42 {
+	if got, err := backup.GetUpload(context.Background(), "snapshot-page"); err != nil || got.Filename != "page.html" || got.Size != 42 {
 		t.Fatalf("backup upload = %+v, err=%v", got, err)
 	}
 }

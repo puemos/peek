@@ -14,8 +14,8 @@ func (s *Server) resolveOAuthAccount(r *http.Request, profile *oauthProfile) (*m
 	if profile.ProviderUserID == "" || profile.Email == "" || !profile.EmailVerified {
 		return nil, errors.New("OAuth account must have a verified email")
 	}
-	if oi, err := s.store.GetOAuthIdentity(profile.Provider, profile.ProviderUserID); err == nil {
-		account, err := s.store.GetAccountByID(oi.AccountID)
+	if oi, err := s.store.GetOAuthIdentity(r.Context(), profile.Provider, profile.ProviderUserID); err == nil {
+		account, err := s.store.GetAccountByID(r.Context(), oi.AccountID)
 		if err != nil {
 			return nil, errors.New("linked account not found")
 		}
@@ -27,7 +27,7 @@ func (s *Server) resolveOAuthAccount(r *http.Request, profile *oauthProfile) (*m
 		return nil, errors.New("OAuth lookup failed")
 	}
 
-	if account, err := s.store.GetAccountByEmail(profile.Email); err == nil {
+	if account, err := s.store.GetAccountByEmail(r.Context(), profile.Email); err == nil {
 		if account.Disabled {
 			return nil, errors.New("account disabled")
 		}
@@ -43,18 +43,18 @@ func (s *Server) resolveOAuthAccount(r *http.Request, profile *oauthProfile) (*m
 	if inviteToken == "" {
 		return nil, errors.New("invite required")
 	}
-	inv, err := s.store.GetInviteByToken(inviteToken)
+	inv, err := s.store.GetInviteByToken(r.Context(), inviteToken)
 	if err != nil {
 		return nil, errors.New("invite not found")
 	}
 	if !invitePending(inv) || normalizeOAuthEmail(inv.Email) != profile.Email {
 		return nil, errors.New("invite does not match this account")
 	}
-	account, err := s.store.CreateAccount(profile.Email, profile.Name, false)
+	account, err := s.store.CreateAccount(r.Context(), profile.Email, profile.Name, false)
 	if err != nil {
 		return nil, errors.New("account creation failed")
 	}
-	if err := s.store.ConsumeInvite(inv.ID); err != nil {
+	if err := s.store.ConsumeInvite(r.Context(), inv.ID); err != nil {
 		return nil, errors.New("invite consumption failed")
 	}
 	return account, nil

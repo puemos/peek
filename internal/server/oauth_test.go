@@ -48,11 +48,11 @@ func TestResolveOAuthAccountConsumesMatchingInvite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	admin, err := s.store.CreateAccount("", "Admin", true)
+	admin, err := s.store.CreateAccount(context.Background(), "", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv, err := s.store.CreateInvite(raw, ciphertext, "User@Example.COM", admin.ID, time.Now().Add(time.Hour))
+	inv, err := s.store.CreateInvite(context.Background(), raw, ciphertext, "User@Example.COM", admin.ID, time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestResolveOAuthAccountConsumesMatchingInvite(t *testing.T) {
 	if account.Email != "user@example.com" || account.IsAdmin {
 		t.Fatalf("unexpected account: %+v", account)
 	}
-	used, err := s.store.GetInviteByID(inv.ID)
+	used, err := s.store.GetInviteByID(context.Background(), inv.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestResolveOAuthAccountConsumesMatchingInvite(t *testing.T) {
 
 func TestResolveOAuthAccountLinksExistingVerifiedEmailWithoutInvite(t *testing.T) {
 	s := newTestServer(t)
-	account, err := s.store.CreateAccount("user@example.com", "Existing", false)
+	account, err := s.store.CreateAccount(context.Background(), "user@example.com", "Existing", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,18 +248,18 @@ func testGitHubProviderConfig() *oauthProviderConfig {
 
 func TestCLILoginPollIssuesTokenOnce(t *testing.T) {
 	s := newTestServer(t)
-	account, err := s.store.CreateAccount("user@example.com", "User", false)
+	account, err := s.store.CreateAccount(context.Background(), "user@example.com", "User", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateCLILoginDevice("device-code", "ABCDEFGH", time.Now().Add(time.Hour)); err != nil {
+	if err := s.store.CreateCLILoginDevice(context.Background(), "device-code", "ABCDEFGH", time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	device, err := s.store.GetCLILoginByDevice("device-code")
+	device, err := s.store.GetCLILoginByDevice(context.Background(), "device-code")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.ApproveCLILogin(device.ID, account.ID); err != nil {
+	if err := s.store.ApproveCLILogin(context.Background(), device.ID, account.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -279,7 +279,7 @@ func TestCLILoginPollIssuesTokenOnce(t *testing.T) {
 	if out.Status != "approved" || out.Token == "" {
 		t.Fatalf("unexpected poll response: %+v", out)
 	}
-	if _, err := s.store.GetToken(out.Token); err != nil {
+	if _, err := s.store.GetToken(context.Background(), out.Token); err != nil {
 		t.Fatalf("issued token should authenticate: %v", err)
 	}
 
@@ -295,7 +295,7 @@ func TestCLILoginPollIssuesTokenOnce(t *testing.T) {
 
 func TestCLILoginStartDoesNotRequireOAuth(t *testing.T) {
 	s := newTestServer(t)
-	if _, err := s.store.CreateAccountWithPassword("admin@example.com", "Admin", "hash", true); err != nil {
+	if _, err := s.store.CreateAccountWithPassword(context.Background(), "admin@example.com", "Admin", "hash", true); err != nil {
 		t.Fatal(err)
 	}
 

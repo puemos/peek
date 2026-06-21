@@ -1,6 +1,7 @@
 package uploads
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -9,13 +10,13 @@ import (
 
 const slugRetries = 5
 
-func generateSlug(store slugChecker) (string, error) {
+func generateSlug(ctx context.Context, store slugChecker) (string, error) {
 	for range slugRetries {
 		s, err := randID(10)
 		if err != nil {
 			return "", err
 		}
-		exists, err := store.UploadSlugExists(s)
+		exists, err := store.UploadSlugExists(ctx, s)
 		if err != nil {
 			return "", fmt.Errorf("check slug availability: %w", err)
 		}
@@ -27,7 +28,7 @@ func generateSlug(store slugChecker) (string, error) {
 }
 
 type slugChecker interface {
-	UploadSlugExists(slug string) (bool, error)
+	UploadSlugExists(ctx context.Context, slug string) (bool, error)
 }
 
 func randID(nBytes int) (string, error) {

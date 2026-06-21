@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -72,7 +73,7 @@ func TestFreshInstallSetupCreatesAdminPassword(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer store.Close()
-	account, err := store.GetAccountByEmail("admin@example.com")
+	account, err := store.GetAccountByEmail(context.Background(), "admin@example.com")
 	if err != nil {
 		t.Fatalf("get admin account: %v", err)
 	}

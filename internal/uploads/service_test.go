@@ -146,10 +146,10 @@ func serviceTestStore(t *testing.T) (*db.Store, *models.Token) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateToken("owner", "owner", false, 0); err != nil {
+	if err := store.CreateToken(context.Background(), "owner", "owner", false, 0); err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.GetToken("owner")
+	owner, err := store.GetToken(context.Background(), "owner")
 	if err != nil {
 		t.Fatal(err)
 	}

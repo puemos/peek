@@ -1,19 +1,20 @@
 package db
 
 import (
+	"context"
 	"time"
 
 	"github.com/puemos/peek/internal/models"
 )
 
-func (s *Store) AddComment(uploadID int64, selector, text, author, cookie, body string) error {
-	_, err := s.Exec(`INSERT INTO comments(upload_id,element_selector,element_text,author_name,author_cookie,body,created_at)
+func (s *Store) AddComment(ctx context.Context, uploadID int64, selector, text, author, cookie, body string) error {
+	_, err := s.ExecContext(ctx, `INSERT INTO comments(upload_id,element_selector,element_text,author_name,author_cookie,body,created_at)
 		VALUES(?,?,?,?,?,?,?)`, uploadID, selector, text, author, cookie, body, time.Now().Unix())
 	return err
 }
 
-func (s *Store) ListComments(uploadID int64) ([]models.Comment, error) {
-	rows, err := s.Query(`SELECT id,upload_id,element_selector,element_text,author_name,author_cookie,body,created_at
+func (s *Store) ListComments(ctx context.Context, uploadID int64) ([]models.Comment, error) {
+	rows, err := s.QueryContext(ctx, `SELECT id,upload_id,element_selector,element_text,author_name,author_cookie,body,created_at
 		FROM comments WHERE upload_id=? ORDER BY created_at ASC`, uploadID)
 	if err != nil {
 		return nil, err

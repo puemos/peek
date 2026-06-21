@@ -1,6 +1,7 @@
 package uploads
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -57,7 +58,7 @@ func makeString(c byte, n int) string {
 func TestGenerateSlugUniqueness(t *testing.T) {
 	t.Run("always free", func(t *testing.T) {
 		mock := &mockSlugChecker{existing: map[string]bool{}}
-		slug, err := generateSlug(mock)
+		slug, err := generateSlug(context.Background(), mock)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -67,7 +68,7 @@ func TestGenerateSlugUniqueness(t *testing.T) {
 	})
 	t.Run("retries then free", func(t *testing.T) {
 		mock := &mockSlugChecker{counter: 0, returnErrorAfter: 3}
-		slug, err := generateSlug(mock)
+		slug, err := generateSlug(context.Background(), mock)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -80,7 +81,7 @@ func TestGenerateSlugUniqueness(t *testing.T) {
 	})
 	t.Run("exhausted retries", func(t *testing.T) {
 		mock := &mockSlugChecker{counter: 0, returnErrorAfter: 100}
-		_, err := generateSlug(mock)
+		_, err := generateSlug(context.Background(), mock)
 		if err == nil {
 			t.Fatalf("expected error after retries exhausted")
 		}
@@ -88,7 +89,7 @@ func TestGenerateSlugUniqueness(t *testing.T) {
 	t.Run("lookup failure", func(t *testing.T) {
 		wantErr := errors.New("database unavailable")
 		mock := &mockSlugChecker{err: wantErr}
-		_, err := generateSlug(mock)
+		_, err := generateSlug(context.Background(), mock)
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("expected lookup error, got %v", err)
 		}
@@ -102,7 +103,7 @@ type mockSlugChecker struct {
 	err              error
 }
 
-func (m *mockSlugChecker) UploadSlugExists(slug string) (bool, error) {
+func (m *mockSlugChecker) UploadSlugExists(_ context.Context, slug string) (bool, error) {
 	m.counter++
 	if m.err != nil {
 		return false, m.err

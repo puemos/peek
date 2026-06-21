@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,7 +93,7 @@ func newAuthTestStore(t *testing.T, token, name string, isAdmin bool) *db.Store 
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.CreateToken(token, name, isAdmin, 0); err != nil {
+	if err := store.CreateToken(context.Background(), token, name, isAdmin, 0); err != nil {
 		t.Fatalf("seed token: %v", err)
 	}
 	return store

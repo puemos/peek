@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -32,18 +33,18 @@ var (
 )
 
 func (s *Server) handleAuthProviders(w http.ResponseWriter, r *http.Request) {
-	providers := s.enabledOAuthProviders()
+	providers := s.enabledOAuthProviders(r.Context())
 	jsonOK(w, map[string]any{
 		"providers":      providers,
-		"browser_login":  !s.setupRequired(),
+		"browser_login":  !s.setupRequired(r.Context()),
 		"oauth_required": len(providers) > 0,
 	})
 }
 
-func (s *Server) enabledOAuthProviders() []authProvider {
+func (s *Server) enabledOAuthProviders(ctx context.Context) []authProvider {
 	out := []authProvider{}
 	for _, key := range []string{"google", "github"} {
-		p, err := s.oauthProviderConfig(key)
+		p, err := s.oauthProviderConfig(ctx, key)
 		if err == nil {
 			out = append(out, p.authProvider)
 		}
@@ -51,11 +52,11 @@ func (s *Server) enabledOAuthProviders() []authProvider {
 	return out
 }
 
-func (s *Server) oauthProviderConfig(key string) (*oauthProviderConfig, error) {
+func (s *Server) oauthProviderConfig(ctx context.Context, key string) (*oauthProviderConfig, error) {
 	key = strings.ToLower(strings.TrimSpace(key))
-	enabled := s.settingBool("oauth_" + key + "_enabled")
-	clientID := strings.TrimSpace(s.settingString("oauth_" + key + "_client_id"))
-	clientSecret := strings.TrimSpace(s.settingString("oauth_" + key + "_client_secret"))
+	enabled := s.settingBool(ctx, "oauth_"+key+"_enabled")
+	clientID := strings.TrimSpace(s.settingString(ctx, "oauth_"+key+"_client_id"))
+	clientSecret := strings.TrimSpace(s.settingString(ctx, "oauth_"+key+"_client_secret"))
 	if !enabled || clientID == "" || clientSecret == "" {
 		return nil, fmt.Errorf("%s oauth is not configured", key)
 	}

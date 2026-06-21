@@ -68,11 +68,11 @@ func TestHandleRawStreamsHTMLWithBridgeInjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("user@example.test", "User", false)
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked("page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	secret := strings.Repeat("0", 64)

@@ -18,8 +18,8 @@ type Service struct {
 }
 
 type Repository interface {
-	UploadSlugExists(slug string) (bool, error)
-	CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error
+	UploadSlugExists(ctx context.Context, slug string) (bool, error)
+	CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error
 }
 
 type CreateInput struct {
@@ -105,14 +105,14 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 		pwHash = string(h)
 	}
 
-	slug, err := generateSlug(svc.Repository)
+	slug, err := generateSlug(ctx, svc.Repository)
 	if err != nil {
 		return nil, newError(KindSlugGeneration, "slug generation failed")
 	}
 	if err := svc.Storage.Save(ctx, slug, in.Data); err != nil {
 		return nil, newError(KindStorageWrite, "storage failed")
 	}
-	if err := svc.Repository.CreateUploadChecked(slug, in.OwnerAccountID, in.OwnerTokenID, in.Filename, int64(len(in.Data)), pwHash, in.Limits); err != nil {
+	if err := svc.Repository.CreateUploadChecked(ctx, slug, in.OwnerAccountID, in.OwnerTokenID, in.Filename, int64(len(in.Data)), pwHash, in.Limits); err != nil {
 		uploadErr := storeError(err)
 		if cleanupErr := svc.Storage.Delete(ctx, slug); cleanupErr != nil {
 			return nil, errors.Join(uploadErr, &CleanupError{Slug: slug, Err: cleanupErr})

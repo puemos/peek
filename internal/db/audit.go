@@ -1,9 +1,12 @@
 package db
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
-func (s *Store) AddAuditLog(actor, action, detail, ip string) error {
-	_, err := s.Exec(`INSERT INTO audit_log(actor,action,detail,ip,created_at) VALUES(?,?,?,?,?)`,
+func (s *Store) AddAuditLog(ctx context.Context, actor, action, detail, ip string) error {
+	_, err := s.ExecContext(ctx, `INSERT INTO audit_log(actor,action,detail,ip,created_at) VALUES(?,?,?,?,?)`,
 		actor, action, detail, ip, time.Now().Unix())
 	return err
 }
@@ -17,11 +20,11 @@ type AuditEntry struct {
 	CreatedAt time.Time
 }
 
-func (s *Store) ListAuditLog(limit int) ([]AuditEntry, error) {
+func (s *Store) ListAuditLog(ctx context.Context, limit int) ([]AuditEntry, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.Query(`SELECT id,actor,action,detail,ip,created_at FROM audit_log ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := s.QueryContext(ctx, `SELECT id,actor,action,detail,ip,created_at FROM audit_log ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

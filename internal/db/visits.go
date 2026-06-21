@@ -1,24 +1,25 @@
 package db
 
 import (
+	"context"
 	"time"
 
 	"github.com/puemos/peek/internal/models"
 )
 
-func (s *Store) RecordVisit(uploadID int64, cookie, name, ip, ua string) error {
-	_, err := s.Exec(`INSERT INTO visits(upload_id,visitor_cookie,visitor_name,ip,user_agent,visited_at)
+func (s *Store) RecordVisit(ctx context.Context, uploadID int64, cookie, name, ip, ua string) error {
+	_, err := s.ExecContext(ctx, `INSERT INTO visits(upload_id,visitor_cookie,visitor_name,ip,user_agent,visited_at)
 		VALUES(?,?,?,?,?,?)`, uploadID, cookie, name, ip, ua, time.Now().Unix())
 	return err
 }
 
-func (s *Store) CountVisits(uploadID int64) (total, unique int, err error) {
-	err = s.QueryRow(`SELECT COUNT(*),COUNT(DISTINCT visitor_cookie) FROM visits WHERE upload_id=?`, uploadID).Scan(&total, &unique)
+func (s *Store) CountVisits(ctx context.Context, uploadID int64) (total, unique int, err error) {
+	err = s.QueryRowContext(ctx, `SELECT COUNT(*),COUNT(DISTINCT visitor_cookie) FROM visits WHERE upload_id=?`, uploadID).Scan(&total, &unique)
 	return
 }
 
-func (s *Store) RecentVisits(uploadID int64, limit int) ([]models.Visit, error) {
-	rows, err := s.Query(`SELECT id,upload_id,visitor_cookie,visitor_name,ip,user_agent,visited_at
+func (s *Store) RecentVisits(ctx context.Context, uploadID int64, limit int) ([]models.Visit, error) {
+	rows, err := s.QueryContext(ctx, `SELECT id,upload_id,visitor_cookie,visitor_name,ip,user_agent,visited_at
 		FROM visits WHERE upload_id=? ORDER BY visited_at DESC LIMIT ?`, uploadID, limit)
 	if err != nil {
 		return nil, err
@@ -37,18 +38,18 @@ func (s *Store) RecentVisits(uploadID int64, limit int) ([]models.Visit, error) 
 	return out, rows.Err()
 }
 
-func (s *Store) UpsertVisitor(cookie, name string) error {
+func (s *Store) UpsertVisitor(ctx context.Context, cookie, name string) error {
 	now := time.Now().Unix()
-	_, err := s.Exec(`INSERT INTO visitors(cookie,name,created_at,last_seen) VALUES(?,?,?,?)
+	_, err := s.ExecContext(ctx, `INSERT INTO visitors(cookie,name,created_at,last_seen) VALUES(?,?,?,?)
 		ON CONFLICT(cookie) DO UPDATE SET last_seen=excluded.last_seen, name=CASE WHEN excluded.name='' THEN visitors.name ELSE excluded.name END`,
 		cookie, name, now, now)
 	return err
 }
 
-func (s *Store) GetVisitor(cookie string) (*models.Visitor, error) {
+func (s *Store) GetVisitor(ctx context.Context, cookie string) (*models.Visitor, error) {
 	v := &models.Visitor{}
 	var created, last int64
-	err := s.QueryRow(`SELECT cookie,name,created_at,last_seen FROM visitors WHERE cookie=?`, cookie).
+	err := s.QueryRowContext(ctx, `SELECT cookie,name,created_at,last_seen FROM visitors WHERE cookie=?`, cookie).
 		Scan(&v.Cookie, &v.Name, &created, &last)
 	if err != nil {
 		return nil, err

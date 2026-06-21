@@ -23,15 +23,15 @@ func (s *Server) webAuth(r *http.Request) (*models.Account, bool) {
 	if err != nil {
 		return nil, false
 	}
-	a, err := s.store.GetAccountByID(id)
+	a, err := s.store.GetAccountByID(r.Context(), id)
 	if err != nil {
 		return nil, false
 	}
 	if a.Disabled {
 		return nil, false
 	}
-	if s.oauthLoginRequired() && !a.IsAdmin {
-		hasOAuth, err := s.store.AccountHasOAuthIdentity(a.ID)
+	if s.oauthLoginRequired(r.Context()) && !a.IsAdmin {
+		hasOAuth, err := s.store.AccountHasOAuthIdentity(r.Context(), a.ID)
 		if err != nil || !hasOAuth {
 			return nil, false
 		}

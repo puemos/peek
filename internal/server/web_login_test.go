@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -62,7 +63,7 @@ func newWebLoginTestServer(t *testing.T) (*Server, *db.Store, int64) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}

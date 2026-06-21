@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -34,13 +35,13 @@ func TestGetSettingsRowsAreSorted(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err := store.SetSetting("s3_endpoint", "https://example.test"); err != nil {
+	if err := store.SetSetting(context.Background(), "s3_endpoint", "https://example.test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetSetting("auth_token_login_enabled", "true"); err != nil {
+	if err := store.SetSetting(context.Background(), "auth_token_login_enabled", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetSetting("max_upload", "1024"); err != nil {
+	if err := store.SetSetting(context.Background(), "max_upload", "1024"); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{store: store, secret: strings.Repeat("0", 64)}
@@ -71,7 +72,7 @@ func TestUpdateSettingsRejectsUnknownKeysBeforeWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err := store.SetSetting("max_upload", "1024"); err != nil {
+	if err := store.SetSetting(context.Background(), "max_upload", "1024"); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{store: store, secret: strings.Repeat("0", 64)}
@@ -88,7 +89,7 @@ func TestUpdateSettingsRejectsUnknownKeysBeforeWriting(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "unknown setting: not_a_setting") {
 		t.Fatalf("response did not identify unknown setting: %s", rec.Body.String())
 	}
-	got, err := store.GetSetting("max_upload")
+	got, err := store.GetSetting(context.Background(), "max_upload")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,10 +104,10 @@ func TestUpdateSettingsRejectsInvalidValuesBeforeWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if err := store.SetSetting("max_upload", "1024"); err != nil {
+	if err := store.SetSetting(context.Background(), "max_upload", "1024"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetSetting("retention_days", "7"); err != nil {
+	if err := store.SetSetting(context.Background(), "retention_days", "7"); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{store: store, secret: strings.Repeat("0", 64)}
@@ -164,7 +165,7 @@ func TestDashboardSettingsInvalidS3EndpointRedirectEscapesQuery(t *testing.T) {
 	}
 	defer store.Close()
 
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,14 +207,14 @@ func TestDashboardSettingsRejectsInvalidValuesBeforeWriting(t *testing.T) {
 	}
 	defer store.Close()
 
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetSetting("auth_token_login_enabled", "true"); err != nil {
+	if err := store.SetSetting(context.Background(), "auth_token_login_enabled", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetSetting("max_upload", "1024"); err != nil {
+	if err := store.SetSetting(context.Background(), "max_upload", "1024"); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{store: store, secret: strings.Repeat("0", 64)}
@@ -256,7 +257,7 @@ func TestDashboardSettingsRejectsMalformedForm(t *testing.T) {
 	}
 	defer store.Close()
 
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +286,7 @@ func TestDashboardSettingsRejectsMalformedForm(t *testing.T) {
 
 func mustGetSetting(t *testing.T, store *db.Store, key string) string {
 	t.Helper()
-	got, err := store.GetSetting(key)
+	got, err := store.GetSetting(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,18 +25,21 @@ func (s *Server) Close() error {
 func (s *Server) audit(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	slog.Info("audit", "action", "system", "detail", msg)
-	s.persistAuditLog("", "system", msg, "")
+	s.persistAuditLog(s.ctx, "", "system", msg, "")
 }
 
 // auditRequest logs an audit event with the actor's IP from the request.
 func (s *Server) auditRequest(r *http.Request, actor, action, detail string) {
 	ip := s.clientIP(r)
 	slog.Info("audit", "actor", actor, "action", action, "detail", detail, "ip", ip)
-	s.persistAuditLog(actor, action, detail, ip)
+	s.persistAuditLog(r.Context(), actor, action, detail, ip)
 }
 
-func (s *Server) persistAuditLog(actor, action, detail, ip string) {
-	if err := s.store.AddAuditLog(actor, action, detail, ip); err != nil {
+func (s *Server) persistAuditLog(ctx context.Context, actor, action, detail, ip string) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := s.store.AddAuditLog(ctx, actor, action, detail, ip); err != nil {
 		slog.Error("audit log write failed", "actor", actor, "action", action, "detail", detail, "ip", ip, "err", err)
 	}
 }
@@ -69,12 +72,12 @@ func (s *Server) runRetentionCleanupLoop(ctx context.Context, ticks <-chan time.
 }
 
 func (s *Server) cleanupExpired(ctx context.Context) {
-	retentionDays := s.settingInt("retention_days", 0)
+	retentionDays := s.settingInt(ctx, "retention_days", 0)
 	if retentionDays <= 0 {
 		return
 	}
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
-	uploads, err := s.store.ListUploadsOlderThan(cutoff)
+	uploads, err := s.store.ListUploadsOlderThan(ctx, cutoff)
 	if err != nil {
 		slog.Error("retention cleanup: list", "err", err)
 		return

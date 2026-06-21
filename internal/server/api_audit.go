@@ -12,7 +12,7 @@ func (s *Server) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	entries, err := s.store.ListAuditLog(limit)
+	entries, err := s.store.ListAuditLog(r.Context(), limit)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return

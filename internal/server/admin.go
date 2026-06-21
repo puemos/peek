@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"log/slog"
@@ -16,7 +17,7 @@ const inviteTTL = 7 * 24 * time.Hour
 
 func (s *Server) handleInviteLink(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.PathValue("token"))
-	inv, err := s.store.GetInviteByToken(raw)
+	inv, err := s.store.GetInviteByToken(r.Context(), raw)
 	if err != nil || !invitePending(inv) {
 		s.renderWebError(w, http.StatusNotFound, "Invite not found", "This invite link is invalid, expired, or already used.")
 		return
@@ -56,7 +57,7 @@ func (s *Server) handleDashboardCreateInvite(w http.ResponseWriter, r *http.Requ
 		dashboardError(w, r, "invite failed")
 		return
 	}
-	if _, err := s.store.CreateInvite(raw, ciphertext, email, owner.ID, time.Now().Add(inviteTTL)); err != nil {
+	if _, err := s.store.CreateInvite(r.Context(), raw, ciphertext, email, owner.ID, time.Now().Add(inviteTTL)); err != nil {
 		dashboardError(w, r, "invite failed")
 		return
 	}
@@ -78,7 +79,7 @@ func (s *Server) handleDashboardRevokeInvite(w http.ResponseWriter, r *http.Requ
 		dashboardError(w, r, "bad invite")
 		return
 	}
-	if err := s.store.RevokeInvite(id); err != nil {
+	if err := s.store.RevokeInvite(r.Context(), id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			dashboardError(w, r, "bad invite")
 			return
@@ -105,7 +106,7 @@ func (s *Server) handleDashboardUserAdmin(w http.ResponseWriter, r *http.Request
 		return
 	}
 	makeAdmin := r.FormValue("admin") == "true"
-	if err := s.store.SetAccountAdminChecked(id, makeAdmin); err != nil {
+	if err := s.store.SetAccountAdminChecked(r.Context(), id, makeAdmin); err != nil {
 		if errors.Is(err, db.ErrLastAdmin) {
 			dashboardError(w, r, "cannot remove last admin")
 			return
@@ -132,7 +133,7 @@ func (s *Server) handleDashboardUserDisabled(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	disabled := r.FormValue("disabled") == "true"
-	if err := s.store.SetAccountDisabledChecked(id, disabled); err != nil {
+	if err := s.store.SetAccountDisabledChecked(r.Context(), id, disabled); err != nil {
 		if errors.Is(err, db.ErrLastAdmin) {
 			dashboardError(w, r, "cannot disable last admin")
 			return
@@ -144,8 +145,8 @@ func (s *Server) handleDashboardUserDisabled(w http.ResponseWriter, r *http.Requ
 	dashboardOK(w, r, "user updated")
 }
 
-func (s *Server) dashboardInviteRows() []inviteDashRow {
-	invites, err := s.store.ListInvites()
+func (s *Server) dashboardInviteRows(ctx context.Context) []inviteDashRow {
+	invites, err := s.store.ListInvites(ctx)
 	if err != nil {
 		slog.Error("dashboard invite list failed", "err", err)
 		return nil
@@ -187,8 +188,8 @@ func (s *Server) dashboardInviteRows() []inviteDashRow {
 	return out
 }
 
-func (s *Server) dashboardAccountRows(selfID int64) []accountDashRow {
-	accounts, err := s.store.ListAccounts()
+func (s *Server) dashboardAccountRows(ctx context.Context, selfID int64) []accountDashRow {
+	accounts, err := s.store.ListAccounts(ctx)
 	if err != nil {
 		slog.Error("dashboard account list failed", "err", err)
 		return nil

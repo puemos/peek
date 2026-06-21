@@ -13,7 +13,7 @@ import (
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
-	if !s.setupRequired() {
+	if !s.setupRequired(r.Context()) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -21,7 +21,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		code := strings.TrimSpace(r.URL.Query().Get("code"))
 		data := setupData{}
-		if s.validSetupCode(code) {
+		if s.validSetupCode(r.Context(), code) {
 			data.Code = code
 		} else {
 			data.Error = "Use the setup URL printed by the server."
@@ -40,7 +40,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		s.renderCSRFError(w, err)
 		return
 	}
-	if !validCSRF || !s.validSetupCode(code) {
+	if !validCSRF || !s.validSetupCode(r.Context(), code) {
 		s.renderSetupForm(w, http.StatusOK, setupData{Error: "Invalid setup session."})
 		return
 	}
@@ -64,7 +64,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		s.renderSetupForm(w, http.StatusOK, setupData{Code: code, Error: "Could not create password."})
 		return
 	}
-	account, err := s.store.CreateAccountWithPassword(email, name, string(hash), true)
+	account, err := s.store.CreateAccountWithPassword(r.Context(), email, name, string(hash), true)
 	if err != nil {
 		s.renderSetupForm(w, http.StatusOK, setupData{Code: code, Error: "Could not create admin account."})
 		return

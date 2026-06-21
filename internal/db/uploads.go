@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -9,8 +10,8 @@ import (
 	"github.com/puemos/peek/internal/uploadquota"
 )
 
-func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error {
-	tx, err := s.Begin()
+func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, filename string, size int64, passwordHash string, limits uploadquota.Limits) error {
+	tx, err := s.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -18,7 +19,7 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 
 	if limits.MaxTotalSize > 0 {
 		var total int64
-		if err := tx.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads`).Scan(&total); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM uploads`).Scan(&total); err != nil {
 			return err
 		}
 		if total+size > limits.MaxTotalSize {
@@ -27,7 +28,7 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 	}
 	if limits.MaxUploadsPerOwner > 0 {
 		var count int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM uploads WHERE owner_account_id=?`, ownerAccountID).Scan(&count); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM uploads WHERE owner_account_id=?`, ownerAccountID).Scan(&count); err != nil {
 			return err
 		}
 		if count >= limits.MaxUploadsPerOwner {
@@ -36,7 +37,7 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 	}
 	if limits.MaxStoragePerOwner > 0 {
 		var total int64
-		if err := tx.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner_account_id=?`, ownerAccountID).Scan(&total); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner_account_id=?`, ownerAccountID).Scan(&total); err != nil {
 			return err
 		}
 		if total+size > limits.MaxStoragePerOwner {
@@ -48,18 +49,18 @@ func (s *Store) CreateUploadChecked(slug string, ownerAccountID, ownerTokenID in
 	if ownerTokenID > 0 {
 		tokenArg = ownerTokenID
 	}
-	if _, err := tx.Exec(`INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
+	if _, err := tx.ExecContext(ctx, `INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
 		slug, ownerAccountID, tokenArg, filename, size, passwordHash, time.Now().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Store) GetUpload(slug string) (*models.Upload, error) {
+func (s *Store) GetUpload(ctx context.Context, slug string) (*models.Upload, error) {
 	u := &models.Upload{}
 	var ts int64
 	var tokenID sql.NullInt64
-	err := s.QueryRow(`SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.slug=?`, slug).
 		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Filename, &u.Size, &u.PasswordHash, &ts)
 	if err != nil {
@@ -70,9 +71,9 @@ func (s *Store) GetUpload(slug string) (*models.Upload, error) {
 	return u, nil
 }
 
-func (s *Store) UploadSlugExists(slug string) (bool, error) {
+func (s *Store) UploadSlugExists(ctx context.Context, slug string) (bool, error) {
 	var id int64
-	err := s.QueryRow(`SELECT id FROM uploads WHERE slug=?`, slug).Scan(&id)
+	err := s.QueryRowContext(ctx, `SELECT id FROM uploads WHERE slug=?`, slug).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -82,11 +83,11 @@ func (s *Store) UploadSlugExists(slug string) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) GetUploadByID(id int64) (*models.Upload, error) {
+func (s *Store) GetUploadByID(ctx context.Context, id int64) (*models.Upload, error) {
 	u := &models.Upload{}
 	var ts int64
 	var tokenID sql.NullInt64
-	err := s.QueryRow(`SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.id=?`, id).
 		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Filename, &u.Size, &u.PasswordHash, &ts)
 	if err != nil {
@@ -97,8 +98,8 @@ func (s *Store) GetUploadByID(id int64) (*models.Upload, error) {
 	return u, nil
 }
 
-func (s *Store) ListUploadsByOwner(ownerID int64) ([]models.Upload, error) {
-	rows, err := s.Query(`SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+func (s *Store) ListUploadsByOwner(ctx context.Context, ownerID int64) ([]models.Upload, error) {
+	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.owner_account_id=? ORDER BY u.created_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
@@ -106,8 +107,8 @@ func (s *Store) ListUploadsByOwner(ownerID int64) ([]models.Upload, error) {
 	return scanUploads(rows)
 }
 
-func (s *Store) ListAllUploads() ([]models.Upload, error) {
-	rows, err := s.Query(`SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+func (s *Store) ListAllUploads(ctx context.Context) ([]models.Upload, error) {
+	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id ORDER BY u.created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -115,16 +116,16 @@ func (s *Store) ListAllUploads() ([]models.Upload, error) {
 	return scanUploads(rows)
 }
 
-func (s *Store) SetUploadPassword(id int64, hash string) error {
-	res, err := s.Exec(`UPDATE uploads SET password_hash=? WHERE id=?`, hash, id)
+func (s *Store) SetUploadPassword(ctx context.Context, id int64, hash string) error {
+	res, err := s.ExecContext(ctx, `UPDATE uploads SET password_hash=? WHERE id=?`, hash, id)
 	if err != nil {
 		return err
 	}
 	return requireRowsAffected(res)
 }
 
-func (s *Store) DeleteUpload(id int64) error {
-	res, err := s.Exec(`DELETE FROM uploads WHERE id=?`, id)
+func (s *Store) DeleteUpload(ctx context.Context, id int64) error {
+	res, err := s.ExecContext(ctx, `DELETE FROM uploads WHERE id=?`, id)
 	if err != nil {
 		return err
 	}
@@ -148,32 +149,32 @@ func scanUploads(rows *sql.Rows) ([]models.Upload, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) CountUploads() (int, error) {
+func (s *Store) CountUploads(ctx context.Context) (int, error) {
 	var n int
-	err := s.QueryRow(`SELECT COUNT(*) FROM uploads`).Scan(&n)
+	err := s.QueryRowContext(ctx, `SELECT COUNT(*) FROM uploads`).Scan(&n)
 	return n, err
 }
 
-func (s *Store) SumUploadSizes() (int64, error) {
+func (s *Store) SumUploadSizes(ctx context.Context) (int64, error) {
 	var total int64
-	err := s.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads`).Scan(&total)
+	err := s.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM uploads`).Scan(&total)
 	return total, err
 }
 
-func (s *Store) CountUploadsByOwner(ownerID int64) (int, error) {
+func (s *Store) CountUploadsByOwner(ctx context.Context, ownerID int64) (int, error) {
 	var n int
-	err := s.QueryRow(`SELECT COUNT(*) FROM uploads WHERE owner_account_id=?`, ownerID).Scan(&n)
+	err := s.QueryRowContext(ctx, `SELECT COUNT(*) FROM uploads WHERE owner_account_id=?`, ownerID).Scan(&n)
 	return n, err
 }
 
-func (s *Store) SumUploadSizesByOwner(ownerID int64) (int64, error) {
+func (s *Store) SumUploadSizesByOwner(ctx context.Context, ownerID int64) (int64, error) {
 	var total int64
-	err := s.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner_account_id=?`, ownerID).Scan(&total)
+	err := s.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner_account_id=?`, ownerID).Scan(&total)
 	return total, err
 }
 
-func (s *Store) ListUploadsOlderThan(cutoff time.Time) ([]models.Upload, error) {
-	rows, err := s.Query(`SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+func (s *Store) ListUploadsOlderThan(ctx context.Context, cutoff time.Time) ([]models.Upload, error) {
+	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.created_at < ? ORDER BY u.created_at ASC`,
 		cutoff.Unix())
 	if err != nil {

@@ -34,7 +34,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	if body.ExpiresH > 0 {
 		expiresAt = time.Now().Add(time.Duration(body.ExpiresH) * time.Hour).Unix()
 	}
-	if err := s.store.CreateToken(t, strings.TrimSpace(body.Name), false, expiresAt); err != nil {
+	if err := s.store.CreateToken(r.Context(), t, strings.TrimSpace(body.Name), false, expiresAt); err != nil {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
@@ -43,7 +43,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
-	tokens, err := s.store.ListTokens()
+	tokens, err := s.store.ListTokens(r.Context())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
@@ -72,7 +72,7 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "bad token id")
 		return
 	}
-	t, err := s.store.DeleteTokenChecked(id)
+	t, err := s.store.DeleteTokenChecked(r.Context(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		jsonError(w, http.StatusNotFound, "token not found")
 		return

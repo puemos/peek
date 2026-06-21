@@ -59,7 +59,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&sb, "peek_comments_total %d\n", commentsTotal.Load())
 
 	// Upload count from DB.
-	count, err := s.store.CountUploads()
+	count, err := s.store.CountUploads(r.Context())
 	if err == nil {
 		sb.WriteString("# HELP peek_uploads_current Current number of uploads.\n")
 		sb.WriteString("# TYPE peek_uploads_current gauge\n")
@@ -67,7 +67,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Total storage used.
-	totalSize, err := s.store.SumUploadSizes()
+	totalSize, err := s.store.SumUploadSizes(r.Context())
 	if err == nil {
 		sb.WriteString("# HELP peek_storage_bytes Total bytes used by uploads.\n")
 		sb.WriteString("# TYPE peek_storage_bytes gauge\n")
@@ -75,7 +75,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Token count.
-	tokenCount, err := s.store.CountTokens()
+	tokenCount, err := s.store.CountTokens(r.Context())
 	if err == nil {
 		sb.WriteString("# HELP peek_tokens_current Current number of tokens.\n")
 		sb.WriteString("# TYPE peek_tokens_current gauge\n")

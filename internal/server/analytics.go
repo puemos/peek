@@ -77,12 +77,12 @@ func (s *Server) startVisitWorker(ctx context.Context) {
 				close(ev.done)
 				continue
 			}
-			if err := s.store.RecordVisit(ev.UploadID, ev.VID, ev.Name, ev.IPHash, ev.UA); err != nil {
+			if err := s.store.RecordVisit(ctx, ev.UploadID, ev.VID, ev.Name, ev.IPHash, ev.UA); err != nil {
 				slog.Warn("record visit failed", "upload_id", ev.UploadID, "err", err)
 				continue
 			}
 			if ev.Name != "" {
-				if err := s.store.UpsertVisitor(ev.VID, ev.Name); err != nil {
+				if err := s.store.UpsertVisitor(ctx, ev.VID, ev.Name); err != nil {
 					slog.Warn("upsert visitor failed", "upload_id", ev.UploadID, "err", err)
 				}
 			}

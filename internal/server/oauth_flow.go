@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
-	p, err := s.oauthProviderConfig(r.PathValue("provider"))
+	p, err := s.oauthProviderConfig(r.Context(), r.PathValue("provider"))
 	if err != nil {
 		s.renderOAuthError(w, r, http.StatusNotFound, "OAuth provider is not configured.")
 		return
@@ -36,7 +36,7 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	p, err := s.oauthProviderConfig(r.PathValue("provider"))
+	p, err := s.oauthProviderConfig(r.Context(), r.PathValue("provider"))
 	if err != nil {
 		s.renderOAuthError(w, r, http.StatusNotFound, "OAuth provider is not configured.")
 		return
@@ -80,7 +80,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		s.renderOAuthError(w, r, http.StatusForbidden, oauthAccountErrorMessage(err))
 		return
 	}
-	if err := s.store.UpsertOAuthIdentity(account.ID, profile.Provider, profile.ProviderUserID, profile.Email, profile.Name); err != nil {
+	if err := s.store.UpsertOAuthIdentity(ctx, account.ID, profile.Provider, profile.ProviderUserID, profile.Email, profile.Name); err != nil {
 		slog.Error("oauth account link failed", "provider", p.Key, "account_id", account.ID, "err", err)
 		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
 		s.renderOAuthError(w, r, http.StatusInternalServerError, "OAuth account link failed.")

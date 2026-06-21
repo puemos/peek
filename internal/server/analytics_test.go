@@ -21,14 +21,14 @@ func TestRecordVisitPersistsPrivacySafeAnalytics(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked("page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
-	upload, err := store.GetUpload("page")
+	upload, err := store.GetUpload(context.Background(), "page")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,14 +60,14 @@ func TestRecordVisitPersistsPrivacySafeAnalytics(t *testing.T) {
 		t.Fatalf("flush visits: %v", err)
 	}
 
-	total, unique, err := store.CountVisits(upload.ID)
+	total, unique, err := store.CountVisits(context.Background(), upload.ID)
 	if err != nil {
 		t.Fatalf("count visits: %v", err)
 	}
 	if total != 1 || unique != 1 {
 		t.Fatalf("visits total=%d unique=%d", total, unique)
 	}
-	recent, err := store.RecentVisits(upload.ID, 1)
+	recent, err := store.RecentVisits(context.Background(), upload.ID, 1)
 	if err != nil {
 		t.Fatalf("recent visits: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestRecordVisitPersistsPrivacySafeAnalytics(t *testing.T) {
 	if recent[0].UserAgent != strings.Repeat("u", 300) {
 		t.Fatalf("user agent length = %d", len(recent[0].UserAgent))
 	}
-	visitor, err := store.GetVisitor("visitor-1")
+	visitor, err := store.GetVisitor(context.Background(), "visitor-1")
 	if err != nil {
 		t.Fatalf("get visitor: %v", err)
 	}

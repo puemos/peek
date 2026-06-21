@@ -1,14 +1,15 @@
 package server
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/puemos/peek/internal/db"
 )
 
-func initDefaultSettings(store *db.Store, secret string, maxUpload, maxTotalSize int64, retentionDays int, s3Defaults map[string]string) error {
+func initDefaultSettings(ctx context.Context, store *db.Store, secret string, maxUpload, maxTotalSize int64, retentionDays int, s3Defaults map[string]string) error {
 	upsert := func(key, val string) error {
-		_, err := store.GetSetting(key)
+		_, err := store.GetSetting(ctx, key)
 		if err == nil {
 			return nil
 		}
@@ -19,7 +20,7 @@ func initDefaultSettings(store *db.Store, secret string, maxUpload, maxTotalSize
 			}
 			val = enc
 		}
-		return store.SetSetting(key, val)
+		return store.SetSetting(ctx, key, val)
 	}
 	defaults := map[string]string{
 		"auth_token_login_enabled": "true",
@@ -42,8 +43,8 @@ func initDefaultSettings(store *db.Store, secret string, maxUpload, maxTotalSize
 	return nil
 }
 
-func (s *Server) settingInt64(key string, def int64) int64 {
-	v, err := s.encryptedGetSetting(key)
+func (s *Server) settingInt64(ctx context.Context, key string, def int64) int64 {
+	v, err := s.encryptedGetSetting(ctx, key)
 	if err != nil || v == "" {
 		return def
 	}
@@ -54,8 +55,8 @@ func (s *Server) settingInt64(key string, def int64) int64 {
 	return n
 }
 
-func (s *Server) settingInt(key string, def int) int {
-	v, err := s.encryptedGetSetting(key)
+func (s *Server) settingInt(ctx context.Context, key string, def int) int {
+	v, err := s.encryptedGetSetting(ctx, key)
 	if err != nil || v == "" {
 		return def
 	}
@@ -66,8 +67,8 @@ func (s *Server) settingInt(key string, def int) int {
 	return n
 }
 
-func (s *Server) encryptedGetSetting(key string) (string, error) {
-	v, err := s.store.GetSetting(key)
+func (s *Server) encryptedGetSetting(ctx context.Context, key string) (string, error) {
+	v, err := s.store.GetSetting(ctx, key)
 	if err != nil {
 		return "", err
 	}
@@ -77,8 +78,8 @@ func (s *Server) encryptedGetSetting(key string) (string, error) {
 	return v, nil
 }
 
-func decryptedStoreSetting(store *db.Store, secret, key string) string {
-	v, err := store.GetSetting(key)
+func decryptedStoreSetting(ctx context.Context, store *db.Store, secret, key string) string {
+	v, err := store.GetSetting(ctx, key)
 	if err != nil || v == "" {
 		return ""
 	}
@@ -92,7 +93,7 @@ func decryptedStoreSetting(store *db.Store, secret, key string) string {
 	return dec
 }
 
-func (s *Server) encryptedSetSetting(key, val string) error {
+func (s *Server) encryptedSetSetting(ctx context.Context, key, val string) error {
 	if secretSettingKeys[key] && val != "" {
 		enc, err := encryptSecret(s.secret, val)
 		if err != nil {
@@ -100,11 +101,11 @@ func (s *Server) encryptedSetSetting(key, val string) error {
 		}
 		val = enc
 	}
-	return s.store.SetSetting(key, val)
+	return s.store.SetSetting(ctx, key, val)
 }
 
-func (s *Server) encryptedGetAllSettings() (map[string]string, error) {
-	raw, err := s.store.GetAllSettings()
+func (s *Server) encryptedGetAllSettings(ctx context.Context) (map[string]string, error) {
+	raw, err := s.store.GetAllSettings(ctx)
 	if err != nil {
 		return nil, err
 	}

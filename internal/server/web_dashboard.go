@@ -15,7 +15,7 @@ import (
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
-	if s.setupRequired() {
+	if s.setupRequired(r.Context()) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
@@ -27,9 +27,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	var list []models.Upload
 	var listErr error
 	if owner.IsAdmin {
-		list, listErr = s.store.ListAllUploads()
+		list, listErr = s.store.ListAllUploads(r.Context())
 	} else {
-		list, listErr = s.store.ListUploadsByOwner(owner.ID)
+		list, listErr = s.store.ListUploadsByOwner(r.Context(), owner.ID)
 	}
 	if listErr != nil {
 		slog.Error("dashboard upload list failed", "account_id", owner.ID, "admin", owner.IsAdmin, "err", listErr)
@@ -46,7 +46,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	allSettings := s.dashboardSettingsMap()
+	allSettings := s.dashboardSettingsMap(r.Context())
 	sortedMeta := dashboardSettingsRows(allSettings)
 	dashData_ := dashData{
 		CSRF:         csrf,
@@ -60,8 +60,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		dashData_.UploadError = "uploads could not be loaded"
 	}
 	if owner.IsAdmin {
-		dashData_.Invites = s.dashboardInviteRows()
-		dashData_.Accounts = s.dashboardAccountRows(owner.ID)
+		dashData_.Invites = s.dashboardInviteRows(r.Context())
+		dashData_.Accounts = s.dashboardAccountRows(r.Context(), owner.ID)
 	}
 	// carry over flash messages from query params
 	if e := r.URL.Query().Get("err"); e != "" {
@@ -83,7 +83,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxUpload := s.settingInt64("max_upload", 2<<20)
+	maxUpload := s.settingInt64(r.Context(), "max_upload", 2<<20)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1024)
 	if err := r.ParseMultipartForm(maxUpload); err != nil {
@@ -137,7 +137,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 		Filename:       filename,
 		Password:       password,
 		Data:           data,
-		Limits:         s.uploadLimits(),
+		Limits:         s.uploadLimits(r.Context()),
 	})
 	if err != nil {
 		logUploadError(err)
@@ -159,7 +159,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.parseDashboardForm(w, r) {
 		return
 	}
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		dashboardError(w, r, "not found")
 		return
@@ -186,7 +186,7 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		s.renderWebError(w, http.StatusNotFound, "Stats not found", "Stats for this page could not be found.")
 		return
@@ -195,13 +195,13 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		s.renderWebError(w, http.StatusNotFound, "Stats not found", "Stats for this page could not be found.")
 		return
 	}
-	total, unique, err := s.store.CountVisits(u.ID)
+	total, unique, err := s.store.CountVisits(r.Context(), u.ID)
 	if err != nil {
 		slog.Error("dashboard stats count failed", "slug", slug, "err", err)
 		s.renderDashboardStatsError(w, slug, u.Filename)
 		return
 	}
-	recent, err := s.store.RecentVisits(u.ID, 100)
+	recent, err := s.store.RecentVisits(r.Context(), u.ID, 100)
 	if err != nil {
 		slog.Error("dashboard stats visits failed", "slug", slug, "err", err)
 		s.renderDashboardStatsError(w, slug, u.Filename)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,14 +19,14 @@ func TestExportUploadReportsVisitQueryFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	token := "owner-token"
-	if err := store.CreateToken(token, "owner", false, 0); err != nil {
+	if err := store.CreateToken(context.Background(), token, "owner", false, 0); err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.GetToken(token)
+	owner, err := store.GetToken(context.Background(), token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked("page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Exec(`DROP TABLE visits`); err != nil {

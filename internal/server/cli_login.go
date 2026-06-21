@@ -15,7 +15,7 @@ const (
 )
 
 func (s *Server) handleCLILoginStart(w http.ResponseWriter, r *http.Request) {
-	if s.setupRequired() {
+	if s.setupRequired(r.Context()) {
 		jsonError(w, http.StatusBadRequest, "server setup is not complete")
 		return
 	}
@@ -31,7 +31,7 @@ func (s *Server) handleCLILoginStart(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusInternalServerError, "user code failed")
 			return
 		}
-		err = s.store.CreateCLILoginDevice(deviceCode, userCode, time.Now().Add(cliLoginTTL))
+		err = s.store.CreateCLILoginDevice(r.Context(), deviceCode, userCode, time.Now().Add(cliLoginTTL))
 		if err == nil {
 			break
 		}
@@ -62,14 +62,14 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "device_code required")
 		return
 	}
-	d, err := s.store.GetCLILoginByDevice(body.DeviceCode)
+	d, err := s.store.GetCLILoginByDevice(r.Context(), body.DeviceCode)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid device code")
 		return
 	}
 	if time.Now().After(d.ExpiresAt) {
 		if d.Status == "pending" {
-			if err := s.store.ExpireCLILogin(d.ID); err != nil {
+			if err := s.store.ExpireCLILogin(r.Context(), d.ID); err != nil {
 				slog.Warn("cli login expire failed", "device_id", d.ID, "err", err)
 			}
 		}
@@ -86,11 +86,11 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 			jsonOK(w, map[string]any{"status": "consumed"})
 			return
 		}
-		if err := s.store.ConsumeCLILogin(d.ID); err != nil {
+		if err := s.store.ConsumeCLILogin(r.Context(), d.ID); err != nil {
 			jsonOK(w, map[string]any{"status": "consumed"})
 			return
 		}
-		account, err := s.store.GetAccountByID(d.AccountID)
+		account, err := s.store.GetAccountByID(r.Context(), d.AccountID)
 		if err != nil || account.Disabled {
 			jsonOK(w, map[string]any{"status": "denied"})
 			return
@@ -100,7 +100,7 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusInternalServerError, "token generation failed")
 			return
 		}
-		if err := s.store.CreateTokenForAccount(token, account.ID, "CLI login"); err != nil {
+		if err := s.store.CreateTokenForAccount(r.Context(), token, account.ID, "CLI login"); err != nil {
 			jsonError(w, http.StatusInternalServerError, "token creation failed")
 			return
 		}
@@ -115,7 +115,7 @@ func (s *Server) handleCLILoginPage(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	code := strings.ToUpper(strings.TrimSpace(r.PathValue("code")))
-	d, err := s.store.GetCLILoginByUserCode(code)
+	d, err := s.store.GetCLILoginByUserCode(r.Context(), code)
 	if err != nil || d.Status != "pending" || time.Now().After(d.ExpiresAt) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login expired", Message: "Start a new login from the CLI."})
 		return
@@ -152,13 +152,13 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Invalid session."})
 		return
 	}
-	d, err := s.store.GetCLILoginByUserCode(code)
+	d, err := s.store.GetCLILoginByUserCode(r.Context(), code)
 	if err != nil || d.Status != "pending" || time.Now().After(d.ExpiresAt) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login expired", Message: "Start a new login from the CLI."})
 		return
 	}
 	if r.FormValue("decision") == "deny" {
-		if err := s.store.DenyCLILogin(d.ID); err != nil {
+		if err := s.store.DenyCLILogin(r.Context(), d.ID); err != nil {
 			slog.Warn("cli login deny failed", "device_id", d.ID, "err", err)
 			s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Denial failed."})
 			return
@@ -166,7 +166,7 @@ func (s *Server) handleCLILoginApprove(w http.ResponseWriter, r *http.Request) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateCLILoginDone, webui.CLILoginDoneData{Title: "CLI login denied", Message: "Return to your terminal to continue."})
 		return
 	}
-	if err := s.store.ApproveCLILogin(d.ID, owner.ID); err != nil {
+	if err := s.store.ApproveCLILogin(r.Context(), d.ID, owner.ID); err != nil {
 		slog.Warn("cli login approve failed", "device_id", d.ID, "account_id", owner.ID, "err", err)
 		s.renderCLILoginForm(w, http.StatusOK, webui.CLILoginData{Code: code, User: owner.Name, Error: "Approval failed."})
 		return

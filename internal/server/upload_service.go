@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -13,11 +14,11 @@ func (s *Server) uploadService() uploads.Service {
 	return uploads.Service{Repository: s.store, Storage: s.storage, BaseURL: s.baseURL}
 }
 
-func (s *Server) uploadLimits() uploadquota.Limits {
+func (s *Server) uploadLimits(ctx context.Context) uploadquota.Limits {
 	return uploadquota.Limits{
-		MaxTotalSize:       s.settingInt64("max_total_size", 0),
-		MaxUploadsPerOwner: s.settingInt("max_uploads_per_token", 0),
-		MaxStoragePerOwner: s.settingInt64("max_storage_per_token", 0),
+		MaxTotalSize:       s.settingInt64(ctx, "max_total_size", 0),
+		MaxUploadsPerOwner: s.settingInt(ctx, "max_uploads_per_token", 0),
+		MaxStoragePerOwner: s.settingInt64(ctx, "max_storage_per_token", 0),
 	}
 }
 

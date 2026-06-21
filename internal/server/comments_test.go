@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,11 +14,11 @@ import (
 
 func TestAddCommentLogsVisitorUpsertFailure(t *testing.T) {
 	s := newTestServer(t)
-	account, err := s.store.CreateAccount("owner@example.test", "Owner", false)
+	account, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateUploadChecked("page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.store.Exec(`DROP TABLE visitors`); err != nil {

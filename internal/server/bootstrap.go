@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -59,8 +60,8 @@ func setupCodePath(dataDir string) string {
 
 // bootstrapSetup prepares a one-time setup URL when the database has no
 // accounts. The first admin is created through /setup, not through a token.
-func bootstrapSetup(store *db.Store, dataDir, baseURL string) (string, error) {
-	n, err := store.CountAccounts()
+func bootstrapSetup(ctx context.Context, store *db.Store, dataDir, baseURL string) (string, error) {
+	n, err := store.CountAccounts(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -96,8 +97,8 @@ func printSetupURL(baseURL, code string) {
 	fmt.Println("==========================================================")
 }
 
-func (s *Server) setupRequired() bool {
-	n, err := s.store.CountAccounts()
+func (s *Server) setupRequired(ctx context.Context) bool {
+	n, err := s.store.CountAccounts(ctx)
 	return err == nil && n == 0
 }
 
@@ -109,8 +110,8 @@ func (s *Server) readSetupCode() string {
 	return strings.TrimSpace(string(b))
 }
 
-func (s *Server) validSetupCode(code string) bool {
-	if !s.setupRequired() {
+func (s *Server) validSetupCode(ctx context.Context, code string) bool {
+	if !s.setupRequired(ctx) {
 		return false
 	}
 	want := s.readSetupCode()

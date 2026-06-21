@@ -13,7 +13,7 @@ import (
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
@@ -36,7 +36,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
@@ -67,7 +67,7 @@ func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	if _, err := s.store.GetUpload(slug); err != nil {
+	if _, err := s.store.GetUpload(r.Context(), slug); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -143,7 +143,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.renderWebError(w, http.StatusNotFound, "Page not found", "The requested page does not exist.")
 		return
 	}
-	if s.setupRequired() {
+	if s.setupRequired(r.Context()) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}

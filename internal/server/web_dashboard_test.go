@@ -43,7 +43,7 @@ func TestDashboardReportsUploadListFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("user@example.test", "User", false)
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestDashboardRendersGenericSuccessFlash(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("user@example.test", "User", false)
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +110,11 @@ func TestDashboardStatsReportsVisitQueryFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("user@example.test", "User", false)
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked("page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Exec(`DROP TABLE visits`); err != nil {
@@ -147,7 +147,7 @@ func TestDashboardStatsMissingUploadRendersWebError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("user@example.test", "User", false)
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestDashboardDeleteReportsDatabaseDeleteFailureAfterStorageDelete(t *testin
 	if len(storage.deleted) != 1 || storage.deleted[0] != "page" {
 		t.Fatalf("storage deletes = %+v", storage.deleted)
 	}
-	if _, err := store.GetUpload("page"); err != nil {
+	if _, err := store.GetUpload(context.Background(), "page"); err != nil {
 		t.Fatalf("upload should remain after DB failure: %v", err)
 	}
 }
@@ -226,7 +226,7 @@ func TestDashboardDeleteStopsWhenStorageDeleteFails(t *testing.T) {
 	if len(storage.deleted) != 1 || storage.deleted[0] != "page" {
 		t.Fatalf("storage deletes = %+v", storage.deleted)
 	}
-	if _, err := store.GetUpload("page"); err != nil {
+	if _, err := store.GetUpload(context.Background(), "page"); err != nil {
 		t.Fatalf("upload should remain after storage failure: %v", err)
 	}
 }
@@ -247,7 +247,7 @@ func TestDashboardDeleteRemovesUploadAndStorageObject(t *testing.T) {
 	if len(storage.deleted) != 1 || storage.deleted[0] != "page" {
 		t.Fatalf("storage deletes = %+v", storage.deleted)
 	}
-	if _, err := store.GetUpload("page"); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := store.GetUpload(context.Background(), "page"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected upload to be deleted, err=%v", err)
 	}
 }
@@ -259,7 +259,7 @@ func newDashboardDeleteTestServer(t *testing.T) (*Server, *db.Store, *dashboardD
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	account, err := store.CreateAccount("admin@example.test", "Admin", true)
+	account, err := store.CreateAccount(context.Background(), "admin@example.test", "Admin", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func newDashboardDeleteTestServer(t *testing.T) (*Server, *db.Store, *dashboardD
 
 func seedDashboardDeleteUpload(t *testing.T, store *db.Store, ownerID int64) {
 	t.Helper()
-	if err := store.CreateUploadChecked("page", ownerID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", ownerID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 }

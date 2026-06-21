@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,7 +14,7 @@ import (
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
 	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
-	if s.setupRequired() {
+	if s.setupRequired(r.Context()) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
@@ -64,14 +65,14 @@ func (s *Server) loginWithPassword(r *http.Request) (int64, string, error) {
 	if email == "" || password == "" {
 		return 0, "", fmt.Errorf("missing credentials")
 	}
-	owner, err := s.store.GetAccountByEmail(email)
+	owner, err := s.store.GetAccountByEmail(r.Context(), email)
 	if err != nil || owner.PasswordHash == "" {
 		return 0, "", fmt.Errorf("invalid credentials")
 	}
 	if owner.Disabled {
 		return 0, "", fmt.Errorf("account disabled")
 	}
-	if s.oauthLoginRequired() && !owner.IsAdmin {
+	if s.oauthLoginRequired(r.Context()) && !owner.IsAdmin {
 		return 0, "", fmt.Errorf("oauth required")
 	}
 	if bcrypt.CompareHashAndPassword([]byte(owner.PasswordHash), []byte(password)) != nil {
@@ -85,30 +86,30 @@ func (s *Server) loginWithToken(r *http.Request) (int64, string, error) {
 	if tok == "" {
 		return 0, "", fmt.Errorf("missing token")
 	}
-	owner, err := s.store.GetToken(tok)
+	owner, err := s.store.GetToken(r.Context(), tok)
 	if err != nil {
 		return 0, "", err
 	}
 	if owner.Disabled {
 		return 0, "", fmt.Errorf("account disabled")
 	}
-	if (!s.tokenLoginEnabled() || s.oauthLoginRequired()) && !owner.IsAdmin {
+	if (!s.tokenLoginEnabled(r.Context()) || s.oauthLoginRequired(r.Context())) && !owner.IsAdmin {
 		return 0, "", fmt.Errorf("token login disabled")
 	}
 	return owner.AccountID, owner.Name, nil
 }
 
-func (s *Server) oauthLoginRequired() bool {
-	return len(s.enabledOAuthProviders()) > 0
+func (s *Server) oauthLoginRequired(ctx context.Context) bool {
+	return len(s.enabledOAuthProviders(ctx)) > 0
 }
 
-func (s *Server) tokenLoginEnabled() bool {
-	return s.settingBool("auth_token_login_enabled")
+func (s *Server) tokenLoginEnabled(ctx context.Context) bool {
+	return s.settingBool(ctx, "auth_token_login_enabled")
 }
 
 func (s *Server) loginData(csrf, errMsg string, r *http.Request) loginData {
 	_, inviteErr := r.Cookie(inviteCookie)
-	providers := s.enabledOAuthProviders()
+	providers := s.enabledOAuthProviders(r.Context())
 	oauthEnabled := len(providers) > 0
 	return loginData{
 		CSRF:          csrf,
@@ -116,7 +117,7 @@ func (s *Server) loginData(csrf, errMsg string, r *http.Request) loginData {
 		Invite:        inviteErr == nil,
 		Providers:     providers,
 		PasswordLogin: true,
-		TokenLogin:    s.tokenLoginEnabled() && !oauthEnabled,
+		TokenLogin:    s.tokenLoginEnabled(r.Context()) && !oauthEnabled,
 		OAuthEnabled:  oauthEnabled,
 	}
 }

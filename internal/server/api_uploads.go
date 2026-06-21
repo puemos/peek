@@ -38,7 +38,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxUpload := s.settingInt64("max_upload", 2<<20)
+	maxUpload := s.settingInt64(r.Context(), "max_upload", 2<<20)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1024)
 
@@ -86,7 +86,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Filename:       filename,
 		Password:       password,
 		Data:           data,
-		Limits:         s.uploadLimits(),
+		Limits:         s.uploadLimits(r.Context()),
 	})
 	if err != nil {
 		logUploadError(err)
@@ -124,9 +124,9 @@ func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
 		err  error
 	)
 	if owner.IsAdmin {
-		list, err = s.store.ListAllUploads()
+		list, err = s.store.ListAllUploads(r.Context())
 	} else {
-		list, err = s.store.ListUploadsByOwner(owner.AccountID)
+		list, err = s.store.ListUploadsByOwner(r.Context(), owner.AccountID)
 	}
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
@@ -158,7 +158,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
@@ -182,7 +182,7 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	u, err := s.store.GetUpload(slug)
+	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
@@ -212,7 +212,7 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		}
 		hash = string(h)
 	}
-	if err := s.store.SetUploadPassword(u.ID, hash); err != nil {
+	if err := s.store.SetUploadPassword(r.Context(), u.ID, hash); err != nil {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
@@ -229,7 +229,7 @@ func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	uploads, err := s.store.ListUploadsByOwner(owner.AccountID)
+	uploads, err := s.store.ListUploadsByOwner(r.Context(), owner.AccountID)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "db error")
 		return
