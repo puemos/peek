@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/puemos/peek/internal/db"
+	webui "github.com/puemos/peek/internal/web"
 )
 
 const testSecret = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -20,11 +22,16 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = store.Close() })
 	return &Server{
 		store:           store,
 		secret:          testSecret,
 		baseURL:         "http://peek.test",
+		renderer:        renderer,
 		loginLimiter:    newLimiter(100, time.Minute),
 		commentLimiter:  newLimiter(100, time.Minute),
 		cliLoginLimiter: newLimiter(100, time.Minute),
@@ -105,6 +112,52 @@ func TestResolveOAuthAccountRejectsUnverifiedEmail(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "verified") {
 		t.Fatalf("expected verified email error, got %v", err)
+	}
+}
+
+func TestOAuthStartErrorRendersLoginPage(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/oauth/google/start", nil)
+	req.SetPathValue("provider", "google")
+	rec := httptest.NewRecorder()
+
+	s.handleOAuthStart(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != webui.DashboardCSP {
+		t.Fatalf("csp = %q", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("cache-control = %q", got)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "OAuth provider is not configured.") {
+		t.Fatalf("rendered page did not include oauth error: %s", body)
+	}
+	if !strings.Contains(body, "Sign in") {
+		t.Fatalf("expected login template, got: %s", body)
+	}
+}
+
+func TestOAuthAccountErrorMessageHidesInternalFailures(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{err: errors.New("OAuth account must have a verified email"), want: "OAuth account must have a verified email."},
+		{err: errors.New("account disabled"), want: "This account is disabled."},
+		{err: errors.New("invite required"), want: "An invite is required for this account."},
+		{err: errors.New("invite not found"), want: "This invite is invalid or expired."},
+		{err: errors.New("account lookup failed: driver timeout"), want: "OAuth account could not be linked."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			if got := oauthAccountErrorMessage(tc.err); got != tc.want {
+				t.Fatalf("message = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

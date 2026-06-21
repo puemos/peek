@@ -1,21 +1,25 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"golang.org/x/oauth2"
+
+	webui "github.com/puemos/peek/internal/web"
 )
 
 func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 	p, err := s.oauthProviderConfig(r.PathValue("provider"))
 	if err != nil {
-		http.Error(w, "OAuth provider is not configured", http.StatusNotFound)
+		s.renderOAuthError(w, r, http.StatusNotFound, "OAuth provider is not configured.")
 		return
 	}
 	state, err := randID(24)
 	if err != nil {
-		http.Error(w, "state generation failed", http.StatusInternalServerError)
+		slog.Error("oauth state generation failed", "provider", p.Key, "err", err)
+		s.renderOAuthError(w, r, http.StatusInternalServerError, "OAuth login could not start.")
 		return
 	}
 	verifier := oauth2.GenerateVerifier()
@@ -34,41 +38,52 @@ func (s *Server) handleOAuthStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	p, err := s.oauthProviderConfig(r.PathValue("provider"))
 	if err != nil {
-		http.Error(w, "OAuth provider is not configured", http.StatusNotFound)
+		s.renderOAuthError(w, r, http.StatusNotFound, "OAuth provider is not configured.")
 		return
 	}
 	state, verifier, ok := s.parseOAuthFlowCookie(r, p.Key)
 	if !ok || state == "" || state != r.URL.Query().Get("state") {
-		http.Error(w, "OAuth state mismatch", http.StatusBadRequest)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusBadRequest, "OAuth session expired. Try signing in again.")
 		return
 	}
 	if e := r.URL.Query().Get("error"); e != "" {
-		http.Error(w, "OAuth denied: "+e, http.StatusUnauthorized)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusUnauthorized, "OAuth sign-in was denied.")
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
-		http.Error(w, "OAuth callback missing code", http.StatusBadRequest)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusBadRequest, "OAuth callback was missing a code.")
 		return
 	}
 	ctx := r.Context()
 	tok, err := s.oauth2Config(p).Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		http.Error(w, "OAuth token exchange failed", http.StatusBadGateway)
+		slog.Warn("oauth token exchange failed", "provider", p.Key, "err", err)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusBadGateway, "OAuth token exchange failed.")
 		return
 	}
 	profile, err := s.fetchOAuthProfile(ctx, p, tok)
 	if err != nil {
-		http.Error(w, "OAuth profile lookup failed: "+err.Error(), http.StatusBadGateway)
+		slog.Warn("oauth profile lookup failed", "provider", p.Key, "err", err)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusBadGateway, "OAuth profile lookup failed.")
 		return
 	}
 	account, err := s.resolveOAuthAccount(r, profile)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		slog.Warn("oauth account resolution failed", "provider", p.Key, "err", err)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusForbidden, oauthAccountErrorMessage(err))
 		return
 	}
 	if err := s.store.UpsertOAuthIdentity(account.ID, profile.Provider, profile.ProviderUserID, profile.Email, profile.Name); err != nil {
-		http.Error(w, "OAuth account link failed", http.StatusInternalServerError)
+		slog.Error("oauth account link failed", "provider", p.Key, "account_id", account.ID, "err", err)
+		s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
+		s.renderOAuthError(w, r, http.StatusInternalServerError, "OAuth account link failed.")
 		return
 	}
 	s.clearCookie(w, oauthCookieName(p.Key), "/oauth/"+p.Key)
@@ -76,4 +91,29 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	s.setWebSession(w, account.ID)
 	s.audit("oauth login provider=%s account=%d email=%q", p.Key, account.ID, account.Email)
 	http.Redirect(w, r, s.consumeNextPath(w, r), http.StatusSeeOther)
+}
+
+func (s *Server) renderOAuthError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	noCache(w)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
+	csrf := s.newCSRF(w)
+	s.renderHTML(w, status, webui.TemplateLogin, s.loginData(csrf, msg, r))
+}
+
+func oauthAccountErrorMessage(err error) string {
+	if err == nil {
+		return "OAuth account could not be linked."
+	}
+	switch err.Error() {
+	case "OAuth account must have a verified email":
+		return "OAuth account must have a verified email."
+	case "account disabled":
+		return "This account is disabled."
+	case "invite required":
+		return "An invite is required for this account."
+	case "invite not found", "invite does not match this account":
+		return "This invite is invalid or expired."
+	default:
+		return "OAuth account could not be linked."
+	}
 }
