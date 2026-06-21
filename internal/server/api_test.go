@@ -141,6 +141,51 @@ func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
 	}
 }
 
+func TestUploadRejectsUnsupportedContentType(t *testing.T) {
+	srv, adminToken, _ := newTestServer(t)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload", bytes.NewReader([]byte("<!DOCTYPE html><html></html>")))
+	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
+	uploadReq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(uploadReq)
+	if err != nil {
+		t.Fatalf("upload request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out["error"] != "unsupported content type" {
+		t.Fatalf("response = %+v", out)
+	}
+}
+
+func TestUploadAcceptsHTMLContentTypeWithParameters(t *testing.T) {
+	srv, adminToken, _ := newTestServer(t)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload", bytes.NewReader([]byte("<!DOCTYPE html><html><body></body></html>")))
+	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
+	uploadReq.Header.Set("Content-Type", "text/html; charset=utf-8")
+	resp, err := http.DefaultClient.Do(uploadReq)
+	if err != nil {
+		t.Fatalf("upload request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload failed: %d %s", resp.StatusCode, body)
+	}
+}
+
 func TestUploadAndListAndDelete(t *testing.T) {
 	srv, adminToken, dir := newTestServer(t)
 	ts := httptest.NewServer(srv.Handler())

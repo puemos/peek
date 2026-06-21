@@ -3,6 +3,7 @@ package server
 import (
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,9 +19,22 @@ type uploadResp struct {
 	URL  string `json:"url"`
 }
 
+type uploadBodyKind int
+
+const (
+	uploadBodyUnknown uploadBodyKind = iota
+	uploadBodyMultipart
+	uploadBodyRawHTML
+)
+
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	owner, ok := requireAPIToken(w, r)
 	if !ok {
+		return
+	}
+	bodyKind, ok := uploadBodyKindFromContentType(r.Header.Get("Content-Type"))
+	if !ok {
+		jsonError(w, http.StatusUnsupportedMediaType, "unsupported content type")
 		return
 	}
 
@@ -34,7 +48,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		password string
 	)
 
-	if ct := r.Header.Get("Content-Type"); strings.HasPrefix(ct, "multipart/form-data") {
+	if bodyKind == uploadBodyMultipart {
 		if err := r.ParseMultipartForm(maxUpload); err != nil {
 			jsonError(w, http.StatusBadRequest, "file too large or invalid form")
 			return
@@ -83,6 +97,21 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" file="+up.Filename+" size="+strconv.Itoa(up.Size))
 
 	jsonOK(w, uploadResp{Slug: up.Slug, URL: up.URL})
+}
+
+func uploadBodyKindFromContentType(contentType string) (uploadBodyKind, bool) {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return uploadBodyUnknown, false
+	}
+	switch strings.ToLower(mediaType) {
+	case "multipart/form-data":
+		return uploadBodyMultipart, true
+	case "text/html", "application/xhtml+xml":
+		return uploadBodyRawHTML, true
+	default:
+		return uploadBodyUnknown, false
+	}
 }
 
 func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
