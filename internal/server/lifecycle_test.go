@@ -86,12 +86,17 @@ func TestRetentionCleanupWorkerHonorsRuntimeSettingChanges(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	ticks := make(chan time.Time)
+	afterCleanup := make(chan struct{}, 2)
 	go func() {
 		defer close(done)
-		s.runRetentionCleanup(ctx, 5*time.Millisecond)
+		s.runRetentionCleanupLoop(ctx, ticks, func() {
+			afterCleanup <- struct{}{}
+		})
 	}()
 
-	time.Sleep(30 * time.Millisecond)
+	ticks <- time.Now()
+	<-afterCleanup
 	if deleted := storage.deletedSlugs(); len(deleted) != 0 {
 		t.Fatalf("storage deletes while retention disabled = %+v", deleted)
 	}
@@ -102,17 +107,10 @@ func TestRetentionCleanupWorkerHonorsRuntimeSettingChanges(t *testing.T) {
 	if err := store.SetSetting("retention_days", "1"); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for {
-		if _, err := store.GetUpload("runtime-page"); errors.Is(err, sql.ErrNoRows) {
-			break
-		} else if err != nil {
-			t.Fatalf("get upload: %v", err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("upload was not removed after retention was enabled; deletes=%+v", storage.deletedSlugs())
-		}
-		time.Sleep(10 * time.Millisecond)
+	ticks <- time.Now()
+	<-afterCleanup
+	if _, err := store.GetUpload("runtime-page"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("upload was not removed after retention was enabled; err=%v deletes=%+v", err, storage.deletedSlugs())
 	}
 
 	cancel()

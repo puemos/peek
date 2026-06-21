@@ -51,12 +51,19 @@ func (s *Server) runRetentionCleanup(ctx context.Context, interval time.Duration
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	s.runRetentionCleanupLoop(ctx, ticker.C, nil)
+}
+
+func (s *Server) runRetentionCleanupLoop(ctx context.Context, ticks <-chan time.Time, afterCleanup func()) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticks:
 			s.cleanupExpired(ctx)
+			if afterCleanup != nil {
+				afterCleanup()
+			}
 		}
 	}
 }
