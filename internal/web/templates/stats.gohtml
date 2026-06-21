@@ -14,6 +14,9 @@
   </div>
 </header>
 <main class="hn-dash-main">
+  {{if .Error}}
+  <div class="hn-flash hn-flash-err">{{.Error}}</div>
+  {{end}}
   <section class="hn-card">
     <h2>{{.Filename}}</h2>
     <div class="hn-stats-grid">
@@ -24,7 +27,9 @@
   </section>
   <section class="hn-card">
     <h3>Recent visits</h3>
-    {{if .Recent}}
+    {{if .Error}}
+    <div class="hn-empty"><p>Stats are unavailable.</p></div>
+    {{else if .Recent}}
     <div class="hn-table-wrap">
     <table class="hn-table">
       <thead><tr><th>When</th><th>Visitor</th><th>IP (hashed)</th><th>User agent</th></tr></thead>

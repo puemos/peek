@@ -103,6 +103,43 @@ func TestDashboardRendersGenericSuccessFlash(t *testing.T) {
 	}
 }
 
+func TestDashboardStatsReportsVisitQueryFailure(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	account, err := store.CreateAccount("user@example.test", "User", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateUpload("page", account.ID, 0, "page.html", 42, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Exec(`DROP TABLE visits`); err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := webui.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, renderer: renderer, secret: strings.Repeat("0", 64)}
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/stats/page", nil)
+	req.SetPathValue("slug", "page")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboardStats(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "stats could not be loaded") {
+		t.Fatalf("stats page did not report load failure: %s", rec.Body.String())
+	}
+}
+
 func TestDashboardDeleteStopsWhenDatabaseDeleteFails(t *testing.T) {
 	s, store, storage, accountID := newDashboardDeleteTestServer(t)
 	seedDashboardDeleteUpload(t, store, accountID)

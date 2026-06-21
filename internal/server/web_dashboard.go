@@ -189,8 +189,22 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	total, unique, _ := s.store.CountVisits(u.ID)
-	recent, _ := s.store.RecentVisits(u.ID, 100)
+	total, unique, err := s.store.CountVisits(u.ID)
+	if err != nil {
+		slog.Error("dashboard stats count failed", "slug", slug, "err", err)
+		s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
+			Slug: slug, Filename: u.Filename, Error: "stats could not be loaded",
+		})
+		return
+	}
+	recent, err := s.store.RecentVisits(u.ID, 100)
+	if err != nil {
+		slog.Error("dashboard stats visits failed", "slug", slug, "err", err)
+		s.renderHTML(w, http.StatusInternalServerError, webui.TemplateStats, statsData{
+			Slug: slug, Filename: u.Filename, Error: "stats could not be loaded",
+		})
+		return
+	}
 	visits := make([]statsVisit, 0, len(recent))
 	for _, v := range recent {
 		name := v.VisitorName

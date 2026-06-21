@@ -160,6 +160,7 @@ type StatsData struct {
 	TotalVisits    int
 	UniqueVisitors int
 	Recent         []StatsVisit
+	Error          string
 }
 
 type PageData struct {
