@@ -130,11 +130,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 func injectBridge(b []byte) []byte {
 	marker := []byte("</body>")
 	tag := []byte(`<script src="` + webui.AssetURL("bridge.js") + `"></script>`)
-	if idx := bytes.LastIndex(b, marker); idx >= 0 {
+	lower := bytes.ToLower(b)
+	if idx := bytes.LastIndex(lower, marker); idx >= 0 {
 		return append(append(b[:idx:idx], tag...), b[idx:]...)
 	}
 	marker2 := []byte("</html>")
-	if idx := bytes.LastIndex(b, marker2); idx >= 0 {
+	if idx := bytes.LastIndex(lower, marker2); idx >= 0 {
 		return append(append(b[:idx:idx], tag...), b[idx:]...)
 	}
 	return append(b, tag...)
