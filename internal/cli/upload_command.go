@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -82,26 +81,13 @@ func cmdUpload(args []string) error {
 
 	var resp *http.Response
 	if password != "" {
-		var buf bytes.Buffer
-		mw := multipart.NewWriter(&buf)
 		if name == "" {
 			name = filepath.Base(file)
 		}
-		fw, err := mw.CreateFormFile("file", name)
+		body, contentType := streamMultipartUpload(f, name, password)
+		resp, err = c.req("POST", "/api/upload", body, contentType)
 		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(fw, f); err != nil {
-			return err
-		}
-		if err := mw.WriteField("password", password); err != nil {
-			return err
-		}
-		if err := mw.Close(); err != nil {
-			return err
-		}
-		resp, err = c.req("POST", "/api/upload", &buf, mw.FormDataContentType())
-		if err != nil {
+			_ = body.Close()
 			return err
 		}
 	} else {
@@ -127,4 +113,31 @@ func cmdUpload(args []string) error {
 		fmt.Println("protected: yes")
 	}
 	return nil
+}
+
+func streamMultipartUpload(file io.Reader, filename, password string) (io.ReadCloser, string) {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		if err := writeMultipartUpload(mw, file, filename, password); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = pw.Close()
+	}()
+	return pr, mw.FormDataContentType()
+}
+
+func writeMultipartUpload(mw *multipart.Writer, file io.Reader, filename, password string) error {
+	fw, err := mw.CreateFormFile("file", filename)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(fw, file); err != nil {
+		return err
+	}
+	if err := mw.WriteField("password", password); err != nil {
+		return err
+	}
+	return mw.Close()
 }
