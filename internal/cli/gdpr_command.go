@@ -24,6 +24,9 @@ func cmdExport(args []string) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return decodeResp(resp, nil)
+	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
