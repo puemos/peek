@@ -17,6 +17,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/puemos/peek/internal/models"
+	webui "github.com/puemos/peek/internal/web"
 )
 
 const (
@@ -24,10 +25,7 @@ const (
 	nextCookie   = "hn_next"
 )
 
-type authProvider struct {
-	Key  string `json:"key"`
-	Name string `json:"name"`
-}
+type authProvider = webui.AuthProvider
 
 type oauthProfile struct {
 	Provider       string

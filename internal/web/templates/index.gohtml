@@ -1,0 +1,26 @@
+{{define "index"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+</head>
+<body>
+<div class="hn-welcome">
+  <div class="hn-welcome-box">
+    <h1>Peek</h1>
+    <p>Share HTML files and get a live preview link.<br>Upload via the dashboard or the CLI.</p>
+    <div class="hn-welcome-actions">
+      <a href="/dashboard" class="hn-welcome-primary">Open dashboard &rarr;</a>
+      <a href="/login" class="hn-welcome-secondary">Sign in</a>
+    </div>
+    <div class="hn-welcome-code">
+      <strong>CLI quick start:</strong><br>
+      <code>peek login --host {{.BaseURL}}</code><br>
+      <code>peek upload page.html</code>
+    </div>
+  </div>
+</div>
+</body>
+</html>{{end}}

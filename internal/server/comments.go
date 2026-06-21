@@ -43,6 +43,10 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
+		if owner.Disabled {
+			jsonError(w, http.StatusForbidden, "account disabled")
+			return
+		}
 		if u.OwnerAccountID != owner.AccountID && !owner.IsAdmin {
 			jsonError(w, http.StatusForbidden, "not owner")
 			return

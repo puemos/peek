@@ -1,14 +1,18 @@
 package server
 
 import (
-	"bytes"
 	"strings"
 	"testing"
+
+	webui "github.com/puemos/peek/internal/web"
 )
 
 func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
-	var body bytes.Buffer
-	err := dashboardTmpl.Execute(&body, dashData{
+	renderer, err := webui.NewRenderer(assetURL)
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	body, err := renderer.Execute(webui.TemplateDashboard, dashData{
 		CSRF:             "csrf",
 		User:             "admin",
 		UploadSuccess:    true,
@@ -23,7 +27,7 @@ func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute dashboard template: %v", err)
 	}
-	html := body.String()
+	html := string(body)
 	if strings.Contains(html, "onclick=") || strings.Contains(html, "onchange=") || strings.Contains(html, "onsubmit=") {
 		t.Fatalf("dashboard template contains inline event handler: %s", html)
 	}
@@ -33,16 +37,16 @@ func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
 	if strings.Contains(html, `onmouseover="alert(1)"`) {
 		t.Fatalf("dashboard template rendered executable injected attribute: %s", html)
 	}
-	if !strings.Contains(html, `<script src="/dashboard.js"></script>`) {
+	if !strings.Contains(html, `<script src="/dashboard.js?v=`) {
 		t.Fatalf("dashboard template did not include dashboard.js: %s", html)
 	}
 }
 
 func TestDashboardCSPRejectsInlineScript(t *testing.T) {
-	if strings.Contains(dashboardCSP, "'unsafe-inline'") {
-		t.Fatalf("dashboard CSP allows inline script/style: %s", dashboardCSP)
+	if strings.Contains(webui.DashboardCSP, "'unsafe-inline'") {
+		t.Fatalf("dashboard CSP allows inline script/style: %s", webui.DashboardCSP)
 	}
-	if !strings.Contains(dashboardCSP, "script-src 'self'") {
-		t.Fatalf("dashboard CSP does not pin scripts to self: %s", dashboardCSP)
+	if !strings.Contains(webui.DashboardCSP, "script-src 'self'") {
+		t.Fatalf("dashboard CSP does not pin scripts to self: %s", webui.DashboardCSP)
 	}
 }

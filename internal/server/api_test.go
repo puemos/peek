@@ -84,6 +84,63 @@ func TestAuthRejectionWithoutToken(t *testing.T) {
 	}
 }
 
+func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
+	dir := t.TempDir()
+	userToken := "user-token"
+	store, err := db.Open(filepath.Join(dir, "peek.db"))
+	if err != nil {
+		t.Fatalf("open test store: %v", err)
+	}
+	if err := store.CreateToken(userToken, "user", false, 0); err != nil {
+		t.Fatalf("seed user token: %v", err)
+	}
+	owner, err := store.GetToken(userToken)
+	if err != nil {
+		t.Fatalf("get user token: %v", err)
+	}
+	if err := store.CreateUpload("owned-page", owner.AccountID, owner.ID, "page.html", 42, ""); err != nil {
+		t.Fatalf("seed upload: %v", err)
+	}
+	upload, err := store.GetUpload("owned-page")
+	if err != nil {
+		t.Fatalf("get upload: %v", err)
+	}
+	if err := store.AddComment(upload.ID, "", "", "Ada", "visitor", "Looks good"); err != nil {
+		t.Fatalf("seed comment: %v", err)
+	}
+	if err := store.SetAccountDisabled(owner.AccountID, true); err != nil {
+		t.Fatalf("disable account: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close test store: %v", err)
+	}
+
+	srv, err := server.New(server.Config{
+		DataDir:   dir,
+		BaseURL:   "http://localhost:7700",
+		Secret:    strings.Repeat("ab", 32),
+		MaxUpload: 10 << 20,
+	})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/uploads/owned-page/comments", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("comments request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected disabled account to be forbidden, got %d %s", resp.StatusCode, body)
+	}
+}
+
 func TestUploadAndListAndDelete(t *testing.T) {
 	srv, adminToken, dir := newTestServer(t)
 	ts := httptest.NewServer(srv.Handler())

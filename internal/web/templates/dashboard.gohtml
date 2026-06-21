@@ -1,0 +1,186 @@
+{{define "dashboard"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard &mdash; Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body class="hn-dash">
+<header class="hn-dash-header">
+  <div class="hn-dash-header-inner">
+    <a href="/" class="hn-dash-logo">Peek</a>
+    <nav class="hn-dash-nav">
+      <span class="hn-dash-user">{{.User}}</span>
+      <form method="POST" action="/logout" class="hn-dash-logout">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit">Sign out</button>
+      </form>
+    </nav>
+  </div>
+</header>
+
+<main class="hn-dash-main">
+  {{if .UploadSuccess}}
+  <div class="hn-flash hn-flash-ok">
+    <span>Uploaded! Share link:</span>
+    <code>{{.UploadSuccessURL}}</code>
+    <button type="button" data-url="{{.UploadSuccessURL}}" class="hn-flash-copy hn-copy-absolute">Copy</button>
+  </div>
+  {{end}}
+  {{if .UploadError}}
+  <div class="hn-flash hn-flash-err">{{.UploadError}}</div>
+  {{end}}
+
+  <section class="hn-card">
+    <h2>Upload HTML</h2>
+    <form method="POST" action="/dashboard/upload" enctype="multipart/form-data" class="hn-upload-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="hn-tabs">
+        <label><input type="radio" name="mode" value="file" checked> Choose file</label>
+        <label><input type="radio" name="mode" value="paste"> Paste HTML</label>
+      </div>
+      <div id="hn-file-input">
+        <label class="hn-file-drop">
+          <input type="file" name="file" accept=".html,.htm,text/html">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Click to choose an HTML file</span>
+        </label>
+      </div>
+      <div id="hn-paste-input" hidden>
+        <textarea name="html" placeholder="<!doctype html>&#10;<html>&#10;  <body>&#10;    <h1>Hello</h1>&#10;  </body>&#10;</html>" rows="8"></textarea>
+      </div>
+      <div class="hn-upload-opts">
+        <input type="text" name="filename" placeholder="filename (optional)">
+        <input type="password" name="password" placeholder="password (optional)">
+      </div>
+      <button type="submit">Upload &amp; get link</button>
+    </form>
+  </section>
+
+  <section class="hn-card">
+    <h2>Your uploads <span class="hn-card-count">{{len .Uploads}}</span></h2>
+    {{if .Uploads}}
+    <div class="hn-table-wrap">
+    <table class="hn-table">
+      <thead><tr><th>Filename</th><th>Size</th><th>Protected</th><th>Created</th><th>Link</th><th></th></tr></thead>
+      <tbody>
+      {{range .Uploads}}
+        <tr>
+          <td class="hn-filename">{{.Filename}}</td>
+          <td class="hn-muted-cell">{{.SizeHuman}}</td>
+          <td>{{if .Protected}}<span class="hn-tag hn-tag-on">protected</span>{{else}}<span class="hn-tag">public</span>{{end}}</td>
+          <td class="hn-muted-cell">{{.CreatedHuman}}</td>
+          <td><a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative" title="Copy link">copy</button></td>
+          <td class="hn-actions">
+            <a href="/dashboard/stats/{{.Slug}}" class="hn-btn-sm">stats</a>
+            <form method="POST" action="/dashboard/delete/{{.Slug}}" data-confirm="Delete {{.Filename}}? This cannot be undone.">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <button type="submit" class="hn-btn-sm hn-btn-danger">delete</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <div class="hn-empty">
+      <p>No uploads yet.</p>
+      <p class="hn-muted">Upload an HTML file or paste HTML above to get a shareable link.</p>
+    </div>
+    {{end}}
+  </section>
+
+  {{if .IsAdmin}}
+  <section class="hn-card">
+    <h2>Invitations <span class="hn-card-count">{{len .Invites}}</span></h2>
+    <form method="POST" action="/dashboard/invites" class="hn-inline-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="email" name="email" placeholder="person@example.com" required>
+      <button type="submit">Create invite</button>
+    </form>
+    {{if .Invites}}
+    <div class="hn-table-wrap">
+    <table class="hn-table">
+      <thead><tr><th>Email</th><th>Status</th><th>Expires</th><th>Link</th><th></th></tr></thead>
+      <tbody>
+      {{range .Invites}}
+        <tr>
+          <td>{{.Email}}</td>
+          <td><span class="hn-tag {{if eq .Status "pending"}}hn-tag-on{{end}}">{{.Status}}</span></td>
+          <td class="hn-muted-cell">{{.Expires}}</td>
+          <td>{{if .Link}}<code>{{.Link}}</code> <button type="button" data-url="{{.Link}}" class="hn-copy-btn hn-copy-absolute">copy</button>{{else}}<span class="hn-muted-cell">{{.Status}}</span>{{end}}</td>
+          <td class="hn-actions">
+            {{if .CanRevoke}}
+            <form method="POST" action="/dashboard/invites/revoke/{{.ID}}">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <button type="submit" class="hn-btn-sm hn-btn-danger">revoke</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+  </section>
+
+  <section class="hn-card">
+    <h2>Users <span class="hn-card-count">{{len .Accounts}}</span></h2>
+    <div class="hn-table-wrap">
+    <table class="hn-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Admin</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {{range .Accounts}}
+        <tr>
+          <td>{{.Name}}{{if .IsSelf}} <span class="hn-muted-cell">(you)</span>{{end}}</td>
+          <td class="hn-muted-cell">{{if .Email}}{{.Email}}{{else}}token-only{{end}}</td>
+          <td>{{if .Admin}}<span class="hn-tag hn-tag-on">admin</span>{{else}}<span class="hn-tag">user</span>{{end}}</td>
+          <td>{{if .Disabled}}<span class="hn-tag hn-tag-danger">disabled</span>{{else}}<span class="hn-tag hn-tag-on">active</span>{{end}}</td>
+          <td class="hn-actions">
+            <form method="POST" action="/dashboard/users/{{.ID}}/admin">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="admin" value="{{if .Admin}}false{{else}}true{{end}}">
+              <button type="submit" class="hn-btn-sm">{{if .Admin}}remove admin{{else}}make admin{{end}}</button>
+            </form>
+            <form method="POST" action="/dashboard/users/{{.ID}}/disabled">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+              <button type="submit" class="hn-btn-sm hn-btn-danger">{{if .Disabled}}enable{{else}}disable{{end}}</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="hn-card">
+    <h2>Settings</h2>
+    <form method="POST" action="/dashboard/settings" class="hn-settings-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="hn-settings-grid">
+        {{range .SettingsMeta}}
+        <label>
+          <span>{{.Label}}{{if .IsStartup}} <em>(restart to apply)</em>{{end}}</span>
+          {{if .IsBool}}
+          <input type="checkbox" name="{{.Key}}" value="true" {{if .Value}}checked{{end}}>
+          {{else}}
+          <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off">
+          {{end}}
+          <span class="hn-muted">{{.Description}}</span>
+        </label>
+        {{end}}
+      </div>
+      <button type="submit">Save settings</button>
+    </form>
+  </section>
+  {{end}}
+</main>
+<script src="{{asset "dashboard.js"}}"></script>
+</body>
+</html>{{end}}

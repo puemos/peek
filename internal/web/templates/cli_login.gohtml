@@ -1,0 +1,24 @@
+{{define "cli-login"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI login &mdash; Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body>
+<div class="hn-welcome">
+  <div class="hn-gate-card">
+    <form method="POST" action="/cli-login/{{.Code}}" class="hn-gate-form">
+      <h2>Approve CLI login</h2>
+      <p>Code <strong>{{.Code}}</strong> will receive an API token for {{.User}}.</p>
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button type="submit" name="decision" value="approve">Approve</button>
+      <button type="submit" name="decision" value="deny" class="hn-secondary-btn">Deny</button>
+      {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
+    </form>
+  </div>
+</div>
+</body>
+</html>{{end}}

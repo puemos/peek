@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/puemos/peek/internal/db"
+	webui "github.com/puemos/peek/internal/web"
 )
 
 const (
@@ -48,12 +49,13 @@ type Config struct {
 }
 
 type Server struct {
-	store   *db.Store
-	secret  string
-	baseURL string
-	dataDir string
-	storage Storage
-	secure  bool
+	store    *db.Store
+	secret   string
+	baseURL  string
+	dataDir  string
+	storage  Storage
+	renderer *webui.Renderer
+	secure   bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -115,6 +117,11 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
+	renderer, err := webui.NewRenderer(assetURL)
+	if err != nil {
+		return nil, err
+	}
+
 	storageBackend, _ := store.GetSetting("storage")
 	if storageBackend == "" {
 		storageBackend = cfg.Storage
@@ -153,6 +160,7 @@ func New(cfg Config) (*Server, error) {
 		baseURL:                baseURL,
 		dataDir:                cfg.DataDir,
 		storage:                st,
+		renderer:               renderer,
 		secure:                 secure,
 		ctx:                    ctx,
 		cancel:                 cancel,

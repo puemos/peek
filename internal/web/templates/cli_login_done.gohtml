@@ -1,0 +1,20 @@
+{{define "cli-login-done"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI login &mdash; Peek</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body>
+<div class="hn-welcome">
+  <div class="hn-gate-card">
+    <div class="hn-gate-form">
+      <h2>{{.Title}}</h2>
+      <p>{{.Message}}</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>{{end}}

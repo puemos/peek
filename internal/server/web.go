@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,405 +13,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/puemos/peek/internal/models"
+	webui "github.com/puemos/peek/internal/web"
 )
 
 const (
 	sessionCookie = "hn_session"
 	csrfCookie    = "hn_csrf"
 )
-
-// dashboardCSP is the Content-Security-Policy for the management UI.
-// It restricts all resources to same-origin, with no inline scripts/styles
-// beyond what the templates use (none; all JS/CSS is served as static assets).
-const dashboardCSP = "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
-
-// --- templates ---
-
-var setupTmpl = template.Must(template.New("setup").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Set up Peek</title>
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/dashboard.css">
-</head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-  <form method="POST" action="/setup" class="hn-gate-form">
-    <h2>Set up Peek</h2>
-    <p>Create the first admin account.</p>
-    <input type="email" name="email" placeholder="Admin email" required autofocus autocomplete="email">
-    <input type="text" name="name" placeholder="Name" autocomplete="name">
-    <input type="password" name="password" placeholder="Password" required autocomplete="new-password">
-    <input type="hidden" name="code" value="{{.Code}}">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button type="submit">Create admin</button>
-    {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
-  </form>
-  </div>
-</div>
-</body>
-</html>`))
-
-var loginTmpl = template.Must(template.New("login").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in &mdash; Peek</title>
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/dashboard.css">
-</head>
-<body>
-<div class="hn-welcome">
-  <div class="hn-gate-card">
-  {{if .Invite}}<p class="hn-login-note">Choose a provider to accept your invite.</p>{{end}}
-  {{if .Providers}}
-  <div class="hn-oauth-list">
-    {{range .Providers}}<a href="/oauth/{{.Key}}/start" class="hn-oauth-btn">Continue with {{.Name}}</a>{{end}}
-  </div>
-  {{if or .PasswordLogin .TokenLogin}}<div class="hn-login-sep"><span>or</span></div>{{end}}
-  {{end}}
-  {{if .PasswordLogin}}
-  <form method="POST" action="/login" class="hn-gate-form">
-    <h2>Peek</h2>
-    <p>{{if .OAuthEnabled}}Admin sign in{{else}}Sign in with email and password{{end}}</p>
-    <input type="hidden" name="method" value="password">
-    <input type="email" name="email" placeholder="Email" required autofocus autocomplete="email">
-    <input type="password" name="password" placeholder="Password" required autocomplete="current-password">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button type="submit">Sign in &rarr;</button>
-  </form>
-  {{end}}
-  {{if .TokenLogin}}
-  {{if .PasswordLogin}}<div class="hn-login-sep"><span>token</span></div>{{end}}
-  <form method="POST" action="/login" class="hn-gate-form">
-    <h2>Peek</h2>
-    <p>Enter your access token to manage uploads.</p>
-    <input type="hidden" name="method" value="token">
-    <input type="password" name="token" placeholder="Access token" required {{if not .PasswordLogin}}autofocus{{end}} autocomplete="off">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button type="submit">Sign in &rarr;</button>
-  </form>
-  {{end}}
-  {{if .Error}}<p class="hn-err">{{.Error}}</p>{{end}}
-  </div>
-</div>
-</body>
-</html>`))
-
-var dashboardTmpl = template.Must(template.New("dashboard").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard &mdash; Peek</title>
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/dashboard.css">
-</head>
-<body class="hn-dash">
-<header class="hn-dash-header">
-  <div class="hn-dash-header-inner">
-    <a href="/" class="hn-dash-logo">Peek</a>
-    <nav class="hn-dash-nav">
-      <span class="hn-dash-user">{{.User}}</span>
-      <form method="POST" action="/logout" class="hn-dash-logout">
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button type="submit">Sign out</button>
-      </form>
-    </nav>
-  </div>
-</header>
-
-<main class="hn-dash-main">
-  {{if .UploadSuccess}}
-  <div class="hn-flash hn-flash-ok">
-    <span>Uploaded! Share link:</span>
-    <code>{{.UploadSuccessURL}}</code>
-    <button type="button" data-url="{{.UploadSuccessURL}}" class="hn-flash-copy hn-copy-absolute">Copy</button>
-  </div>
-  {{end}}
-  {{if .UploadError}}
-  <div class="hn-flash hn-flash-err">{{.UploadError}}</div>
-  {{end}}
-
-  <section class="hn-card">
-    <h2>Upload HTML</h2>
-    <form method="POST" action="/dashboard/upload" enctype="multipart/form-data" class="hn-upload-form">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <div class="hn-tabs">
-        <label><input type="radio" name="mode" value="file" checked> Choose file</label>
-        <label><input type="radio" name="mode" value="paste"> Paste HTML</label>
-      </div>
-      <div id="hn-file-input">
-        <label class="hn-file-drop">
-          <input type="file" name="file" accept=".html,.htm,text/html">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>Click to choose an HTML file</span>
-        </label>
-      </div>
-      <div id="hn-paste-input" hidden>
-        <textarea name="html" placeholder="<!doctype html>&#10;<html>&#10;  <body>&#10;    <h1>Hello</h1>&#10;  </body>&#10;</html>" rows="8"></textarea>
-      </div>
-      <div class="hn-upload-opts">
-        <input type="text" name="filename" placeholder="filename (optional)">
-        <input type="password" name="password" placeholder="password (optional)">
-      </div>
-      <button type="submit">Upload &amp; get link</button>
-    </form>
-  </section>
-
-  <section class="hn-card">
-    <h2>Your uploads <span class="hn-card-count">{{len .Uploads}}</span></h2>
-    {{if .Uploads}}
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>Filename</th><th>Size</th><th>Protected</th><th>Created</th><th>Link</th><th></th></tr></thead>
-      <tbody>
-      {{range .Uploads}}
-        <tr>
-          <td class="hn-filename">{{.Filename}}</td>
-          <td class="hn-muted-cell">{{.SizeHuman}}</td>
-          <td>{{if .Protected}}<span class="hn-tag hn-tag-on">protected</span>{{else}}<span class="hn-tag">public</span>{{end}}</td>
-          <td class="hn-muted-cell">{{.CreatedHuman}}</td>
-          <td><a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative" title="Copy link">copy</button></td>
-          <td class="hn-actions">
-            <a href="/dashboard/stats/{{.Slug}}" class="hn-btn-sm">stats</a>
-            <form method="POST" action="/dashboard/delete/{{.Slug}}" data-confirm="Delete {{.Filename}}? This cannot be undone.">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <button type="submit" class="hn-btn-sm hn-btn-danger">delete</button>
-            </form>
-          </td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
-    </div>
-    {{else}}
-    <div class="hn-empty">
-      <p>No uploads yet.</p>
-      <p class="hn-muted">Upload an HTML file or paste HTML above to get a shareable link.</p>
-    </div>
-    {{end}}
-  </section>
-
-  {{if .IsAdmin}}
-  <section class="hn-card">
-    <h2>Invitations <span class="hn-card-count">{{len .Invites}}</span></h2>
-    <form method="POST" action="/dashboard/invites" class="hn-inline-form">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <input type="email" name="email" placeholder="person@example.com" required>
-      <button type="submit">Create invite</button>
-    </form>
-    {{if .Invites}}
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>Email</th><th>Status</th><th>Expires</th><th>Link</th><th></th></tr></thead>
-      <tbody>
-      {{range .Invites}}
-        <tr>
-          <td>{{.Email}}</td>
-          <td><span class="hn-tag {{if eq .Status "pending"}}hn-tag-on{{end}}">{{.Status}}</span></td>
-          <td class="hn-muted-cell">{{.Expires}}</td>
-          <td>{{if .Link}}<code>{{.Link}}</code> <button type="button" data-url="{{.Link}}" class="hn-copy-btn hn-copy-absolute">copy</button>{{else}}<span class="hn-muted-cell">{{.Status}}</span>{{end}}</td>
-          <td class="hn-actions">
-            {{if .CanRevoke}}
-            <form method="POST" action="/dashboard/invites/revoke/{{.ID}}">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <button type="submit" class="hn-btn-sm hn-btn-danger">revoke</button>
-            </form>
-            {{end}}
-          </td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
-    </div>
-    {{end}}
-  </section>
-
-  <section class="hn-card">
-    <h2>Users <span class="hn-card-count">{{len .Accounts}}</span></h2>
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>Name</th><th>Email</th><th>Admin</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-      {{range .Accounts}}
-        <tr>
-          <td>{{.Name}}{{if .IsSelf}} <span class="hn-muted-cell">(you)</span>{{end}}</td>
-          <td class="hn-muted-cell">{{if .Email}}{{.Email}}{{else}}token-only{{end}}</td>
-          <td>{{if .Admin}}<span class="hn-tag hn-tag-on">admin</span>{{else}}<span class="hn-tag">user</span>{{end}}</td>
-          <td>{{if .Disabled}}<span class="hn-tag hn-tag-danger">disabled</span>{{else}}<span class="hn-tag hn-tag-on">active</span>{{end}}</td>
-          <td class="hn-actions">
-            <form method="POST" action="/dashboard/users/{{.ID}}/admin">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <input type="hidden" name="admin" value="{{if .Admin}}false{{else}}true{{end}}">
-              <button type="submit" class="hn-btn-sm">{{if .Admin}}remove admin{{else}}make admin{{end}}</button>
-            </form>
-            <form method="POST" action="/dashboard/users/{{.ID}}/disabled">
-              <input type="hidden" name="csrf" value="{{$.CSRF}}">
-              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
-              <button type="submit" class="hn-btn-sm hn-btn-danger">{{if .Disabled}}enable{{else}}disable{{end}}</button>
-            </form>
-          </td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
-    </div>
-  </section>
-
-  <section class="hn-card">
-    <h2>Settings</h2>
-    <form method="POST" action="/dashboard/settings" class="hn-settings-form">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <div class="hn-settings-grid">
-        {{range .SettingsMeta}}
-        <label>
-          <span>{{.Label}}{{if .IsStartup}} <em>(restart to apply)</em>{{end}}</span>
-          {{if .IsBool}}
-          <input type="checkbox" name="{{.Key}}" value="true" {{if .Value}}checked{{end}}>
-          {{else}}
-          <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off">
-          {{end}}
-          <span class="hn-muted">{{.Description}}</span>
-        </label>
-        {{end}}
-      </div>
-      <button type="submit">Save settings</button>
-    </form>
-  </section>
-  {{end}}
-</main>
-<script src="/dashboard.js"></script>
-</body>
-</html>`))
-
-var statsTmpl = template.Must(template.New("stats").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stats &mdash; {{.Filename}}</title>
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/dashboard.css">
-</head>
-<body class="hn-dash">
-<header class="hn-dash-header">
-  <div class="hn-dash-header-inner">
-    <a href="/dashboard" class="hn-dash-logo">&larr; Dashboard</a>
-  </div>
-</header>
-<main class="hn-dash-main">
-  <section class="hn-card">
-    <h2>{{.Filename}}</h2>
-    <div class="hn-stats-grid">
-      <div class="hn-stat"><span class="hn-stat-num">{{.TotalVisits}}</span><span class="hn-stat-label">total visits</span></div>
-      <div class="hn-stat"><span class="hn-stat-num">{{.UniqueVisitors}}</span><span class="hn-stat-label">unique visitors</span></div>
-    </div>
-    <p class="hn-muted">Share link: <a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative">copy</button></p>
-  </section>
-  <section class="hn-card">
-    <h3>Recent visits</h3>
-    {{if .Recent}}
-    <div class="hn-table-wrap">
-    <table class="hn-table">
-      <thead><tr><th>When</th><th>Visitor</th><th>IP (hashed)</th><th>User agent</th></tr></thead>
-      <tbody>
-      {{range .Recent}}
-        <tr>
-          <td class="hn-muted-cell">{{.WhenHuman}}</td>
-          <td>{{if .Name}}{{.Name}}{{else}}<span class="hn-muted-cell">(anonymous)</span>{{end}}</td>
-          <td class="hn-muted-cell">{{.IP}}</td>
-          <td class="hn-ua">{{.UA}}</td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
-    </div>
-    {{else}}
-    <div class="hn-empty"><p>No visits yet.</p><p class="hn-muted">Share the link to start collecting analytics.</p></div>
-    {{end}}
-  </section>
-</main>
-<script src="/dashboard.js"></script>
-</body>
-</html>`))
-
-// --- types for templates ---
-
-type dashUpload struct {
-	Slug         string
-	Filename     string
-	SizeHuman    string
-	Protected    bool
-	CreatedHuman string
-}
-
-type statsVisit struct {
-	Name      string
-	IP        string
-	UA        string
-	WhenHuman string
-}
-
-type setupData struct {
-	CSRF  string
-	Code  string
-	Error string
-}
-
-type inviteDashRow struct {
-	ID        int64
-	Email     string
-	Status    string
-	Expires   string
-	Link      string
-	CanRevoke bool
-}
-
-type accountDashRow struct {
-	ID       int64
-	Name     string
-	Email    string
-	Admin    bool
-	Disabled bool
-	IsSelf   bool
-}
-
-type dashData struct {
-	CSRF             string
-	User             string
-	IsAdmin          bool
-	Settings         map[string]string
-	SettingsMeta     []settingsRow
-	Invites          []inviteDashRow
-	Accounts         []accountDashRow
-	Uploads          []dashUpload
-	UploadError      string
-	UploadSuccess    bool
-	UploadSuccessURL string
-}
-
-type statsData struct {
-	Slug           string
-	Filename       string
-	TotalVisits    int
-	UniqueVisitors int
-	Recent         []statsVisit
-}
-
-type loginData struct {
-	CSRF          string
-	Error         string
-	Invite        bool
-	Providers     []authProvider
-	PasswordLogin bool
-	TokenLogin    bool
-	OAuthEnabled  bool
-}
 
 // --- helpers ---
 
@@ -428,7 +35,7 @@ func dashboardError(w http.ResponseWriter, r *http.Request, msg string) {
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
-	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	if !s.setupRequired() {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
@@ -443,42 +50,42 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data.Error = "Use the setup URL printed by the server."
 		}
-		setupTmpl.Execute(w, data)
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, data)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Error: "Invalid form."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Error: "Invalid form."})
 		return
 	}
 	code := strings.TrimSpace(r.FormValue("code"))
 	if !s.validateCSRF(r, w, r.FormValue("csrf")) || !s.validSetupCode(code) {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Error: "Invalid setup session."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Error: "Invalid setup session."})
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(r.FormValue("email")))
 	name := strings.TrimSpace(r.FormValue("name"))
 	password := r.FormValue("password")
 	if email == "" || !strings.Contains(email, "@") {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Admin email is required."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Admin email is required."})
 		return
 	}
 	if password == "" {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password is required."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password is required."})
 		return
 	}
 	if !validatePasswordLength(password) {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password must be 72 characters or fewer."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Password must be 72 characters or fewer."})
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Could not create password."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Could not create password."})
 		return
 	}
 	account, err := s.store.CreateAccountWithPassword(email, name, string(hash), true)
 	if err != nil {
-		setupTmpl.Execute(w, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Could not create admin account."})
+		s.renderHTML(w, http.StatusOK, webui.TemplateSetup, setupData{CSRF: s.newCSRF(w), Code: code, Error: "Could not create admin account."})
 		return
 	}
 	s.clearSetupCode()
@@ -489,21 +96,21 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
-	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	if s.setupRequired() {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
 	if r.Method == "GET" {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, "", r))
+		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "", r))
 		return
 	}
 	// POST
 	r.ParseForm()
 	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, "Invalid session.", r))
+		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid session.", r))
 		return
 	}
 
@@ -522,7 +129,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		csrf := s.newCSRF(w)
-		loginTmpl.Execute(w, s.loginData(csrf, "Invalid credentials.", r))
+		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid credentials.", r))
 		return
 	}
 	s.setWebSession(w, accountID)
@@ -604,7 +211,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
-	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	if s.setupRequired() {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
@@ -651,8 +258,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		dashData_.UploadSuccess = true
 		dashData_.UploadSuccessURL = url
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	dashboardTmpl.Execute(w, dashData_)
+	s.renderHTML(w, http.StatusOK, webui.TemplateDashboard, dashData_)
 }
 
 func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
@@ -755,7 +361,7 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 	noCache(w)
-	w.Header().Set("Content-Security-Policy", dashboardCSP)
+	w.Header().Set("Content-Security-Policy", webui.DashboardCSP)
 	owner, ok := s.webAuth(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -784,8 +390,7 @@ func (s *Server) handleDashboardStats(w http.ResponseWriter, r *http.Request) {
 			WhenHuman: v.VisitedAt.Format("2006-01-02 15:04"),
 		})
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	statsTmpl.Execute(w, statsData{
+	s.renderHTML(w, http.StatusOK, webui.TemplateStats, statsData{
 		Slug: slug, Filename: u.Filename,
 		TotalVisits: total, UniqueVisitors: unique, Recent: visits,
 	})

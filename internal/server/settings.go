@@ -5,17 +5,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	webui "github.com/puemos/peek/internal/web"
 )
 
-type settingsRow struct {
-	Key         string `json:"key"`
-	Value       string `json:"value"`
-	Label       string `json:"label"`
-	Description string `json:"description"`
-	IsSecret    bool   `json:"is_secret"`
-	IsStartup   bool   `json:"is_startup"`
-	IsBool      bool   `json:"is_bool"`
-}
+type settingsRow = webui.SettingRow
 
 var settingsMeta = map[string]settingsRow{
 	"auth_token_login_enabled":   {Label: "Access token login", Description: "Allow signing in to the web dashboard with an access token", IsBool: true},

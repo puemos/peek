@@ -1,0 +1,50 @@
+{{define "stats"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stats &mdash; {{.Filename}}</title>
+<link rel="stylesheet" href="{{asset "style.css"}}">
+<link rel="stylesheet" href="{{asset "dashboard.css"}}">
+</head>
+<body class="hn-dash">
+<header class="hn-dash-header">
+  <div class="hn-dash-header-inner">
+    <a href="/dashboard" class="hn-dash-logo">&larr; Dashboard</a>
+  </div>
+</header>
+<main class="hn-dash-main">
+  <section class="hn-card">
+    <h2>{{.Filename}}</h2>
+    <div class="hn-stats-grid">
+      <div class="hn-stat"><span class="hn-stat-num">{{.TotalVisits}}</span><span class="hn-stat-label">total visits</span></div>
+      <div class="hn-stat"><span class="hn-stat-num">{{.UniqueVisitors}}</span><span class="hn-stat-label">unique visitors</span></div>
+    </div>
+    <p class="hn-muted">Share link: <a href="/p/{{.Slug}}" target="_blank" class="hn-link">/p/{{.Slug}}</a> <button type="button" data-url="/p/{{.Slug}}" class="hn-copy-btn hn-copy-relative">copy</button></p>
+  </section>
+  <section class="hn-card">
+    <h3>Recent visits</h3>
+    {{if .Recent}}
+    <div class="hn-table-wrap">
+    <table class="hn-table">
+      <thead><tr><th>When</th><th>Visitor</th><th>IP (hashed)</th><th>User agent</th></tr></thead>
+      <tbody>
+      {{range .Recent}}
+        <tr>
+          <td class="hn-muted-cell">{{.WhenHuman}}</td>
+          <td>{{if .Name}}{{.Name}}{{else}}<span class="hn-muted-cell">(anonymous)</span>{{end}}</td>
+          <td class="hn-muted-cell">{{.IP}}</td>
+          <td class="hn-ua">{{.UA}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <div class="hn-empty"><p>No visits yet.</p><p class="hn-muted">Share the link to start collecting analytics.</p></div>
+    {{end}}
+  </section>
+</main>
+<script src="{{asset "dashboard.js"}}"></script>
+</body>
+</html>{{end}}
