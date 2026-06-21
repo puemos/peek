@@ -36,16 +36,22 @@ func TestDashboardTemplateHasNoInlineScriptExecution(t *testing.T) {
 	if strings.Contains(html, `onmouseover="alert(1)"`) {
 		t.Fatalf("dashboard template rendered executable injected attribute: %s", html)
 	}
-	if !strings.Contains(html, `<script src="/dashboard.js?v=`) {
-		t.Fatalf("dashboard template did not include dashboard.js: %s", html)
+	if !strings.Contains(html, `<script src="/alpine.min.js?v=`) {
+		t.Fatalf("dashboard template did not include alpine.min.js: %s", html)
+	}
+	if !strings.Contains(html, `<script src="/dashboard-alpine.js?v=`) {
+		t.Fatalf("dashboard template did not include dashboard-alpine.js: %s", html)
 	}
 }
 
-func TestDashboardCSPRejectsInlineScript(t *testing.T) {
-	if strings.Contains(webui.DashboardCSP, "'unsafe-inline'") {
-		t.Fatalf("dashboard CSP allows inline script/style: %s", webui.DashboardCSP)
-	}
+func TestDashboardCSPRestrictsScriptsToSelf(t *testing.T) {
 	if !strings.Contains(webui.DashboardCSP, "script-src 'self'") {
 		t.Fatalf("dashboard CSP does not pin scripts to self: %s", webui.DashboardCSP)
+	}
+	if !strings.Contains(webui.DashboardCSP, "'unsafe-eval'") {
+		t.Fatalf("dashboard CSP must allow unsafe-eval for Alpine.js expression evaluation: %s", webui.DashboardCSP)
+	}
+	if !strings.Contains(webui.DashboardCSP, "style-src 'self' 'unsafe-inline'") {
+		t.Fatalf("dashboard CSP must allow unsafe-inline for styles (Alpine.js transitions): %s", webui.DashboardCSP)
 	}
 }

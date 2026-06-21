@@ -10,7 +10,7 @@
 (function () {
   "use strict";
 
-  var ACCENT = "#5e6ad2";
+  var ACCENT = "#1677e8";
   var supportsHL = !!(window.Highlight && window.CSS && CSS.highlights);
   var state = {
     modeOn: false,
@@ -28,22 +28,22 @@
       "#hn-pin-layer{position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483000}" +
       ".hn-pin{position:absolute;display:flex;align-items:center;justify-content:center;" +
         "width:24px;height:24px;padding:0;border-radius:50%;box-sizing:border-box;" +
-        "background:" + ACCENT + ";color:#fff;font:600 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
-        "letter-spacing:0;box-shadow:0 2px 8px rgba(0,0,0,.35),0 0 0 2px rgba(255,255,255,.9);" +
+        "background:" + ACCENT + ";color:#fff;font:700 12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
+        "letter-spacing:0;box-shadow:0 2px 8px rgba(15,23,42,.28),0 0 0 2px rgba(255,255,255,.95),inset 0 1px 0 rgba(255,255,255,.35);" +
         "cursor:pointer;pointer-events:auto;transform:translate(-50%,-50%);transition:transform .12s ease;" +
         "-webkit-font-smoothing:antialiased;user-select:none}" +
       ".hn-pin:hover{transform:translate(-50%,-50%) scale(1.12)}" +
       ".hn-hover-outline{outline:2px solid " + ACCENT + " !important;outline-offset:1px !important;cursor:crosshair}" +
       ".hn-pulse{animation:hn-pulse 1.2s ease-out 1}" +
-      "@keyframes hn-pulse{0%{box-shadow:0 0 0 0 rgba(94,106,210,.55)}100%{box-shadow:0 0 0 14px rgba(94,106,210,0)}}" +
-      "::highlight(hn-highlight){background-color:rgba(94,106,210,.24);color:inherit}" +
-      "::highlight(hn-highlight-active){background-color:rgba(94,106,210,.5);color:inherit}" +
+      "@keyframes hn-pulse{0%{box-shadow:0 0 0 0 rgba(22,119,232,.42)}100%{box-shadow:0 0 0 14px rgba(22,119,232,0)}}" +
+      "::highlight(hn-highlight){background-color:rgba(22,119,232,.18);color:inherit}" +
+      "::highlight(hn-highlight-active){background-color:rgba(22,119,232,.36);color:inherit}" +
       ".hn-sel-btn{position:fixed;z-index:2147483600;display:flex;align-items:center;gap:6px;" +
-        "height:32px;padding:0 13px;border:0;border-radius:999px;background:" + ACCENT + ";color:#fff;" +
+        "height:34px;padding:0 13px;border:1px solid #0d73df;border-radius:11px;background:linear-gradient(#3393ff,#1677e8);color:#fff;" +
         "font:600 13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
-        "box-shadow:0 6px 20px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.12);cursor:pointer;" +
+        "box-shadow:0 2px 4px rgba(15,23,42,.24),inset 0 1px 0 rgba(255,255,255,.36);cursor:pointer;" +
         "pointer-events:auto;white-space:nowrap;-webkit-font-smoothing:antialiased}" +
-      ".hn-sel-btn:hover{background:#6872e5}";
+      ".hn-sel-btn:hover{border-color:#0868cc;background:linear-gradient(#2b8af2,#126fda)}";
     var style = document.createElement("style");
     style.id = "hn-style";
     style.textContent = css;
@@ -198,7 +198,9 @@
       var selector = uniqueSelector(anchor) || "body";
       var rr = range.getBoundingClientRect();
       var rect = { top: rr.top, left: rr.left, right: rr.right, bottom: rr.bottom, width: rr.width, height: rr.height };
-      parent.postMessage({ hn: "pick", selector: selector, element_text: text, anchor_kind: "text", rect: rect }, "*");
+      var br = state.selBtn.getBoundingClientRect();
+      var triggerRect = { top: br.top, left: br.left, right: br.right, bottom: br.bottom, width: br.width, height: br.height };
+      parent.postMessage({ hn: "pick", selector: selector, element_text: text, anchor_kind: "text", rect: rect, trigger_rect: triggerRect }, "*");
       hideSelButton();
       sel.removeAllRanges();
     });
@@ -252,7 +254,8 @@
       var pin = document.createElement("div");
       pin.className = "hn-pin";
       pin.textContent = it.n;
-      pin.title = "Comment " + it.n;
+      pin.title = (it.author ? it.author + " · " : "") + "Comment " + it.n;
+      if (it.color) pin.style.background = it.color;
       pin.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation();

@@ -48,13 +48,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	allSettings := s.dashboardSettingsMap(r.Context())
 	sortedMeta := dashboardSettingsRows(allSettings)
+	settingsPanel := dashboardSettingsPanel(allSettings)
 	dashData_ := dashData{
-		CSRF:         csrf,
-		User:         owner.Name,
-		IsAdmin:      owner.IsAdmin,
-		Settings:     allSettings,
-		SettingsMeta: sortedMeta,
-		Uploads:      uploads,
+		CSRF:          csrf,
+		User:          owner.Name,
+		IsAdmin:       owner.IsAdmin,
+		Settings:      allSettings,
+		SettingsMeta:  sortedMeta,
+		SettingsPanel: settingsPanel,
+		Uploads:       uploads,
 	}
 	if listErr != nil {
 		dashData_.UploadError = "uploads could not be loaded"

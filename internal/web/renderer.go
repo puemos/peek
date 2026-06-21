@@ -23,11 +23,13 @@ const (
 
 // DashboardCSP is the Content-Security-Policy for the management UI.
 // It restricts all resources to same-origin, with no inline scripts/styles.
-const DashboardCSP = "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'"
+// DashboardCSP is the Content-Security-Policy for the management UI.
+// Alpine.js requires 'unsafe-eval' (expression evaluation) and 'unsafe-inline' for styles.
+const DashboardCSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; img-src 'self' data:; frame-ancestors 'none'"
 
 // PageCSP is the Content-Security-Policy for the trusted parent page that
 // hosts the uploaded HTML inside a sandboxed iframe.
-const PageCSP = "default-src 'self'; style-src 'self'; script-src 'self'; frame-src 'self'"
+const PageCSP = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; frame-src 'self'"
 
 //go:embed templates/*.gohtml
 var templateFS embed.FS
@@ -134,12 +136,54 @@ type SettingRow struct {
 	IsBool      bool   `json:"is_bool"`
 }
 
+type DashboardSettings struct {
+	Auth    AuthSettings
+	Storage StorageSettings
+	Limits  []LimitSetting
+}
+
+type AuthSettings struct {
+	Token  SettingRow
+	Google OAuthProviderSettings
+	GitHub OAuthProviderSettings
+}
+
+type OAuthProviderSettings struct {
+	Key          string
+	Name         string
+	Enabled      SettingRow
+	ClientID     SettingRow
+	ClientSecret SettingRow
+	EnabledValue bool
+}
+
+type StorageSettings struct {
+	Backend    SettingRow
+	Value      string
+	S3Selected bool
+	S3Settings []SettingRow
+}
+
+type LimitSetting struct {
+	Key         string
+	FormKey     string
+	JSKey       string
+	Label       string
+	Description string
+	Unit        string
+	Value       int64
+	Min         int64
+	Max         int64
+	Step        int64
+}
+
 type DashboardData struct {
 	CSRF             string
 	User             string
 	IsAdmin          bool
 	Settings         map[string]string
 	SettingsMeta     []SettingRow
+	SettingsPanel    DashboardSettings
 	Invites          []InviteDashboardRow
 	Accounts         []AccountDashboardRow
 	Uploads          []DashboardUpload

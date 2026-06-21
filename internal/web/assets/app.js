@@ -1,675 +1,479 @@
-// app.js — runs in the trusted parent page (same-origin as the server).
-// Drives the comment UI, talks to the server API, and orchestrates the
-// sandboxed iframe picker over postMessage. This is the only code that
-// touches same-origin APIs; the iframe is opaque-origin and untrusted.
 (function () {
   "use strict";
 
-  var SLUG = document.body.dataset.slug || "";
+  const STORAGE_KEY = "hn_name";
+  const AUTHOR_PALETTE = [
+    { color: "#1677e8", soft: "rgba(22, 119, 232, .12)", text: "#0f5dbb" },
+    { color: "#0e9f6e", soft: "rgba(14, 159, 110, .13)", text: "#047857" },
+    { color: "#d97706", soft: "rgba(217, 119, 6, .14)", text: "#92400e" },
+    { color: "#7c3aed", soft: "rgba(124, 58, 237, .13)", text: "#5b21b6" },
+    { color: "#e11d48", soft: "rgba(225, 29, 72, .12)", text: "#be123c" },
+    { color: "#0891b2", soft: "rgba(8, 145, 178, .13)", text: "#0e7490" },
+  ];
 
-  var $ = function (id) { return document.getElementById(id); };
-  var els = {
-    frame: $("hn-frame"),
-    bar: $("hn-bar"),
-    commentBtn: $("hn-comment-btn"),
-    panelBtn: $("hn-panel-btn"),
-    panel: $("hn-panel"),
-    panelClose: $("hn-panel-close"),
-    exportWrap: $("hn-export"),
-    exportBtn: $("hn-export-btn"),
-    exportLabel: $("hn-export-label"),
-    exportMenu: $("hn-export-menu"),
-    exportMarkdownBtn: $("hn-export-markdown"),
-    exportJSONBtn: $("hn-export-json"),
-    list: $("hn-comment-list"),
-    count: $("hn-count"),
-    composer: $("hn-composer"),
-    composerForm: $("hn-comment-form"),
-    target: $("hn-target"),
-    bodyInput: $("hn-body"),
-    cancelBtn: $("hn-cancel"),
-    hint: $("hn-hint"),
-    hintGeneral: $("hn-hint-general"),
-    error: $("hn-error"),
-    commentingAs: $("hn-commenting-as"),
-    nameModal: $("hn-name-modal"),
-    nameForm: $("hn-name-form"),
-    nameModalInput: $("hn-name-input"),
-    nameSkip: $("hn-name-skip"),
-    viewsBtn: $("hn-views-btn"),
-    viewsCount: $("hn-views-count"),
-    sparkline: $("hn-sparkline"),
-    sparklineSVG: $("hn-sparkline-svg"),
-    sparklineTotal: document.querySelector(".hn-sparkline-total"),
-    sparklineUnique: document.querySelector(".hn-sparkline-unique")
-  };
-
-  var state = {
-    modeOn: false,
-    pendingPick: null,
-    commentsLoaded: false,
-    comments: [],
-    nameMemory: "",
-    viewsData: null,
-    sparklineOpen: false
-  };
-
-  if (!SLUG || !els.frame || !els.commentBtn || !els.composerForm) {
-    if (window.console) console.warn("peek: missing page config or elements");
-    return;
+  function frame() {
+    const f = document.getElementById("hn-frame");
+    return f ? f.contentWindow : null;
   }
-
-  // --- name: asked once, then remembered locally ---
-  function getName() {
-    try { return (localStorage.getItem("hn_name") || "").trim(); }
-    catch (e) { return state.nameMemory; }
-  }
-  function saveName(n) {
-    state.nameMemory = n;
-    try { localStorage.setItem("hn_name", n); } catch (e) {}
-  }
-  function markAsked() { try { localStorage.setItem("hn_name_asked", "1"); } catch (e) {} }
-  function wasAsked() { try { return !!localStorage.getItem("hn_name_asked"); } catch (e) { return false; } }
-
-  function openNameModal() {
-    if (!els.nameModal) return;
-    els.nameModalInput.value = getName();
-    els.nameModal.hidden = false;
-    setTimeout(function () { els.nameModalInput.focus(); els.nameModalInput.select(); }, 30);
-  }
-  function closeNameModal() {
-    if (els.nameModal) els.nameModal.hidden = true;
-    markAsked();
-    setCommentingAs();
-  }
-  if (els.nameForm) els.nameForm.addEventListener("submit", function (e) {
-    e.preventDefault();
-    var n = els.nameModalInput.value.trim();
-    if (n) saveName(n);
-    closeNameModal();
-  });
-  if (els.nameSkip) els.nameSkip.addEventListener("click", closeNameModal);
-
-  // ask once, on first page load
-  if (!getName() && !wasAsked()) openNameModal();
 
   function postToFrame(msg) {
-    if (els.frame.contentWindow) els.frame.contentWindow.postMessage(msg, "*");
-  }
-
-  // dim the island after inactivity (paused while commenting)
-  var dimTimer = null;
-  function resetDim() {
-    els.bar.classList.remove("hn-bar-dim");
-    clearTimeout(dimTimer);
-    if (state.modeOn) return;
-    dimTimer = setTimeout(function () { els.bar.classList.add("hn-bar-dim"); }, 2500);
-  }
-  resetDim();
-  els.bar.addEventListener("mouseenter", resetDim);
-  els.bar.addEventListener("mouseleave", resetDim);
-
-  function api(method, path, body) {
-    var opts = { method: method, credentials: "same-origin", headers: {} };
-    if (body !== undefined) {
-      opts.headers["Content-Type"] = "application/json";
-      opts.body = JSON.stringify(body);
+    const f = frame();
+    if (f) {
+      f.postMessage(msg, "*");
     }
-    return fetch(path, opts).then(function (r) {
-      if (!r.ok) {
-        return r.text().then(function (text) {
-          var msg = text || ("HTTP " + r.status);
-          if (text) {
+  }
+
+  function colorizeComments(comments) {
+    const byAuthor = new Map();
+    let colorIndex = 0;
+    return comments.map((comment, index) => {
+      const author = comment.author || "anonymous";
+      if (!byAuthor.has(author)) {
+        byAuthor.set(author, AUTHOR_PALETTE[colorIndex % AUTHOR_PALETTE.length]);
+        colorIndex++;
+      }
+      return normalizeComment(comment, index, byAuthor.get(author));
+    });
+  }
+
+  function normalizeComment(comment, index, color) {
+    const created = comment.created_at ? new Date(comment.created_at * 1000) : null;
+    return {
+      ...comment,
+      number: comment.selector ? index + 1 : 0,
+      name: comment.author || "anonymous",
+      scope: comment.anchor_kind === "text" ? "Text" : (comment.anchor_kind === "element" ? "Element" : "Page"),
+      target: comment.element_text || comment.selector || "",
+      created_human: created && !Number.isNaN(created.getTime()) ? created.toLocaleString() : "",
+      authorColor: color.color,
+      authorSoft: color.soft,
+      authorText: color.text,
+    };
+  }
+
+  function fallbackOriginRect() {
+    const width = 56;
+    const height = 42;
+    return {
+      left: window.innerWidth / 2 - width / 2,
+      top: window.innerHeight / 2 - height / 2,
+      width: width,
+      height: height,
+    };
+  }
+
+  function rectFromElement(el) {
+    if (!el || typeof el.getBoundingClientRect !== "function") {
+      return fallbackOriginRect();
+    }
+    const r = el.getBoundingClientRect();
+    return {
+      left: r.left,
+      top: r.top,
+      width: r.width,
+      height: r.height,
+    };
+  }
+
+  function normalizeRect(rect) {
+    if (!rect) {
+      return fallbackOriginRect();
+    }
+    const width = Math.max(24, Math.min(Number(rect.width) || 44, window.innerWidth - 16));
+    const height = Math.max(24, Math.min(Number(rect.height) || 40, window.innerHeight - 16));
+    const left = Math.min(Math.max(8, Number(rect.left) || 0), Math.max(8, window.innerWidth - width - 8));
+    const top = Math.min(Math.max(8, Number(rect.top) || 0), Math.max(8, window.innerHeight - height - 8));
+    return { left: left, top: top, width: width, height: height };
+  }
+
+  function setMorphOrigin(rect) {
+    const anchor = document.getElementById("hn-morph-anchor");
+    if (!anchor) return;
+    const r = normalizeRect(rect);
+    anchor.style.left = r.left + "px";
+    anchor.style.top = r.top + "px";
+    anchor.style.width = r.width + "px";
+    anchor.style.height = r.height + "px";
+  }
+
+  function composerElement() {
+    return document.getElementById("hn-composer");
+  }
+
+  async function responseMessage(res, fallback) {
+    const contentType = res.headers.get("Content-Type") || "";
+    if (contentType.indexOf("application/json") !== -1) {
+      try {
+        const data = await res.json();
+        return (data && data.error) || fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+    try {
+      const text = await res.text();
+      return text || fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  document.addEventListener("alpine:init", () => {
+    Alpine.data("pageApp", () => ({
+      slug: "",
+      protected: false,
+
+      comments: [],
+      commentCount: 0,
+      panelOpen: false,
+      panelLoading: false,
+      panelLoaded: false,
+      activeComment: null,
+
+      viewCount: 0,
+      showSparkline: false,
+      sparklineTotal: "",
+      sparklineUnique: "",
+
+      commentMode: false,
+      composerOpen: false,
+      composerTarget: null,
+      composerTargetLabel: "",
+      composerTargetIsGeneral: false,
+      composerBody: "",
+      composerError: "",
+
+      name: localStorage.getItem(STORAGE_KEY) || "",
+      nameInput: "",
+      nameModalOpen: false,
+
+      init(slug, protectedFlag) {
+        this.slug = slug;
+        this.protected = !!protectedFlag;
+
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          this.name = stored;
+        } else if (!localStorage.getItem("hn_name_asked")) {
+          this.nameModalOpen = true;
+          localStorage.setItem("hn_name_asked", "1");
+        }
+
+        this.loadComments();
+        this.loadViews();
+        this.bindBridge();
+        this.bindKeyboard();
+      },
+
+      loadComments() {
+        this.panelLoading = true;
+        fetch("/api/uploads/" + this.slug + "/comments", {
+          credentials: "same-origin",
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            const comments = Array.isArray(data) ? data : (data.comments || []);
+            this.comments = colorizeComments(comments);
+            this.commentCount = this.comments.length;
+            this.panelLoading = false;
+            this.panelLoaded = true;
+            this.sendPins();
+          })
+          .catch(() => {
+            this.panelLoading = false;
+          });
+      },
+
+      loadViews() {
+        fetch("/api/uploads/" + this.slug + "/views", {
+          credentials: "same-origin",
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            this.viewCount = data.total || 0;
+            this.sparklineTotal = (data.total || 0) + " visits";
+            this.sparklineUnique = (data.unique || 0) + " unique";
+            this.renderSparkline((data.buckets || []).map((b) => b.n));
+          })
+          .catch(() => {});
+      },
+
+      renderSparkline(counts) {
+        const svg = document.getElementById("hn-sparkline-svg");
+        if (!svg || !counts.length) return;
+
+        const w = 168, h = 56, pad = 2;
+        const max = Math.max.apply(null, counts) || 1;
+        const stepX = (w - pad * 2) / Math.max(counts.length - 1, 1);
+
+        let points = "";
+        for (let i = 0; i < counts.length; i++) {
+          const x = pad + i * stepX;
+          const y = h - pad - (counts[i] / max) * (h - pad * 4);
+          points += (i ? " L " : "M ") + x.toFixed(1) + " " + y.toFixed(1);
+        }
+
+        const area = points + " L " + (pad + (counts.length - 1) * stepX).toFixed(1) + " " + (h - pad) + " L " + pad.toFixed(1) + " " + (h - pad) + " Z";
+        const lastX = pad + (counts.length - 1) * stepX;
+        const lastY = h - pad - (counts[counts.length - 1] / max) * (h - pad * 4);
+
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+        const NS = "http://www.w3.org/2000/svg";
+        const areaPath = document.createElementNS(NS, "path");
+        areaPath.setAttribute("d", area);
+        areaPath.setAttribute("fill", "rgba(22,119,232,.14)");
+        svg.appendChild(areaPath);
+
+        const linePath = document.createElementNS(NS, "path");
+        linePath.setAttribute("d", points);
+        linePath.setAttribute("fill", "none");
+        linePath.setAttribute("stroke", "rgb(22,119,232)");
+        linePath.setAttribute("stroke-width", "1.5");
+        linePath.setAttribute("stroke-linecap", "round");
+        linePath.setAttribute("stroke-linejoin", "round");
+        svg.appendChild(linePath);
+
+        const dot = document.createElementNS(NS, "circle");
+        dot.setAttribute("cx", lastX.toFixed(1));
+        dot.setAttribute("cy", lastY.toFixed(1));
+        dot.setAttribute("r", "2.5");
+        dot.setAttribute("fill", "rgb(22,119,232)");
+        svg.appendChild(dot);
+      },
+
+      bindBridge() {
+        window.addEventListener("message", (e) => {
+          if (e.source !== frame()) return;
+          const data = e.data;
+          if (!data) return;
+
+          if (data.hn === "pick") {
+            this.openComposer(data);
+            return;
+          }
+          if (data.hn === "pinclick") {
+            this.panelOpen = true;
+            const match = this.comments.find((c) => c.selector === data.selector && (c.element_text || "") === (data.quote || ""));
+            if (match) {
+              this.activeComment = match.id;
+              setTimeout(() => {
+                if (this.activeComment === match.id) this.activeComment = null;
+              }, 3000);
+            }
+            return;
+          }
+          if (!data.type) return;
+
+          switch (data.type) {
+            case "elementSelected":
+              this.openComposer(data);
+              break;
+            case "commentModeEscaped":
+              this.commentMode = false;
+              break;
+          }
+        });
+      },
+
+      bindKeyboard() {
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            if (this.nameModalOpen) {
+              this.nameModalOpen = false;
+              return;
+            }
+            if (this.composerOpen) {
+              this.closeComposer();
+              return;
+            }
+            if (this.commentMode) {
+              this.commentMode = false;
+              return;
+            }
+            if (this.panelOpen) {
+              this.panelOpen = false;
+            }
+          }
+        });
+      },
+
+      toggleCommentMode() {
+        this.commentMode = !this.commentMode;
+        if (this.commentMode) {
+          postToFrame({ hn: "mode", on: true });
+        } else {
+          postToFrame({ hn: "mode", on: false });
+          if (this.composerOpen) this.closeComposer();
+        }
+      },
+
+      startGeneralComment(event) {
+        setMorphOrigin(rectFromElement(event && event.currentTarget));
+        this.composerTarget = { selector: "", text: "", anchorKind: "page", style: "" };
+        this.composerTargetLabel = "General comment on this page";
+        this.composerTargetIsGeneral = true;
+        this.composerBody = "";
+        this.composerError = "";
+        this.showComposer();
+      },
+
+      openComposer(data) {
+        setMorphOrigin(data.trigger_rect || data.rect);
+        this.composerTarget = {
+          selector: data.selector || "",
+          text: data.element_text || data.text || "",
+          anchorKind: data.anchor_kind || (data.selector ? "element" : "page"),
+          style: "",
+        };
+        this.composerTargetLabel = data.target || data.element_text || data.text || data.selector || "General comment on this page";
+        this.composerTargetIsGeneral = false;
+        this.composerBody = "";
+        this.composerError = "";
+        this.commentMode = false;
+        postToFrame({ hn: "mode", on: false });
+        this.showComposer();
+      },
+
+      showComposer() {
+        this.composerOpen = true;
+        this.$nextTick(() => {
+          const composer = composerElement();
+          if (composer && typeof composer.showPopover === "function" && !composer.matches(":popover-open")) {
             try {
-              var data = JSON.parse(text);
-              msg = data.error || data.message || msg;
+              composer.showPopover();
             } catch (e) {}
           }
-          throw new Error(msg);
+          const ta = this.$refs.composerTextarea;
+          if (ta) ta.focus();
         });
-      }
-      return r.json();
-    });
-  }
+      },
 
-  function setMode(on) {
-    state.modeOn = on;
-    els.commentBtn.classList.toggle("active", on);
-    postToFrame({ hn: "mode", on: on });
-    if (on) { showHint(); resetDim(); }
-    else hideHint();
-  }
-  function showHint() { if (els.hint) els.hint.hidden = false; }
-  function hideHint() { if (els.hint) els.hint.hidden = true; }
+      closeComposer() {
+        const composer = composerElement();
+        if (composer && typeof composer.hidePopover === "function" && composer.matches(":popover-open")) {
+          try {
+            composer.hidePopover();
+          } catch (e) {}
+        }
+        this.composerOpen = false;
+        this.scheduleComposerClear();
+      },
 
-  function updateCount(n) {
-    els.count.textContent = n;
-    els.count.classList.toggle("hn-badge-zero", n === 0);
-  }
+      scheduleComposerClear() {
+        setTimeout(() => {
+          if (this.composerOpen) return;
+          this.composerTarget = null;
+          this.composerBody = "";
+          this.composerError = "";
+        }, 420);
+      },
 
-  function appendText(el, text) {
-    el.appendChild(document.createTextNode(text));
-  }
+      syncComposerPopover(event) {
+        if (event && event.newState === "closed" && this.composerOpen) {
+          this.composerOpen = false;
+          this.scheduleComposerClear();
+        }
+      },
 
-  function makeLoadingRow() {
-    var li = document.createElement("li");
-    li.className = "hn-loading";
-    li.textContent = "Loading comments…";
-    return li;
-  }
+      showComposerError(message) {
+        this.composerError = message;
+        window.peekToast(message, { type: "danger", duration: 6500 });
+      },
 
-  function makeLoadErrorRow(err) {
-    var li = document.createElement("li");
-    li.className = "hn-loading";
-    li.textContent = "Couldn’t load comments: " + err.message;
-    return li;
-  }
+      async postComment() {
+        const body = (this.composerBody || "").trim();
+        if (!body) return;
 
-  function makeEmptyState() {
-    var empty = document.createElement("li");
-    empty.className = "hn-empty-state";
+        this.composerError = "";
 
-    var icon = document.createElement("div");
-    icon.className = "hn-empty-icon";
-    icon.textContent = "💬";
-    empty.appendChild(icon);
+        const target = this.composerTarget;
+        const payload = { body: body, name: this.name || "" };
+        if (target) {
+          payload.selector = target.selector || "";
+          payload.element_text = target.text || "";
+          payload.anchor_kind = target.anchorKind || "";
+        }
 
-    var title = document.createElement("p");
-    title.textContent = "No comments yet";
-    empty.appendChild(title);
+        try {
+          const res = await fetch("/api/uploads/" + this.slug + "/comments", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
 
-    var details = document.createElement("span");
-    appendText(details, "Hit ");
-    var strong = document.createElement("strong");
-    strong.textContent = "Comment";
-    details.appendChild(strong);
-    appendText(details, " to pin one to an element or leave a note on the page.");
-    empty.appendChild(details);
+          if (!res.ok) {
+            const text = await responseMessage(res, "Failed to post comment.");
+            this.showComposerError(text);
+            return;
+          }
 
-    return empty;
-  }
+          this.closeComposer();
+          this.loadComments();
+        } catch (e) {
+          this.showComposerError("Network error. Please try again.");
+        }
+      },
 
-  function makeMeta(c, nmap) {
-    var meta = document.createElement("div");
-    meta.className = "hn-meta";
-    if (c.selector) {
-      var num = document.createElement("span");
-      num.className = "hn-cnum";
-      num.textContent = nmap[keyOf(c)];
-      meta.appendChild(num);
-    }
+      sendPins() {
+        const items = this.comments
+          .filter((c) => c.selector)
+          .map((c) => ({
+            selector: c.selector,
+            quote: c.anchor_kind === "text" ? c.element_text : "",
+            anchor_kind: c.anchor_kind,
+            n: c.number,
+            color: c.authorColor,
+            author: c.name,
+          }));
+        postToFrame({ hn: "comments", items: items });
+      },
 
-    var author = document.createElement("strong");
-    author.textContent = c.author || "";
-    meta.appendChild(author);
-    appendText(meta, " · ");
+      locateComment(c) {
+        if (!c.selector) return;
+        this.activeComment = c.id;
+        postToFrame({ hn: "locate", selector: c.selector, quote: c.anchor_kind === "text" ? c.element_text : "" });
+        setTimeout(() => {
+          if (this.activeComment === c.id) this.activeComment = null;
+        }, 3000);
+      },
 
-    var when = document.createElement("span");
-    when.title = new Date(c.created_at * 1000).toLocaleString();
-    when.textContent = timeAgo(c.created_at);
-    meta.appendChild(when);
+      exportComments(format) {
+        let text = "";
+        if (format === "json") {
+          text = JSON.stringify(this.comments, null, 2);
+        } else {
+          for (const c of this.comments) {
+            text += "## " + (c.name || "anonymous") + " (" + c.created_human + ")\n";
+            if (c.target) text += "> on: " + c.target + "\n";
+            text += "\n" + c.body + "\n\n---\n\n";
+          }
+        }
+        window.peekCopyText(text, { success: format === "json" ? "Copied comments as JSON." : "Copied comments as Markdown." });
+      },
 
-    return meta;
-  }
+      showNameModal() {
+        this.nameInput = this.name || "";
+        this.nameModalOpen = true;
+        this.$nextTick(() => {
+          const inp = this.$refs.nameInput;
+          if (inp) inp.focus();
+        });
+      },
 
-  // A comment's anchor key: element selector + the exact text quote. Two
-  // selections inside the same element get distinct pins/numbers.
-  function anchorKind(c) {
-    if (c.anchor_kind === "text" || c.anchor_kind === "element" || c.anchor_kind === "page") return c.anchor_kind;
-    if (!c.selector) return "page";
-    return c.element_text ? "text" : "element";
-  }
+      saveName() {
+        const n = (this.nameInput || "").trim();
+        if (n) {
+          this.name = n;
+          localStorage.setItem(STORAGE_KEY, n);
+        }
+        this.nameModalOpen = false;
+      },
 
-  function anchorQuote(c) {
-    return anchorKind(c) === "text" ? (c.element_text || "") : "";
-  }
-
-  function keyOf(c) { return anchorKind(c) + "" + (c.selector || "") + "" + anchorQuote(c); }
-
-  // Number only anchored comments (element or text); shared with on-page pins.
-  function numberMap(comments) {
-    var map = {}, next = 1;
-    comments.forEach(function (c) {
-      if (!c.selector) return;
-      var k = keyOf(c);
-      if (!(k in map)) map[k] = next++;
-    });
-    return map;
-  }
-
-  function timeAgo(unix) {
-    var s = Math.floor(Date.now() / 1000 - unix);
-    if (s < 45) return "just now";
-    if (s < 90) return "1m";
-    var m = Math.round(s / 60);
-    if (m < 60) return m + "m";
-    var h = Math.round(m / 60);
-    if (h < 24) return h + "h";
-    var d = Math.round(h / 24);
-    if (d < 7) return d + "d";
-    return new Date(unix * 1000).toLocaleDateString();
-  }
-
-  function render(comments) {
-    state.comments = comments;
-    updateCount(comments.length);
-    if (els.exportWrap) els.exportWrap.hidden = comments.length === 0;
-    if (!comments.length) closeExportMenu();
-    var nmap = numberMap(comments);
-
-    // sync on-page pins/highlights (one per unique anchored target)
-    var seen = {}, items = [];
-    comments.forEach(function (c) {
-      if (!c.selector) return;
-      var k = keyOf(c);
-      if (!seen[k]) {
-        seen[k] = true;
-        items.push({ selector: c.selector, quote: anchorQuote(c), anchor_kind: anchorKind(c), n: nmap[k] });
-      }
-    });
-    postToFrame({ hn: "comments", items: items });
-
-    var frag = document.createDocumentFragment();
-    if (!comments.length) {
-      frag.appendChild(makeEmptyState());
-      els.list.replaceChildren(frag);
-      return;
-    }
-
-    comments.forEach(function (c) {
-      var li = document.createElement("li");
-      li.dataset.selector = c.selector || "";
-      li.dataset.quote = anchorQuote(c);
-
-      li.appendChild(makeMeta(c, nmap));
-
-      var kind = anchorKind(c);
-      if (c.selector && kind === "text" && c.element_text) {
-        var target = document.createElement("div");
-        target.className = "hn-target";
-        target.textContent = "“" + c.element_text + "”";
-        target.title = c.selector;
-        li.appendChild(target);
-      } else if (c.selector) {
-        var elemTarget = document.createElement("div");
-        elemTarget.className = "hn-target";
-        elemTarget.textContent = c.element_text ? "↳ " + c.element_text : "↳ " + c.selector;
-        elemTarget.title = c.selector;
-        li.appendChild(elemTarget);
-      } else if (!c.selector) {
-        var scope = document.createElement("div");
-        scope.className = "hn-scope";
-        scope.textContent = "On this page";
-        li.appendChild(scope);
-      }
-
-      var b = document.createElement("div");
-      b.className = "hn-body";
-      b.textContent = c.body;
-      li.appendChild(b);
-
-      if (c.selector) {
-        li.classList.add("hn-locatable");
-        li.addEventListener("click", function () { locateAndFlag(c.selector, anchorQuote(c), li); });
-      }
-      frag.appendChild(li);
-    });
-    els.list.replaceChildren(frag);
-  }
-
-  // Render the loaded comments — each with the on-page anchor it points at —
-  // as a Markdown document for pasting into an issue, doc, or agent prompt.
-  function commentsToMarkdown(comments) {
-    var lines = ["# Comments", "", "Page: " + location.href, ""];
-    comments.forEach(function (c, i) {
-      var when = new Date(c.created_at * 1000).toLocaleString();
-      lines.push("## " + (i + 1) + ". " + (c.author || "anonymous") + " · " + when);
-      if (anchorKind(c) === "text" && c.element_text) {
-        lines.push("**On:** > " + c.element_text.replace(/\s+/g, " ").trim());
-      } else if (c.selector) {
-        lines.push("**On:** `" + c.selector + "`");
-      } else {
-        lines.push("**On:** whole page");
-      }
-      lines.push("");
-      lines.push(c.body);
-      lines.push("");
-    });
-    return lines.join("\n");
-  }
-
-  function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text);
-    }
-    return new Promise(function (resolve, reject) {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      var ok = false;
-      try { ok = document.execCommand("copy"); } catch (e) {}
-      document.body.removeChild(ta);
-      ok ? resolve() : reject(new Error("copy failed"));
-    });
-  }
-
-  function setExportMenu(open) {
-    if (!els.exportBtn || !els.exportMenu) return;
-    els.exportMenu.hidden = !open;
-    els.exportBtn.setAttribute("aria-expanded", open ? "true" : "false");
-    if (open) {
-      var first = els.exportMenu.querySelector("button");
-      if (first) first.focus();
-    }
-  }
-
-  function closeExportMenu() { setExportMenu(false); }
-
-  function toggleExportMenu() {
-    if (!state.comments.length) return;
-    setExportMenu(els.exportMenu ? els.exportMenu.hidden : false);
-  }
-
-  function showExportFeedback(text) {
-    if (!els.exportBtn) return;
-    var target = els.exportLabel || els.exportBtn;
-    var prev = target.textContent;
-    target.textContent = text;
-    setTimeout(function () { target.textContent = prev; }, 1500);
-  }
-
-  function copyExport(text) {
-    if (!state.comments.length) return;
-    closeExportMenu();
-    copyText(text).then(function () {
-      showExportFeedback("Copied!");
-    }).catch(function () {
-      showExportFeedback("Copy failed");
-    });
-  }
-
-  function exportMarkdown() {
-    copyExport(commentsToMarkdown(state.comments));
-  }
-
-  function exportJSON() {
-    copyExport(JSON.stringify(state.comments, null, 2));
-  }
-
-  function loadComments() {
-    if (!state.commentsLoaded) {
-      els.list.replaceChildren(makeLoadingRow());
-    }
-    api("GET", "/api/uploads/" + SLUG + "/comments").then(function (c) {
-      state.commentsLoaded = true;
-      render(c);
-    }).catch(function (err) {
-      state.commentsLoaded = true;
-      els.list.replaceChildren(makeLoadErrorRow(err));
-    });
-  }
-
-  function loadViews() {
-    api("GET", "/api/uploads/" + SLUG + "/views").then(function (d) {
-      state.viewsData = d;
-      els.viewsCount.textContent = d.total;
-      els.viewsCount.classList.toggle("hn-badge-zero", d.total === 0);
-    }).catch(function () {
-      els.viewsCount.textContent = "—";
-    });
-  }
-
-  function renderSparkline(data) {
-    var buckets = data.buckets || [];
-    if (!buckets.length) return;
-    var svg = els.sparklineSVG;
-    var w = 168, h = 48, pad = 4;
-    var maxN = 0;
-    for (var i = 0; i < buckets.length; i++) {
-      if (buckets[i].n > maxN) maxN = buckets[i].n;
-    }
-    if (maxN === 0) maxN = 1;
-    var points = [];
-    for (var i = 0; i < buckets.length; i++) {
-      var x = pad + (i / (buckets.length - 1 || 1)) * (w - pad * 2);
-      var y = h - pad - ((buckets[i].n / maxN) * (h - pad * 2));
-      points.push({ x: x, y: y });
-    }
-
-    var areaTopY = h - pad;
-    var areaD = "M" + points[0].x + "," + points[0].y;
-    for (var i = 1; i < points.length; i++) areaD += " L" + points[i].x + "," + points[i].y;
-    areaD += " L" + (w - pad) + "," + areaTopY + " L" + pad + "," + areaTopY + " Z";
-
-    var lineD = "";
-    for (var i = 0; i < points.length; i++) {
-      lineD += (i === 0 ? "M" : " L") + points[i].x + "," + points[i].y;
-    }
-
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
-
-    var ns = "http://www.w3.org/2000/svg";
-    function svgEl(tag, attrs) {
-      var el = document.createElementNS(ns, tag);
-      for (var k in attrs) el.setAttribute(k, attrs[k]);
-      return el;
-    }
-
-    var area = svgEl("path", { class: "hn-sparkline-area", d: areaD });
-    var line = svgEl("path", { class: "hn-sparkline-line", d: lineD });
-    var last = points[points.length - 1];
-    var dot = svgEl("circle", { class: "hn-sparkline-dot", cx: String(last.x), cy: String(last.y), r: "2.5" });
-
-    svg.appendChild(area);
-    svg.appendChild(line);
-    svg.appendChild(dot);
-
-    els.sparklineTotal.textContent = data.total + " views";
-    els.sparklineUnique.textContent = data.unique + " unique";
-  }
-
-  function toggleSparkline() {
-    if (!state.viewsData) return;
-    if (state.sparklineOpen) {
-      els.sparkline.hidden = true;
-      state.sparklineOpen = false;
-    } else {
-      renderSparkline(state.viewsData);
-      els.sparkline.hidden = false;
-      state.sparklineOpen = true;
-    }
-  }
-
-  function openPanel() { els.panel.classList.add("hn-panel-open"); }
-  function closePanel() {
-    els.panel.classList.remove("hn-panel-open");
-    closeExportMenu();
-  }
-
-  function locateAndFlag(selector, quote, li) {
-    postToFrame({ hn: "locate", selector: selector, quote: quote });
-    if (li) {
-      var prev = els.list.querySelector(".hn-row-active");
-      if (prev) prev.classList.remove("hn-row-active");
-      li.classList.add("hn-row-active");
-    }
-  }
-
-  function setCommentingAs() {
-    if (!els.commentingAs) return;
-    var n = getName();
-    var strong = document.createElement("strong");
-    strong.textContent = n || "Anonymous";
-    els.commentingAs.replaceChildren(document.createTextNode("Commenting as "), strong);
-  }
-
-  function showComposer(pick) {
-    state.pendingPick = pick;
-    var kind = pick.anchor_kind || (pick.selector ? "element" : "page");
-    state.pendingPick.anchor_kind = kind;
-    if (pick.selector && kind === "text") {
-      els.target.className = "hn-target";
-      els.target.textContent = "“" + pick.element_text + "”";
-      els.target.title = pick.selector;
-    } else if (pick.selector) {
-      els.target.className = "hn-target";
-      els.target.textContent = pick.element_text ? "↳ " + pick.element_text : "↳ " + pick.selector;
-      els.target.title = pick.selector;
-    } else {
-      els.target.className = "hn-target hn-target-general";
-      els.target.textContent = "Commenting on the page";
-      els.target.removeAttribute("title");
-    }
-    els.bodyInput.value = "";
-    if (els.error) { els.error.hidden = true; els.error.textContent = ""; }
-    setCommentingAs();
-    els.composer.hidden = false;
-    positionComposer(pick.rect);
-    els.bodyInput.focus();
-  }
-
-  // Anchor the composer near the picked element; centered above the bar for general.
-  function positionComposer(rect) {
-    els.composer.style.transform = "";
-    var cw = els.composer.offsetWidth || 360;
-    var ch = els.composer.offsetHeight || 200;
-    var margin = 12;
-    if (rect && (rect.width || rect.height)) {
-      var left = rect.right + margin;
-      var top = rect.top;
-      if (left + cw > window.innerWidth - margin) left = rect.left - cw - margin;
-      if (left < margin) left = margin;
-      if (left + cw > window.innerWidth - margin) left = window.innerWidth - cw - margin;
-      if (top + ch > window.innerHeight - 88) top = window.innerHeight - ch - 88;
-      if (top < margin) top = margin;
-      els.composer.style.left = left + "px";
-      els.composer.style.top = top + "px";
-      els.composer.style.bottom = "auto";
-      return;
-    }
-    els.composer.style.left = "50%";
-    els.composer.style.top = "auto";
-    els.composer.style.bottom = "88px";
-    els.composer.style.transform = "translateX(-50%)";
-  }
-
-  function hideComposer() {
-    els.composer.hidden = true;
-    state.pendingPick = null;
-  }
-
-  els.commentBtn.addEventListener("click", function () {
-    setMode(!state.modeOn);
-    if (state.modeOn) closePanel();
+      toggleSparkline() {
+        this.showSparkline = !this.showSparkline;
+      },
+    }));
   });
-  els.panelBtn.addEventListener("click", function () {
-    if (els.panel.classList.contains("hn-panel-open")) closePanel();
-    else { openPanel(); setMode(false); }
-  });
-  els.panelClose.addEventListener("click", closePanel);
-  if (els.viewsBtn) els.viewsBtn.addEventListener("click", function (e) {
-    e.stopPropagation();
-    toggleSparkline();
-  });
-  if (els.exportBtn) els.exportBtn.addEventListener("click", function (e) {
-    e.stopPropagation();
-    toggleExportMenu();
-  });
-  if (els.exportMarkdownBtn) els.exportMarkdownBtn.addEventListener("click", function (e) {
-    e.stopPropagation();
-    exportMarkdown();
-  });
-  if (els.exportJSONBtn) els.exportJSONBtn.addEventListener("click", function (e) {
-    e.stopPropagation();
-    exportJSON();
-  });
-  if (els.exportWrap) els.exportWrap.addEventListener("click", function (e) { e.stopPropagation(); });
-  document.addEventListener("click", function (e) {
-    if (els.exportWrap && !els.exportWrap.contains(e.target)) closeExportMenu();
-    if (state.sparklineOpen && els.viewsBtn && !els.viewsBtn.contains(e.target) && !els.sparkline.contains(e.target)) {
-      els.sparkline.hidden = true;
-      state.sparklineOpen = false;
-    }
-  });
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeExportMenu();
-  });
-  els.cancelBtn.addEventListener("click", function () { hideComposer(); setMode(false); });
-  if (els.commentingAs) els.commentingAs.addEventListener("click", openNameModal);
-  if (els.hintGeneral) els.hintGeneral.addEventListener("click", function () {
-    setMode(false);
-    showComposer({ selector: "", element_text: "", anchor_kind: "page", rect: null });
-  });
-
-  // Cmd/Ctrl+Enter submits from the textarea.
-  els.bodyInput.addEventListener("keydown", function (e) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      els.composerForm.requestSubmit ? els.composerForm.requestSubmit() : els.composerForm.dispatchEvent(new Event("submit", { cancelable: true }));
-    }
-  });
-
-  els.composerForm.addEventListener("submit", function (e) {
-    e.preventDefault();
-    if (!state.pendingPick) return;
-    var body = els.bodyInput.value.trim();
-    if (!body) return;
-    if (els.error) { els.error.hidden = true; els.error.textContent = ""; }
-    api("POST", "/api/uploads/" + SLUG + "/comments", {
-      selector: state.pendingPick.selector,
-      element_text: state.pendingPick.element_text,
-      anchor_kind: state.pendingPick.anchor_kind || (state.pendingPick.selector ? "element" : "page"),
-      name: getName(),
-      body: body
-    }).then(function (c) {
-      hideComposer();
-      setMode(false);
-      render(c);
-      openPanel();
-    }).catch(function (err) {
-      if (els.error) { els.error.textContent = "Couldn’t post: " + err.message; els.error.hidden = false; }
-    });
-  });
-
-  window.addEventListener("message", function (e) {
-    if (e.source !== els.frame.contentWindow) return;
-    var d = e.data;
-    if (!d || !d.hn) return;
-    if (d.hn === "pick") {
-      setMode(false);
-      showComposer(d);
-    } else if (d.hn === "pinclick") {
-      setMode(false);
-      openPanel();
-      var rows = els.list.querySelectorAll("li[data-selector]");
-      var match = null;
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].dataset.selector === d.selector && (rows[i].dataset.quote || "") === (d.quote || "")) { match = rows[i]; break; }
-      }
-      if (match) {
-        var prev = els.list.querySelector(".hn-row-active");
-        if (prev) prev.classList.remove("hn-row-active");
-        match.classList.add("hn-row-active");
-        match.scrollIntoView({ block: "nearest" });
-      }
-    }
-  });
-
-  // escape closes the name modal first, otherwise composer / mode / panel
-  document.addEventListener("keydown", function (e) {
-    if (e.key !== "Escape") return;
-    if (state.sparklineOpen) { els.sparkline.hidden = true; state.sparklineOpen = false; return; }
-    if (els.nameModal && !els.nameModal.hidden) { closeNameModal(); return; }
-    hideComposer();
-    setMode(false);
-    closePanel();
-  });
-
-  els.frame.addEventListener("load", loadComments);
-  loadComments();
-  loadViews();
 })();
