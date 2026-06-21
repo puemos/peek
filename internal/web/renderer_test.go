@@ -118,6 +118,37 @@ func TestPageTemplateUsesDatasetForViewerConfig(t *testing.T) {
 	}
 }
 
+func TestPageTemplateNameModalCanBeShownByAlpine(t *testing.T) {
+	renderer, err := newRenderer(func(name string) string {
+		return "/" + name + "?v=test"
+	})
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	body, err := renderer.Execute(TemplatePage, PageData{Name: "page.html", Slug: "abc123", RawURL: "/raw/abc123?t=t&v=v", Visibility: "public"})
+	if err != nil {
+		t.Fatalf("execute page: %v", err)
+	}
+	html := string(body)
+	start := strings.Index(html, `<div id="hn-name-modal"`)
+	if start < 0 {
+		t.Fatalf("page template missing name modal: %s", html)
+	}
+	end := strings.Index(html[start:], ">")
+	if end < 0 {
+		t.Fatalf("name modal tag was not closed: %s", html[start:])
+	}
+	tag := html[start : start+end+1]
+	if strings.Contains(tag, " hidden") {
+		t.Fatalf("name modal must not use the hidden attribute because Alpine x-show cannot override it: %s", tag)
+	}
+	for _, want := range []string{`x-show="nameModalOpen"`, `x-cloak`} {
+		if !strings.Contains(tag, want) {
+			t.Fatalf("name modal tag missing %q: %s", want, tag)
+		}
+	}
+}
+
 func TestDashboardInviteLinkRendersAsCopyAction(t *testing.T) {
 	renderer, err := NewRenderer()
 	if err != nil {

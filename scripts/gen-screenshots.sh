@@ -102,19 +102,21 @@ api() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 echo "-> seeding uploads"
 UP="$(api --data-binary @scripts/demo-report.html \
   -H "Content-Type: text/html" \
-  "$BASE/api/upload?filename=codebase-health-report.html")"
+  "$BASE/api/upload?filename=codebase-health-report.html&visibility=public")"
 SLUG="$(printf '%s' "$UP" | json_value slug)"
 [ -n "$SLUG" ] || { echo "error: upload failed: $UP"; exit 1; }
 
 printf '<!doctype html><h1>Release checklist</h1><p>v2 freeze tasks for reviewers.</p>' | \
-  api --data-binary @- -H "Content-Type: text/html" \
-  "$BASE/api/upload?filename=release-checklist.html&password=review" >/dev/null
+  api -F "file=@-;filename=release-checklist.html;type=text/html" \
+  -F "visibility=password" \
+  -F "password=review" \
+  "$BASE/api/upload" >/dev/null
 printf '<!doctype html><h1>Design RFC</h1><p>New dashboard navigation proposal.</p>' | \
   api --data-binary @- -H "Content-Type: text/html" \
-  "$BASE/api/upload?filename=dashboard-navigation-rfc.html" >/dev/null
+  "$BASE/api/upload?filename=dashboard-navigation-rfc.html&visibility=public" >/dev/null
 printf '<!doctype html><h1>Incident follow-up</h1><p>Action items from the cache incident.</p>' | \
   api --data-binary @- -H "Content-Type: text/html" \
-  "$BASE/api/upload?filename=incident-follow-up.html" >/dev/null
+  "$BASE/api/upload?filename=incident-follow-up.html&visibility=public" >/dev/null
 
 UPLOAD_ID="$(sqlite3 "$DATA/peek.db" "SELECT id FROM uploads WHERE slug='$SLUG'")"
 NOW="$(date +%s)"

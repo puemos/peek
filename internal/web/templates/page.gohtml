@@ -117,19 +117,20 @@
 
 <div id="hn-composer" x-cloak popover="manual"
      class="hn-feedback-card"
-     :class="{ 'hn-composer-open': composerOpen }"
+     :class="{ 'hn-composer-open': composerOpen, 'hn-composer-suppressed': nameModalOpen }"
      @toggle="syncComposerPopover($event)">
   <form id="hn-comment-form" class="hn-feedback-form" @submit.prevent="postComment">
     <textarea id="hn-body" x-ref="composerTextarea" x-model="composerBody" placeholder="Feedback" maxlength="4000" required aria-describedby="hn-composer-error"
               class="hn-feedback-input" :aria-label="composerTargetLabel || 'Feedback'"></textarea>
     <p id="hn-composer-error" x-show="composerError" x-text="composerError" class="sr-only"></p>
     <div class="hn-feedback-footer">
+      <button type="button" class="hn-secondary-button" @click="closeComposer">Cancel</button>
       <button type="submit" class="hn-primary-button">Send feedback</button>
     </div>
   </form>
 </div>
 
-<div id="hn-name-modal" x-show="nameModalOpen" hidden x-cloak
+<div id="hn-name-modal" x-show="nameModalOpen" x-cloak
      class="fixed inset-0 z-[1300] grid place-items-center p-6 bg-black/45 backdrop-blur-sm"
      x-transition.opacity.duration.150ms>
   <div class="w-[340px] max-w-full bg-card border border-border rounded-xl p-6 shadow-[0_12px_32px_-4px_rgba(0,0,0,.6),0_4px_12px_-4px_rgba(0,0,0,.5)]"

@@ -376,6 +376,7 @@
 
       syncComposerPopover(event) {
         if (event && event.newState === "closed" && this.composerOpen) {
+          if (this.nameModalOpen) return;
           this.composerOpen = false;
           this.scheduleComposerClear();
         }
@@ -473,6 +474,12 @@
         this.nameInput = this.name || "";
         this.nameModalOpen = true;
         localStorage.setItem("hn_name_asked", "1");
+        const composer = composerElement();
+        if (composer && typeof composer.hidePopover === "function" && composer.matches(":popover-open")) {
+          try {
+            composer.hidePopover();
+          } catch (e) {}
+        }
         this.$nextTick(() => {
           const inp = this.$refs.nameInput;
           if (inp) inp.focus();

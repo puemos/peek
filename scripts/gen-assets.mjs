@@ -148,7 +148,7 @@ async function openSharedPage(page) {
   await page.locator("#hn-comment-btn").waitFor({ state: "visible" });
   await page.evaluate(() => {
     const modal = document.getElementById("hn-name-modal");
-    if (modal && !modal.hidden) document.getElementById("hn-name-skip")?.click();
+    if (modal && getComputedStyle(modal).display !== "none") document.getElementById("hn-name-skip")?.click();
   });
   await page.frameLocator("#hn-frame").locator("html").evaluate((html, zoom) => {
     html.style.zoom = zoom;

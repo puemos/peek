@@ -104,13 +104,13 @@ echo "› seeding demo report"
 api() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 UP=$(api --data-binary @scripts/demo-report.html \
   -H "Content-Type: text/html" \
-  "http://localhost:$PORT/api/upload?filename=codebase-health-report")
+  "http://localhost:$PORT/api/upload?filename=codebase-health-report&visibility=public")
 SLUG=$(printf '%s' "$UP" | sed -n 's/.*"slug":"\([^"]*\)".*/\1/p')
 [ -n "$SLUG" ] || { echo "error: upload failed: $UP"; exit 1; }
 # a second upload so the dashboard list looks real
 printf '<!doctype html><h1>Release checklist</h1><p>v2 freeze tasks.</p>' | \
   api --data-binary @- -H "Content-Type: text/html" \
-  "http://localhost:$PORT/api/upload?filename=release-checklist" >/dev/null
+  "http://localhost:$PORT/api/upload?filename=release-checklist&visibility=public" >/dev/null
 
 UPLOAD_ID=$(sqlite3 "$DATA/peek.db" "SELECT id FROM uploads WHERE slug='$SLUG'")
 NOW=$(date +%s)

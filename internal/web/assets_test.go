@@ -200,6 +200,8 @@ func TestParentAppPromptsForNameBeforeAnonymousComment(t *testing.T) {
 		"skipName()",
 		"this.allowAnonymousComment = true",
 		"this.postComment();",
+		"composer.hidePopover();",
+		"if (this.nameModalOpen) return;",
 	} {
 		if !strings.Contains(src, want) {
 			t.Fatalf("parent app name prompt flow missing %q", want)
