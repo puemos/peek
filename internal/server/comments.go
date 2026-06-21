@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -109,7 +110,9 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 
 	vid := s.visitorID(w, r)
 	if in.Name != "anonymous" {
-		_ = s.store.UpsertVisitor(vid, in.Name)
+		if err := s.store.UpsertVisitor(vid, in.Name); err != nil {
+			slog.Warn("comment visitor upsert failed", "upload_id", u.ID, "err", err)
+		}
 		s.setNameCookie(w, in.Name)
 	}
 
