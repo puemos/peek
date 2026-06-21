@@ -2,6 +2,7 @@ package server
 
 import (
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -156,8 +157,14 @@ func (s *Server) handleDashboardDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard?err=not+owner", http.StatusSeeOther)
 		return
 	}
-	_ = s.store.DeleteUpload(u.ID)
-	_ = s.storage.Delete(r.Context(), slug)
+	if err := s.store.DeleteUpload(u.ID); err != nil {
+		slog.Error("dashboard upload delete failed", "slug", slug, "err", err)
+		dashboardError(w, r, "delete failed")
+		return
+	}
+	if err := s.storage.Delete(r.Context(), slug); err != nil {
+		slog.Warn("dashboard upload storage cleanup failed", "slug", slug, "err", err)
+	}
 	s.auditRequest(r, owner.Name, "upload.delete", "slug="+slug+" file="+u.Filename)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
