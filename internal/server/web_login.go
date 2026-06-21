@@ -23,7 +23,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// POST
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		csrf := s.newCSRF(w)
+		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid session.", r))
+		return
+	}
 	if !s.validateCSRF(r, w, r.FormValue("csrf")) {
 		csrf := s.newCSRF(w)
 		s.renderHTML(w, http.StatusOK, webui.TemplateLogin, s.loginData(csrf, "Invalid session.", r))
@@ -117,8 +121,10 @@ func (s *Server) loginData(csrf, errMsg string, r *http.Request) loginData {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	_ = s.validateCSRF(r, w, r.FormValue("csrf"))
+	if err := r.ParseForm(); err != nil || !s.validateCSRF(r, w, r.FormValue("csrf")) {
+		http.Error(w, "invalid session", http.StatusBadRequest)
+		return
+	}
 	s.setCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 	})
