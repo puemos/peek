@@ -1,4 +1,4 @@
-package main
+package peekd
 
 import (
 	"path/filepath"
@@ -51,5 +51,47 @@ func TestBackupArgs(t *testing.T) {
 func TestBackupArgsRejectsExtraArgs(t *testing.T) {
 	if _, _, err := backupArgs([]string{"one.db", "two.db"}); err == nil {
 		t.Fatal("expected extra backup args to fail")
+	}
+}
+
+func TestParseServeConfigMapsFlagsAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PEEK_ADDR", ":8800")
+	t.Setenv("PEEK_S3_REGION", "auto")
+	t.Setenv("PEEK_TRUSTED_PROXY", "true")
+
+	cfg, showVersion, err := parseServeConfig([]string{
+		"--data", dir,
+		"--base-url", "https://peek.example.test",
+		"--max-upload", "12345",
+		"--storage", "s3",
+		"--s3-endpoint", "https://s3.example.test",
+		"--s3-bucket", "peek",
+		"--s3-access-key", "access",
+		"--s3-secret-key", "secret",
+		"--s3-allow-private-endpoint",
+		"--max-total-size", "999",
+		"--retention-days", "7",
+	})
+	if err != nil {
+		t.Fatalf("parseServeConfig: %v", err)
+	}
+	if showVersion {
+		t.Fatal("showVersion = true")
+	}
+	if cfg.Addr != ":8800" || cfg.DataDir != dir || cfg.BaseURL != "https://peek.example.test" {
+		t.Fatalf("basic config = %+v", cfg)
+	}
+	if cfg.MaxUpload != 12345 || cfg.MaxTotalSize != 999 || cfg.RetentionDays != 7 {
+		t.Fatalf("limits = %+v", cfg)
+	}
+	if cfg.Storage != "s3" || cfg.S3Endpoint != "https://s3.example.test" || cfg.S3Bucket != "peek" {
+		t.Fatalf("s3 config = %+v", cfg)
+	}
+	if cfg.S3Region != "auto" || cfg.S3AccessKey != "access" || cfg.S3SecretKey != "secret" || !cfg.S3AllowPrivateEndpoint {
+		t.Fatalf("s3 credentials/config = %+v", cfg)
+	}
+	if !cfg.TrustedProxy {
+		t.Fatal("TrustedProxy = false")
 	}
 }
