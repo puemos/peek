@@ -1,9 +1,6 @@
 package server_test
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,44 +42,24 @@ func newTestServer(t *testing.T) (*server.Server, string, string) {
 }
 
 func TestHealthEndpoints(t *testing.T) {
-	srv, _, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	resp, err := http.Get(ts.URL + "/healthz")
-	if err != nil {
-		t.Fatalf("healthz request: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || string(body) != "ok" {
-		t.Fatalf("healthz: %d %s", resp.StatusCode, body)
+	resp := app.request(t, http.MethodGet, "/healthz", nil)
+	if resp.StatusCode != http.StatusOK || string(resp.Body) != "ok" {
+		t.Fatalf("healthz: %d %s", resp.StatusCode, resp.Body)
 	}
 
-	resp, err = http.Get(ts.URL + "/readyz")
-	if err != nil {
-		t.Fatalf("readyz request: %v", err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || string(body) != "ready" {
-		t.Fatalf("readyz: %d %s", resp.StatusCode, body)
+	resp = app.request(t, http.MethodGet, "/readyz", nil)
+	if resp.StatusCode != http.StatusOK || string(resp.Body) != "ready" {
+		t.Fatalf("readyz: %d %s", resp.StatusCode, resp.Body)
 	}
 }
 
 func TestAuthRejectionWithoutToken(t *testing.T) {
-	srv, _, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	resp, err := http.Get(ts.URL + "/api/uploads")
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", resp.StatusCode)
-	}
+	resp := app.request(t, http.MethodGet, "/api/uploads", nil)
+	assertStatus(t, resp, http.StatusUnauthorized)
 }
 
 func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
@@ -127,96 +104,51 @@ func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = srv.Close() })
 	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
-
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/uploads/owned-page/comments", nil)
-	req.Header.Set("Authorization", "Bearer "+userToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("comments request: %v", err)
+	t.Cleanup(ts.Close)
+	app := testApp{
+		URL:    ts.URL,
+		client: ts.Client(),
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+
+	resp := app.request(t, http.MethodGet, "/api/uploads/owned-page/comments", nil, withAuth(userToken))
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("expected disabled account to be forbidden, got %d %s", resp.StatusCode, body)
+		t.Fatalf("expected disabled account to be forbidden, got %d %s", resp.StatusCode, resp.Body)
 	}
 }
 
 func TestUploadRejectsUnsupportedContentType(t *testing.T) {
-	srv, adminToken, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload", bytes.NewReader([]byte("<!DOCTYPE html><html></html>")))
-	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
-	uploadReq.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("upload request: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnsupportedMediaType {
-		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
-	}
-	var out map[string]string
-	if err := json.Unmarshal(body, &out); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
+	resp := app.requestString(t, http.MethodPost, "/api/upload", "<!DOCTYPE html><html></html>", withAuth(app.AdminToken), withContentType("application/json"))
+	assertStatus(t, resp, http.StatusUnsupportedMediaType)
+	out := decodeResponseJSON[map[string]string](t, resp)
 	if out["error"] != "unsupported content type" {
 		t.Fatalf("response = %+v", out)
 	}
 }
 
 func TestUploadAcceptsHTMLContentTypeWithParameters(t *testing.T) {
-	srv, adminToken, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload", bytes.NewReader([]byte("<!DOCTYPE html><html><body></body></html>")))
-	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
-	uploadReq.Header.Set("Content-Type", "text/html; charset=utf-8")
-	resp, err := http.DefaultClient.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("upload request: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("upload failed: %d %s", resp.StatusCode, body)
-	}
+	resp := app.requestString(t, http.MethodPost, "/api/upload", "<!DOCTYPE html><html><body></body></html>", withAuth(app.AdminToken), withContentType("text/html; charset=utf-8"))
+	assertStatus(t, resp, http.StatusOK)
 }
 
 func TestUploadAndListAndDelete(t *testing.T) {
-	srv, adminToken, dir := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload", bytes.NewReader([]byte("<!DOCTYPE html><html><body></body></html>")))
-	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
-	uploadReq.Header.Set("Content-Type", "text/html")
-	resp, err := http.DefaultClient.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("upload request: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("upload failed: %d %s", resp.StatusCode, body)
-	}
-	var up struct {
+	resp := app.requestString(t, http.MethodPost, "/api/upload", "<!DOCTYPE html><html><body></body></html>", withAuth(app.AdminToken), withContentType("text/html"))
+	assertStatus(t, resp, http.StatusOK)
+	up := decodeResponseJSON[struct {
 		Slug string `json:"slug"`
 		URL  string `json:"url"`
-	}
-	if err := json.Unmarshal(body, &up); err != nil {
-		t.Fatalf("decode upload response: %v", err)
-	}
+	}](t, resp)
 	if up.Slug == "" || !strings.Contains(up.URL, up.Slug) {
 		t.Fatalf("unexpected upload response: %+v", up)
 	}
 
 	// Verify file exists on disk in the data dir uploads folder.
-	path := filepath.Join(dir, "uploads", up.Slug+".html")
+	path := filepath.Join(app.DataDir, "uploads", up.Slug+".html")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("expected file to be saved: %v", err)
@@ -225,124 +157,57 @@ func TestUploadAndListAndDelete(t *testing.T) {
 		t.Fatalf("unexpected file contents: %s", data)
 	}
 
-	listReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/uploads", nil)
-	listReq.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err = http.DefaultClient.Do(listReq)
-	if err != nil {
-		t.Fatalf("list request: %v", err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("list failed: %d %s", resp.StatusCode, body)
-	}
-	var list []struct {
+	resp = app.request(t, http.MethodGet, "/api/uploads", nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	list := decodeResponseJSON[[]struct {
 		Slug     string `json:"slug"`
 		Filename string `json:"filename"`
 		Size     int64  `json:"size"`
-	}
-	if err := json.Unmarshal(body, &list); err != nil {
-		t.Fatalf("decode list: %v", err)
-	}
+	}](t, resp)
 	if len(list) != 1 || list[0].Slug != up.Slug {
 		t.Fatalf("expected one upload with slug %q, got %+v", up.Slug, list)
 	}
 
-	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/uploads/"+up.Slug, nil)
-	delReq.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err = http.DefaultClient.Do(delReq)
-	if err != nil {
-		t.Fatalf("delete request: %v", err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("delete failed: %d %s", resp.StatusCode, body)
-	}
-	var del map[string]any
-	if err := json.Unmarshal(body, &del); err != nil {
-		t.Fatalf("decode delete: %v", err)
-	}
+	resp = app.request(t, http.MethodDelete, "/api/uploads/"+up.Slug, nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	del := decodeResponseJSON[map[string]any](t, resp)
 	if del["deleted"] != up.Slug {
 		t.Fatalf("expected deleted slug, got %+v", del)
 	}
 }
 
 func TestInternalReviewWorkflow(t *testing.T) {
-	srv, adminToken, dir := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	uploadReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/upload?filename=review.html", strings.NewReader("<!DOCTYPE html><html><body><h1 id=\"hero\">Hello</h1></body></html>"))
-	uploadReq.Header.Set("Authorization", "Bearer "+adminToken)
-	uploadReq.Header.Set("Content-Type", "text/html; charset=utf-8")
-	resp, err := http.DefaultClient.Do(uploadReq)
-	if err != nil {
-		t.Fatalf("upload request: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("upload failed: %d %s", resp.StatusCode, body)
-	}
-	var up struct {
+	resp := app.requestString(t, http.MethodPost, "/api/upload?filename=review.html", "<!DOCTYPE html><html><body><h1 id=\"hero\">Hello</h1></body></html>", withAuth(app.AdminToken), withContentType("text/html; charset=utf-8"))
+	assertStatus(t, resp, http.StatusOK)
+	up := decodeResponseJSON[struct {
 		Slug string `json:"slug"`
 		URL  string `json:"url"`
-	}
-	if err := json.Unmarshal(body, &up); err != nil {
-		t.Fatalf("decode upload response: %v", err)
-	}
+	}](t, resp)
 	if up.Slug == "" {
 		t.Fatalf("missing slug in upload response: %+v", up)
 	}
 
-	pageResp, err := http.Get(ts.URL + "/p/" + up.Slug)
-	if err != nil {
-		t.Fatalf("page request: %v", err)
-	}
-	pageBody, _ := io.ReadAll(pageResp.Body)
-	pageResp.Body.Close()
-	if pageResp.StatusCode != http.StatusOK {
-		t.Fatalf("page failed: %d %s", pageResp.StatusCode, pageBody)
-	}
-	if !strings.Contains(string(pageBody), "/raw/"+up.Slug) {
-		t.Fatalf("page did not reference raw iframe URL: %s", pageBody)
+	pageResp := app.request(t, http.MethodGet, "/p/"+up.Slug, nil)
+	assertStatus(t, pageResp, http.StatusOK)
+	if !strings.Contains(string(pageResp.Body), "/raw/"+up.Slug) {
+		t.Fatalf("page did not reference raw iframe URL: %s", pageResp.Body)
 	}
 
-	commentReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/uploads/"+up.Slug+"/comments", strings.NewReader(`{"name":"Ada","body":"Looks good","selector":"#hero","element_text":"Hello"}`))
-	commentReq.Header.Set("Content-Type", "application/json")
-	for _, c := range pageResp.Cookies() {
-		commentReq.AddCookie(c)
-	}
-	resp, err = http.DefaultClient.Do(commentReq)
-	if err != nil {
-		t.Fatalf("comment request: %v", err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("comment failed: %d %s", resp.StatusCode, body)
-	}
-	if !strings.Contains(string(body), `"author":"Ada"`) || !strings.Contains(string(body), `"selector":"#hero"`) {
-		t.Fatalf("comment response missing saved comment: %s", body)
+	resp = app.requestString(t, http.MethodPost, "/api/uploads/"+up.Slug+"/comments", `{"name":"Ada","body":"Looks good","selector":"#hero","element_text":"Hello"}`, withContentType("application/json"), withCookies(pageResp.Cookies...))
+	assertStatus(t, resp, http.StatusOK)
+	if !strings.Contains(string(resp.Body), `"author":"Ada"`) || !strings.Contains(string(resp.Body), `"selector":"#hero"`) {
+		t.Fatalf("comment response missing saved comment: %s", resp.Body)
 	}
 
-	commentsReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/uploads/"+up.Slug+"/comments", nil)
-	commentsReq.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err = http.DefaultClient.Do(commentsReq)
-	if err != nil {
-		t.Fatalf("owner comments request: %v", err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("owner comments failed: %d %s", resp.StatusCode, body)
-	}
-	if !strings.Contains(string(body), `"body":"Looks good"`) {
-		t.Fatalf("owner comments response missing comment: %s", body)
+	resp = app.request(t, http.MethodGet, "/api/uploads/"+up.Slug+"/comments", nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	if !strings.Contains(string(resp.Body), `"body":"Looks good"`) {
+		t.Fatalf("owner comments response missing comment: %s", resp.Body)
 	}
 
-	export := waitForExport(t, ts.URL, adminToken, up.Slug)
+	export := waitForExport(t, app, up.Slug)
 	if export.Filename != "review.html" || export.TotalVisits < 1 || len(export.Comments) != 1 {
 		t.Fatalf("unexpected export: %+v", export)
 	}
@@ -350,18 +215,9 @@ func TestInternalReviewWorkflow(t *testing.T) {
 		t.Fatalf("unexpected exported comment: %+v", export.Comments)
 	}
 
-	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/uploads/"+up.Slug, nil)
-	delReq.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err = http.DefaultClient.Do(delReq)
-	if err != nil {
-		t.Fatalf("delete request: %v", err)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("delete failed: %d %s", resp.StatusCode, body)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "uploads", up.Slug+".html")); !os.IsNotExist(err) {
+	resp = app.request(t, http.MethodDelete, "/api/uploads/"+up.Slug, nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	if _, err := os.Stat(filepath.Join(app.DataDir, "uploads", up.Slug+".html")); !os.IsNotExist(err) {
 		t.Fatalf("uploaded object should be removed, stat err=%v", err)
 	}
 }
@@ -375,25 +231,13 @@ type workflowExport struct {
 	} `json:"comments"`
 }
 
-func waitForExport(t *testing.T, host, token, slug string) workflowExport {
+func waitForExport(t *testing.T, app testApp, slug string) workflowExport {
 	t.Helper()
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for {
-		req, _ := http.NewRequest(http.MethodGet, host+"/api/uploads/"+slug+"/export", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("export request: %v", err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("export failed: %d %s", resp.StatusCode, body)
-		}
-		var out workflowExport
-		if err := json.Unmarshal(body, &out); err != nil {
-			t.Fatalf("decode export: %v", err)
-		}
+		resp := app.request(t, http.MethodGet, "/api/uploads/"+slug+"/export", nil, withAuth(app.AdminToken))
+		assertStatus(t, resp, http.StatusOK)
+		out := decodeResponseJSON[workflowExport](t, resp)
 		if out.TotalVisits > 0 {
 			return out
 		}
@@ -405,56 +249,26 @@ func waitForExport(t *testing.T, host, token, slug string) workflowExport {
 }
 
 func TestCreateTokenWithExpiryAndList(t *testing.T) {
-	srv, adminToken, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
-	body := map[string]any{"name": "service", "expires_hours": 1}
-	var buf bytes.Buffer
-	_ = json.NewEncoder(&buf).Encode(body)
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/tokens", &buf)
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	respBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("create token failed: %d %s", resp.StatusCode, respBody)
-	}
-	var tok struct {
+	resp := app.requestJSON(t, http.MethodPost, "/api/tokens", map[string]any{"name": "service", "expires_hours": 1}, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	tok := decodeResponseJSON[struct {
 		Token string `json:"token"`
 		Name  string `json:"name"`
-	}
-	if err := json.Unmarshal(respBody, &tok); err != nil {
-		t.Fatalf("decode token response: %v", err)
-	}
+	}](t, resp)
 	if tok.Token == "" || tok.Name != "service" {
 		t.Fatalf("unexpected token response: %+v", tok)
 	}
 
-	listReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/tokens", nil)
-	listReq.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err = http.DefaultClient.Do(listReq)
-	if err != nil {
-		t.Fatalf("list tokens: %v", err)
-	}
-	respBody, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("list tokens failed: %d %s", resp.StatusCode, respBody)
-	}
-	var tokens []struct {
+	resp = app.request(t, http.MethodGet, "/api/tokens", nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	tokens := decodeResponseJSON[[]struct {
 		ID        int64  `json:"id"`
 		Name      string `json:"name"`
 		Admin     bool   `json:"admin"`
 		ExpiresAt int64  `json:"expires_at"`
-	}
-	if err := json.Unmarshal(respBody, &tokens); err != nil {
-		t.Fatalf("decode tokens: %v", err)
-	}
+	}](t, resp)
 	found := false
 	for _, t := range tokens {
 		if t.Name == "service" && !t.Admin && t.ExpiresAt > time.Now().Unix() {
@@ -467,42 +281,19 @@ func TestCreateTokenWithExpiryAndList(t *testing.T) {
 }
 
 func TestAuditLogRetrieval(t *testing.T) {
-	srv, adminToken, _ := newTestServer(t)
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	app := newTestApp(t)
 
 	// Trigger an audited event by creating a token.
-	body := map[string]any{"name": "audit-token"}
-	var buf bytes.Buffer
-	_ = json.NewEncoder(&buf).Encode(body)
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/tokens", &buf)
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("create token: %v", err)
-	}
-	resp.Body.Close()
+	resp := app.requestJSON(t, http.MethodPost, "/api/tokens", map[string]any{"name": "audit-token"}, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
 
-	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/api/audit", nil)
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("audit request: %v", err)
-	}
-	respBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("audit failed: %d %s", resp.StatusCode, respBody)
-	}
-	var entries []struct {
+	resp = app.request(t, http.MethodGet, "/api/audit", nil, withAuth(app.AdminToken))
+	assertStatus(t, resp, http.StatusOK)
+	entries := decodeResponseJSON[[]struct {
 		Actor  string `json:"actor"`
 		Action string `json:"action"`
 		IP     string `json:"ip"`
-	}
-	if err := json.Unmarshal(respBody, &entries); err != nil {
-		t.Fatalf("decode audit: %v", err)
-	}
+	}](t, resp)
 	if len(entries) == 0 {
 		t.Fatalf("expected audit entries, got none")
 	}
