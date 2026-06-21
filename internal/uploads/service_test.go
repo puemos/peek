@@ -69,6 +69,74 @@ func TestServiceRejectsInvalidPasswordBeforeStorageWrite(t *testing.T) {
 	}
 }
 
+func TestServiceDefaultsToPasswordVisibility(t *testing.T) {
+	store, owner := serviceTestStore(t)
+	defer store.Close()
+	st := newMemoryStorage()
+	svc := Service{Repository: store, Storage: st, BaseURL: "http://localhost:7700"}
+
+	_, err := svc.Create(context.Background(), CreateInput{
+		OwnerAccountID: owner.AccountID,
+		OwnerTokenID:   owner.ID,
+		Name:           "page.html",
+		Data:           []byte("<!doctype html><html></html>"),
+	})
+	if err == nil {
+		t.Fatal("expected missing password error")
+	}
+	var uploadErr *Error
+	if !errors.As(err, &uploadErr) || uploadErr.Kind != KindPasswordRequired {
+		t.Fatalf("error = %T %[1]v, want %q", err, KindPasswordRequired)
+	}
+	if len(st.saved) != 0 {
+		t.Fatalf("missing password wrote storage object: %+v", st.saved)
+	}
+}
+
+func TestServiceStoresPasswordHashOnlyForPasswordVisibility(t *testing.T) {
+	store, owner := serviceTestStore(t)
+	defer store.Close()
+	st := newMemoryStorage()
+	svc := Service{Repository: store, Storage: st, BaseURL: "http://localhost:7700"}
+
+	up, err := svc.Create(context.Background(), CreateInput{
+		OwnerAccountID: owner.AccountID,
+		OwnerTokenID:   owner.ID,
+		Name:           "page.html",
+		Password:       "secret",
+		Data:           []byte("<!doctype html><html></html>"),
+	})
+	if err != nil {
+		t.Fatalf("create password upload: %v", err)
+	}
+	if up.Visibility != "password" {
+		t.Fatalf("result visibility = %q", up.Visibility)
+	}
+	got, err := store.GetUpload(context.Background(), up.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Visibility != "password" || got.PasswordHash == "" {
+		t.Fatalf("password upload not stored correctly: %+v", got)
+	}
+
+	_, err = svc.Create(context.Background(), CreateInput{
+		OwnerAccountID: owner.AccountID,
+		OwnerTokenID:   owner.ID,
+		Name:           "public.html",
+		Visibility:     "public",
+		Password:       "secret",
+		Data:           []byte("<!doctype html><html></html>"),
+	})
+	if err == nil {
+		t.Fatal("expected public upload with password to fail")
+	}
+	var uploadErr *Error
+	if !errors.As(err, &uploadErr) || uploadErr.Kind != KindPasswordNotAllowed {
+		t.Fatalf("error = %T %[1]v, want %q", err, KindPasswordNotAllowed)
+	}
+}
+
 func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 	store, owner := serviceTestStore(t)
 	defer store.Close()
@@ -79,6 +147,7 @@ func TestServiceDeletesStorageObjectWhenDBRejectsUpload(t *testing.T) {
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
 		Name:           "page.html",
+		Visibility:     "public",
 		Data:           []byte("<!doctype html><html></html>"),
 		Limits:         uploadquota.Limits{MaxTotalSize: 1},
 	})
@@ -112,6 +181,7 @@ func TestServiceReturnsCleanupErrorWhenStorageDeleteFails(t *testing.T) {
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
 		Name:           "page.html",
+		Visibility:     "public",
 		Data:           []byte("<!doctype html><html></html>"),
 		Limits:         uploadquota.Limits{MaxTotalSize: 1},
 	})

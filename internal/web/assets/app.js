@@ -121,7 +121,7 @@
   document.addEventListener("alpine:init", () => {
     Alpine.data("pageApp", () => ({
       slug: "",
-      protected: false,
+      visibility: "password",
 
       comments: [],
       commentCount: 0,
@@ -152,7 +152,7 @@
       init() {
         const dataset = document.body ? document.body.dataset : {};
         this.slug = dataset.slug || "";
-        this.protected = dataset.protected === "true";
+        this.visibility = dataset.visibility || "password";
 
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {

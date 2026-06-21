@@ -87,7 +87,7 @@ Open `/p/<slug>` and use the floating island at the bottom:
 2. Click Comment, then click any element to pin a comment to it.
 3. Or leave a page-level note not tied to anything.
 
-Comments live in a side panel. Your name is asked once and remembered. Password-protected pages gate commenting behind the same session.
+Comments live in a side panel. Your name is asked once and remembered. Public pages are open to anyone with the link, password pages gate commenting behind the same password session, and private pages require an active Peek account.
 
 ## CLI reference
 
@@ -96,11 +96,14 @@ peek login [--host <url>]              browser login when available; token fallb
 peek login --token-stdin               read an access token from stdin
 peek login --token-file <path>         read an access token from a file
 peek config show                       show current host + masked token
-peek upload <file.html> [--password <pw> | --password-stdin] [--name <filename>]
+peek upload <file.html> --password <pw> [--name <filename>]
+peek upload <file.html> --password-stdin
+peek upload <file.html> --visibility public|private
 peek list
 peek delete <slug>
 peek delete-all                        delete all your uploads
-peek password <slug> --set <pw> | --set-stdin | --clear
+peek visibility <slug> public|private
+peek visibility <slug> password --password <pw> | --password-stdin
 peek stats <slug>
 peek comments <slug>                   list comments on one of your uploads
 peek export <slug>                     export all data for an upload

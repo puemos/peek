@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func TestExportUploadReportsVisitQueryFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked(context.Background(), "page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", owner.AccountID, owner.ID, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Exec(`DROP TABLE visits`); err != nil {
@@ -67,7 +68,7 @@ func TestHandleViewsReturnsAlignedBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked(context.Background(), "page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", owner.AccountID, owner.ID, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	upload, err := store.GetUpload(context.Background(), "page")
@@ -116,4 +117,36 @@ func TestHandleViewsReturnsAlignedBuckets(t *testing.T) {
 		}
 	}
 	t.Fatalf("expected at least one non-zero bucket: %+v", body.Buckets)
+}
+
+func TestHandleViewsRespectsPrivateVisibility(t *testing.T) {
+	s := newTestServer(t)
+	owner, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := s.store.CreateAccount(context.Background(), "viewer@example.test", "Viewer", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.CreateUploadChecked(context.Background(), "private", owner.ID, 0, "private.html", 42, "private", "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/uploads/private/views", nil)
+	req.SetPathValue("slug", "private")
+	rec := httptest.NewRecorder()
+	s.handleViews(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/uploads/private/views", nil)
+	req.SetPathValue("slug", "private")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(viewer.ID, 10), sessionTTL)})
+	rec = httptest.NewRecorder()
+	s.handleViews(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("active viewer status = %d, body = %s", rec.Code, rec.Body.String())
+	}
 }

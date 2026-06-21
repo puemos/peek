@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/puemos/peek/internal/models"
 	"github.com/puemos/peek/internal/objectstore"
 	"github.com/puemos/peek/internal/uploadquota"
 )
@@ -19,23 +20,25 @@ type Service struct {
 
 type Repository interface {
 	UploadSlugExists(ctx context.Context, slug string) (bool, error)
-	CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, name string, size int64, passwordHash string, limits uploadquota.Limits) error
+	CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, name string, size int64, visibility, passwordHash string, limits uploadquota.Limits) error
 }
 
 type CreateInput struct {
 	OwnerAccountID int64
 	OwnerTokenID   int64
 	Name           string
+	Visibility     string
 	Password       string
 	Data           []byte
 	Limits         uploadquota.Limits
 }
 
 type CreateResult struct {
-	Slug string
-	URL  string
-	Name string
-	Size int
+	Slug       string
+	URL        string
+	Name       string
+	Size       int
+	Visibility string
 }
 
 type ErrorKind string
@@ -43,6 +46,9 @@ type ErrorKind string
 const (
 	KindEmptyFile            ErrorKind = "empty_file"
 	KindInvalidHTML          ErrorKind = "invalid_html"
+	KindInvalidVisibility    ErrorKind = "invalid_visibility"
+	KindPasswordRequired     ErrorKind = "password_required"
+	KindPasswordNotAllowed   ErrorKind = "password_not_allowed"
 	KindPasswordTooLong      ErrorKind = "password_too_long"
 	KindPasswordHash         ErrorKind = "password_hash"
 	KindSlugGeneration       ErrorKind = "slug_generation"
@@ -85,6 +91,10 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 		in.Name = "page"
 	}
 	in.Password = strings.TrimSpace(in.Password)
+	in.Visibility = strings.TrimSpace(in.Visibility)
+	if in.Visibility == "" {
+		in.Visibility = models.UploadVisibilityPassword
+	}
 
 	if len(in.Data) == 0 {
 		return nil, newError(KindEmptyFile, "empty file")
@@ -92,9 +102,21 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 	if !looksLikeHTML(in.Data) {
 		return nil, newError(KindInvalidHTML, "file does not look like HTML")
 	}
+	switch in.Visibility {
+	case models.UploadVisibilityPublic, models.UploadVisibilityPrivate:
+		if in.Password != "" {
+			return nil, newError(KindPasswordNotAllowed, "password is only allowed with password visibility")
+		}
+	case models.UploadVisibilityPassword:
+		if in.Password == "" {
+			return nil, newError(KindPasswordRequired, "password visibility requires a password")
+		}
+	default:
+		return nil, newError(KindInvalidVisibility, "visibility must be public, password, or private")
+	}
 
 	pwHash := ""
-	if in.Password != "" {
+	if in.Visibility == models.UploadVisibilityPassword {
 		if !ValidatePasswordLength(in.Password) {
 			return nil, newError(KindPasswordTooLong, "password must be 72 characters or fewer")
 		}
@@ -112,7 +134,7 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 	if err := svc.Storage.Save(ctx, slug, in.Data); err != nil {
 		return nil, newError(KindStorageWrite, "storage failed")
 	}
-	if err := svc.Repository.CreateUploadChecked(ctx, slug, in.OwnerAccountID, in.OwnerTokenID, in.Name, int64(len(in.Data)), pwHash, in.Limits); err != nil {
+	if err := svc.Repository.CreateUploadChecked(ctx, slug, in.OwnerAccountID, in.OwnerTokenID, in.Name, int64(len(in.Data)), in.Visibility, pwHash, in.Limits); err != nil {
 		uploadErr := storeError(err)
 		if cleanupErr := svc.Storage.Delete(ctx, slug); cleanupErr != nil {
 			return nil, errors.Join(uploadErr, &CleanupError{Slug: slug, Err: cleanupErr})
@@ -121,10 +143,11 @@ func (svc Service) Create(ctx context.Context, in CreateInput) (*CreateResult, e
 	}
 
 	return &CreateResult{
-		Slug: slug,
-		URL:  svc.BaseURL + "/p/" + slug,
-		Name: in.Name,
-		Size: len(in.Data),
+		Slug:       slug,
+		URL:        svc.BaseURL + "/p/" + slug,
+		Name:       in.Name,
+		Size:       len(in.Data),
+		Visibility: in.Visibility,
 	}, nil
 }
 

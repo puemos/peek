@@ -3,6 +3,8 @@
   document.addEventListener("alpine:init", () => {
     Alpine.data("dashboard", (initial = {}) => ({
       mode: "file",
+      visibility: "password",
+      password: "",
       settingsTab: "auth",
       oauth: {
         google: Boolean(initial.googleOAuth),
@@ -33,6 +35,7 @@
       },
 
       canUpload() {
+        if (this.visibility === "password" && this.password.trim() === "") return false;
         if (this.mode === "paste") return this.html.trim().length > 0;
         return this.fileName !== "";
       },

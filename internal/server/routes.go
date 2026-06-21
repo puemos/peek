@@ -9,7 +9,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/upload", s.rateLimit(s.uploadLimiter, s.authToken(s.handleUpload)))
 	mux.HandleFunc("GET /api/uploads", s.authToken(s.handleListUploads))
 	mux.HandleFunc("DELETE /api/uploads/{slug}", s.authToken(s.handleDeleteUpload))
-	mux.HandleFunc("POST /api/uploads/{slug}/password", s.authToken(s.handleSetPassword))
+	mux.HandleFunc("POST /api/uploads/{slug}/visibility", s.authToken(s.handleSetVisibility))
 	mux.HandleFunc("GET /api/uploads/{slug}/stats", s.authToken(s.handleStats))
 	mux.HandleFunc("POST /api/tokens", s.authAdmin(s.handleCreateToken))
 	mux.HandleFunc("GET /api/tokens", s.authAdmin(s.handleListTokens))

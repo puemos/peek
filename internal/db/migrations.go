@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);`},
 	{4, "account_password_hash", `-- ALTER TABLE handled idempotently below`},
 	{5, "comment_anchor_kind", `-- ALTER TABLE handled idempotently below`},
+	{6, "upload_visibility", `-- ALTER TABLE handled idempotently below`},
 }
 
 func (s *Store) runMigrations() error {
@@ -63,6 +64,10 @@ func (s *Store) runMigrations() error {
 			}
 		} else if m.id == 5 {
 			if err := s.migrateCommentAnchorKind(); err != nil {
+				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
+			}
+		} else if m.id == 6 {
+			if err := s.migrateUploadVisibility(); err != nil {
 				return fmt.Errorf("migration %d (%s): %w", m.id, m.desc, err)
 			}
 		} else if m.sql != "" {
@@ -129,6 +134,18 @@ func (s *Store) migrateCommentAnchorKind() error {
 		return err
 	}
 	return nil
+}
+
+// migrateUploadVisibility records explicit page access behavior. Existing
+// password hashes remain password-gated; existing passwordless rows become
+// private because the new default is password-only creation.
+func (s *Store) migrateUploadVisibility() error {
+	_, err := s.Exec(`ALTER TABLE uploads ADD COLUMN visibility TEXT NOT NULL DEFAULT 'password'`)
+	if err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	_, err = s.Exec(`UPDATE uploads SET visibility=CASE WHEN password_hash <> '' THEN 'password' ELSE 'private' END`)
+	return err
 }
 
 func isDuplicateColumnError(err error) bool {
@@ -255,18 +272,19 @@ func (s *Store) migrateUploadsOwner() (err error) {
 		owner_token_id INTEGER REFERENCES tokens(id),
 		filename TEXT NOT NULL,
 		size INTEGER NOT NULL,
+		visibility TEXT NOT NULL DEFAULT 'password',
 		password_hash TEXT NOT NULL DEFAULT '',
 		created_at INTEGER NOT NULL
 	)`); err != nil {
 		return err
 	}
 
-	copySQL := `INSERT INTO uploads_new(id,slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at)
-		SELECT u.id,u.slug,t.account_id,u.owner_token_id,u.filename,u.size,u.password_hash,u.created_at
+	copySQL := `INSERT INTO uploads_new(id,slug,owner_account_id,owner_token_id,filename,size,visibility,password_hash,created_at)
+		SELECT u.id,u.slug,t.account_id,u.owner_token_id,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 		FROM uploads u JOIN tokens t ON t.id=u.owner_token_id`
 	if hasOwnerAccount {
-		copySQL = `INSERT INTO uploads_new(id,slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at)
-			SELECT u.id,u.slug,COALESCE(u.owner_account_id,t.account_id),u.owner_token_id,u.filename,u.size,u.password_hash,u.created_at
+		copySQL = `INSERT INTO uploads_new(id,slug,owner_account_id,owner_token_id,filename,size,visibility,password_hash,created_at)
+			SELECT u.id,u.slug,COALESCE(u.owner_account_id,t.account_id),u.owner_token_id,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 			FROM uploads u LEFT JOIN tokens t ON t.id=u.owner_token_id`
 	}
 	if _, err := tx.Exec(copySQL); err != nil {

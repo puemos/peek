@@ -168,7 +168,7 @@ func newRetentionCleanupTestServer(t *testing.T) (*Server, *db.Store, *retention
 
 func seedExpiredRetentionUpload(t *testing.T, store *db.Store, ownerID int64, slug string) {
 	t.Helper()
-	if err := store.CreateUploadChecked(context.Background(), slug, ownerID, 0, slug+".html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), slug, ownerID, 0, slug+".html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	createdAt := time.Now().Add(-48 * time.Hour).Unix()

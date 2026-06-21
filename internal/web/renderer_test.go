@@ -99,7 +99,7 @@ func TestPageTemplateUsesDatasetForViewerConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new renderer: %v", err)
 	}
-	body, err := renderer.Execute(TemplatePage, PageData{Name: "page.html", Slug: "abc123", RawURL: "/raw/abc123?t=t&v=v", Protected: true})
+	body, err := renderer.Execute(TemplatePage, PageData{Name: "page.html", Slug: "abc123", RawURL: "/raw/abc123?t=t&v=v", Visibility: "password"})
 	if err != nil {
 		t.Fatalf("execute page: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestPageTemplateUsesDatasetForViewerConfig(t *testing.T) {
 	for _, want := range []string{
 		`x-data="pageApp"`,
 		`data-slug="abc123"`,
-		`data-protected="true"`,
+		`data-visibility="password"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("page template missing %q: %s", want, html)

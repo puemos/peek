@@ -11,7 +11,7 @@
 <script src="{{asset "app.js"}}" defer></script>
 <script src="{{asset "alpine.min.js"}}" defer></script>
 </head>
-<body x-data="pageApp" data-slug="{{.Slug}}" data-protected="{{.Protected}}" class="overflow-hidden">
+<body x-data="pageApp" data-slug="{{.Slug}}" data-visibility="{{.Visibility}}" class="overflow-hidden">
 
 <iframe id="hn-frame" src="{{.RawURL}}" sandbox="allow-scripts allow-popups"
         referrerpolicy="no-referrer" title="shared page"

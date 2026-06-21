@@ -86,7 +86,7 @@ description = "Run a local upload/list/stats smoke test against the configured d
 depends = ["build"]
 run = """
 printf '<html><body><h1>Smoke test</h1><p id=t>Hello</p></body></html>' > /tmp/test.html
-SLUG=$(./bin/peek upload /tmp/test.html | grep '^slug:' | awk '{print $2}')
+SLUG=$(./bin/peek upload /tmp/test.html --visibility public | grep '^slug:' | awk '{print $2}')
 echo "Uploaded slug: $SLUG"
 ./bin/peek list
 ./bin/peek stats "$SLUG"

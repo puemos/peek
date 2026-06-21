@@ -53,8 +53,8 @@ func (s *Server) handleListComments(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusForbidden, "not owner")
 			return
 		}
-	} else if !s.pageAuthorized(r, u) {
-		jsonError(w, http.StatusUnauthorized, "password required")
+	} else if !s.viewerCanAccessUpload(r, u) {
+		jsonError(w, http.StatusUnauthorized, uploadAccessRequiredMessage(u))
 		return
 	}
 	list, err := s.store.ListComments(r.Context(), u.ID)
@@ -84,8 +84,8 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "not found")
 		return
 	}
-	if !s.pageAuthorized(r, u) {
-		jsonError(w, http.StatusUnauthorized, "password required")
+	if !s.viewerCanAccessUpload(r, u) {
+		jsonError(w, http.StatusUnauthorized, uploadAccessRequiredMessage(u))
 		return
 	}
 
@@ -178,18 +178,29 @@ func commentAnchorKind(selector, text, kind string) string {
 	return "element"
 }
 
-// pageAuthorized returns true if the viewer may see the page. For unprotected
-// uploads it always succeeds; for protected ones it requires a valid signed
-// session cookie for that slug.
-func (s *Server) pageAuthorized(r *http.Request, u *models.Upload) bool {
-	if u.PasswordHash == "" {
+func (s *Server) viewerCanAccessUpload(r *http.Request, u *models.Upload) bool {
+	switch u.Visibility {
+	case models.UploadVisibilityPublic:
 		return true
-	}
-	c, err := r.Cookie(authCookieName(u.Slug))
-	if err != nil {
+	case models.UploadVisibilityPassword:
+		c, err := r.Cookie(authCookieName(u.Slug))
+		if err != nil {
+			return false
+		}
+		return verifySessionCookie(s.secret, c.Value, u.Slug)
+	case models.UploadVisibilityPrivate:
+		_, ok := s.webAuth(r)
+		return ok
+	default:
 		return false
 	}
-	return verifySessionCookie(s.secret, c.Value, u.Slug)
+}
+
+func uploadAccessRequiredMessage(u *models.Upload) string {
+	if u.Visibility == models.UploadVisibilityPrivate {
+		return "login required"
+	}
+	return "password required"
 }
 
 func authCookieName(slug string) string {

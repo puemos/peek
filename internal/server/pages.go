@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/puemos/peek/internal/models"
 	webui "github.com/puemos/peek/internal/web"
 )
 
@@ -18,11 +19,19 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
 	}
-	if u.PasswordHash != "" && !s.pageAuthorized(r, u) {
+	if u.Visibility == models.UploadVisibilityPassword && !s.viewerCanAccessUpload(r, u) {
 		s.renderHTML(w, http.StatusOK, webui.TemplateGate, webui.GateData{Slug: slug})
 		return
 	}
-	if u.PasswordHash != "" {
+	if u.Visibility == models.UploadVisibilityPrivate && !s.viewerCanAccessUpload(r, u) {
+		s.setNextPath(w, "/p/"+slug)
+		if _, err := r.Cookie(sessionCookie); err == nil {
+			s.clearCookie(w, sessionCookie, "/")
+		}
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if u.Visibility == models.UploadVisibilityPassword {
 		s.setPageAuthCookie(w, slug)
 	}
 	vid := s.visitorID(w, r)
@@ -31,7 +40,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	rawURL := "/raw/" + slug + "?t=" + makeViewToken(s.secret, slug, vid) + "&v=" + vid
 	d := pageData{
 		Name: u.Name, Slug: slug,
-		RawURL: rawURL, Protected: u.PasswordHash != "",
+		RawURL: rawURL, Visibility: u.Visibility,
 	}
 	w.Header().Set("Content-Security-Policy", webui.PageCSP)
 	s.renderHTML(w, http.StatusOK, webui.TemplatePage, d)
@@ -44,7 +53,7 @@ func (s *Server) handlePagePassword(w http.ResponseWriter, r *http.Request) {
 		s.renderWebError(w, http.StatusNotFound, "Page not found", "This shared page does not exist or is no longer available.")
 		return
 	}
-	if u.PasswordHash == "" {
+	if u.Visibility != models.UploadVisibilityPassword {
 		http.Redirect(w, r, "/p/"+slug, http.StatusSeeOther)
 		return
 	}

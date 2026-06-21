@@ -26,8 +26,8 @@ func Run(args []string) int {
 		err = cmdList(rest)
 	case "delete":
 		err = cmdDelete(rest)
-	case "password":
-		err = cmdPassword(rest)
+	case "visibility":
+		err = cmdVisibility(rest)
 	case "stats":
 		err = cmdStats(rest)
 	case "comments":
@@ -64,13 +64,15 @@ Usage:
   peek login --token-stdin              read an access token from stdin
   peek config set --host <url>          set host (use 'login' / --token-stdin for the token)
   peek config show
-  peek upload <file.html> [--password <pw>] [--name <filename>]
+  peek upload <file.html> --password <pw> [--name <filename>]
   peek upload <file.html> --password-stdin
+  peek upload <file.html> --visibility public|private
   peek list
   peek delete <slug>
-  peek password <slug> --set <pw>      protect a page
-  peek password <slug> --set-stdin     protect a page, reading password from stdin
-  peek password <slug> --clear         remove protection
+  peek visibility <slug> public
+  peek visibility <slug> private
+  peek visibility <slug> password --password <pw>
+  peek visibility <slug> password --password-stdin
   peek stats <slug>
   peek comments <slug>                 list comments on one of your uploads
   peek export <slug>                   export all data for an upload

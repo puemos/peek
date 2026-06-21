@@ -91,7 +91,7 @@ func TestDisabledTokenCannotReadOwnedComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user token: %v", err)
 	}
-	if err := store.CreateUploadChecked(context.Background(), "owned-page", owner.AccountID, owner.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "owned-page", owner.AccountID, owner.ID, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("seed upload: %v", err)
 	}
 	upload, err := store.GetUpload(context.Background(), "owned-page")
@@ -145,14 +145,14 @@ func TestUploadRejectsUnsupportedContentType(t *testing.T) {
 func TestUploadAcceptsHTMLContentTypeWithParameters(t *testing.T) {
 	app := newTestApp(t)
 
-	resp := app.requestString(t, http.MethodPost, "/api/upload", "<!DOCTYPE html><html><body></body></html>", withAuth(app.AdminToken), withContentType("text/html; charset=utf-8"))
+	resp := app.requestString(t, http.MethodPost, "/api/upload?visibility=public", "<!DOCTYPE html><html><body></body></html>", withAuth(app.AdminToken), withContentType("text/html; charset=utf-8"))
 	assertStatus(t, resp, http.StatusOK)
 }
 
 func TestUploadAndListAndDelete(t *testing.T) {
 	app := newTestApp(t)
 
-	resp := app.requestString(t, http.MethodPost, "/api/upload", "<!DOCTYPE html><html><body></body></html>", withAuth(app.AdminToken), withContentType("text/html"))
+	resp := app.requestString(t, http.MethodPost, "/api/upload?visibility=public", "<!DOCTYPE html><html><body></body></html>", withAuth(app.AdminToken), withContentType("text/html"))
 	assertStatus(t, resp, http.StatusOK)
 	up := decodeResponseJSON[struct {
 		Slug string `json:"slug"`
@@ -194,7 +194,7 @@ func TestUploadAndListAndDelete(t *testing.T) {
 func TestInternalReviewWorkflow(t *testing.T) {
 	app := newTestApp(t)
 
-	resp := app.requestString(t, http.MethodPost, "/api/upload?filename=review.html", "<!DOCTYPE html><html><body><h1 id=\"hero\">Hello</h1></body></html>", withAuth(app.AdminToken), withContentType("text/html; charset=utf-8"))
+	resp := app.requestString(t, http.MethodPost, "/api/upload?filename=review.html&visibility=public", "<!DOCTYPE html><html><body><h1 id=\"hero\">Hello</h1></body></html>", withAuth(app.AdminToken), withContentType("text/html; charset=utf-8"))
 	assertStatus(t, resp, http.StatusOK)
 	up := decodeResponseJSON[struct {
 		Slug string `json:"slug"`

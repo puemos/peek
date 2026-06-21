@@ -100,7 +100,7 @@ func (s *Server) handleExportUpload(w http.ResponseWriter, r *http.Request) {
 		"slug":            slug,
 		"name":            u.Name,
 		"size":            u.Size,
-		"protected":       u.PasswordHash != "",
+		"visibility":      u.Visibility,
 		"created_at":      u.CreatedAt.Unix(),
 		"total_visits":    total,
 		"unique_visitors": unique,
@@ -132,6 +132,10 @@ func (s *Server) handleViews(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.GetUpload(r.Context(), slug)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if !s.viewerCanAccessUpload(r, u) {
+		jsonError(w, http.StatusUnauthorized, uploadAccessRequiredMessage(u))
 		return
 	}
 	total, unique, err := s.store.CountVisits(r.Context(), u.ID)

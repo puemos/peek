@@ -104,7 +104,7 @@ type DashboardUpload struct {
 	Slug         string
 	Name         string
 	SizeHuman    string
-	Protected    bool
+	Visibility   string
 	CreatedHuman string
 }
 
@@ -209,10 +209,10 @@ type StatsData struct {
 }
 
 type PageData struct {
-	Name      string
-	Slug      string
-	RawURL    string
-	Protected bool
+	Name       string
+	Slug       string
+	RawURL     string
+	Visibility string
 }
 
 type GateData struct {

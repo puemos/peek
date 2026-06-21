@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func TestAddCommentLogsVisitorUpsertFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.store.Exec(`DROP TABLE visitors`); err != nil {
@@ -56,7 +57,7 @@ func TestAddCommentPersistsExplicitAnchorKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,7 +81,7 @@ func TestAddCommentRejectsInvalidAnchorKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := s.store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,5 +93,40 @@ func TestAddCommentRejectsInvalidAnchorKind(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPrivateUploadCommentsRequireActiveAccount(t *testing.T) {
+	s := newTestServer(t)
+	owner, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := s.store.CreateAccount(context.Background(), "viewer@example.test", "Viewer", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.CreateUploadChecked(context.Background(), "private", owner.ID, 0, "private.html", 42, "private", "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads/private/comments", strings.NewReader(`{"name":"Ada","body":"Looks good"}`))
+	req.SetPathValue("slug", "private")
+	rec := httptest.NewRecorder()
+	s.handleAddComment(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "login required") {
+		t.Fatalf("anonymous private error = %s", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/uploads/private/comments", strings.NewReader(`{"name":"Ada","body":"Looks good"}`))
+	req.SetPathValue("slug", "private")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(viewer.ID, 10), sessionTTL)})
+	rec = httptest.NewRecorder()
+	s.handleAddComment(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("active viewer status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }

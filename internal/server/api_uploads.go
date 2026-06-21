@@ -15,8 +15,9 @@ import (
 )
 
 type uploadResp struct {
-	Slug string `json:"slug"`
-	URL  string `json:"url"`
+	Slug       string `json:"slug"`
+	URL        string `json:"url"`
+	Visibility string `json:"visibility"`
 }
 
 type uploadBodyKind int
@@ -43,9 +44,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+1024)
 
 	var (
-		data     []byte
-		name     string
-		password string
+		data       []byte
+		name       string
+		visibility string
+		password   string
 	)
 
 	if bodyKind == uploadBodyMultipart {
@@ -53,6 +55,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "file too large or invalid form")
 			return
 		}
+		visibility = strings.TrimSpace(r.FormValue("visibility"))
 		password = strings.TrimSpace(r.FormValue("password"))
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -67,7 +70,11 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		name = header.Filename
 	} else {
-		password = strings.TrimSpace(r.URL.Query().Get("password"))
+		visibility = strings.TrimSpace(r.URL.Query().Get("visibility"))
+		if visibility == models.UploadVisibilityPassword {
+			jsonError(w, http.StatusBadRequest, "password visibility requires multipart upload")
+			return
+		}
 		name = r.URL.Query().Get("filename")
 		if name == "" {
 			name = "page"
@@ -84,6 +91,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		OwnerAccountID: owner.AccountID,
 		OwnerTokenID:   owner.ID,
 		Name:           name,
+		Visibility:     visibility,
 		Password:       password,
 		Data:           data,
 		Limits:         s.uploadLimits(r.Context()),
@@ -96,7 +104,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditRequest(r, owner.Name, "upload.create", "slug="+up.Slug+" name="+up.Name+" size="+strconv.Itoa(up.Size))
 
-	jsonOK(w, uploadResp{Slug: up.Slug, URL: up.URL})
+	jsonOK(w, uploadResp{Slug: up.Slug, URL: up.URL, Visibility: up.Visibility})
 }
 
 func uploadBodyKindFromContentType(contentType string) (uploadBodyKind, bool) {
@@ -133,19 +141,19 @@ func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type item struct {
-		Slug      string `json:"slug"`
-		Name      string `json:"name"`
-		Owner     string `json:"owner"`
-		Size      int64  `json:"size"`
-		Protected bool   `json:"protected"`
-		URL       string `json:"url"`
-		CreatedAt int64  `json:"created_at"`
+		Slug       string `json:"slug"`
+		Name       string `json:"name"`
+		Owner      string `json:"owner"`
+		Size       int64  `json:"size"`
+		Visibility string `json:"visibility"`
+		URL        string `json:"url"`
+		CreatedAt  int64  `json:"created_at"`
 	}
 	out := make([]item, 0, len(list))
 	for _, u := range list {
 		out = append(out, item{
 			Slug: u.Slug, Name: u.Name, Owner: u.OwnerName,
-			Size: u.Size, Protected: u.PasswordHash != "",
+			Size: u.Size, Visibility: u.Visibility,
 			URL: s.baseURL + "/p/" + u.Slug, CreatedAt: u.CreatedAt.Unix(),
 		})
 	}
@@ -176,7 +184,7 @@ func (s *Server) handleDeleteUpload(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"deleted": slug})
 }
 
-func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSetVisibility(w http.ResponseWriter, r *http.Request) {
 	owner, ok := requireAPIToken(w, r)
 	if !ok {
 		return
@@ -192,36 +200,47 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Password string `json:"password"`
-		Clear    bool   `json:"clear"`
+		Visibility string `json:"visibility"`
+		Password   string `json:"password"`
 	}
 	if err := decodeJSON(w, r, &body, smallJSONBodyLimit); err != nil {
 		jsonError(w, http.StatusBadRequest, "bad json")
 		return
 	}
+	visibility := strings.TrimSpace(body.Visibility)
+	password := strings.TrimSpace(body.Password)
 	hash := ""
-	if !body.Clear && body.Password != "" {
+	switch visibility {
+	case models.UploadVisibilityPublic, models.UploadVisibilityPrivate:
+		if password != "" {
+			jsonError(w, http.StatusBadRequest, "password is only allowed with password visibility")
+			return
+		}
+	case models.UploadVisibilityPassword:
+		if password == "" {
+			jsonError(w, http.StatusBadRequest, "password visibility requires a password")
+			return
+		}
 		if !uploads.ValidatePasswordLength(body.Password) {
 			jsonError(w, http.StatusBadRequest, "password must be 72 characters or fewer")
 			return
 		}
-		h, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
 			jsonError(w, http.StatusInternalServerError, "hash failed")
 			return
 		}
 		hash = string(h)
+	default:
+		jsonError(w, http.StatusBadRequest, "visibility must be public, password, or private")
+		return
 	}
-	if err := s.store.SetUploadPassword(r.Context(), u.ID, hash); err != nil {
+	if err := s.store.SetUploadVisibility(r.Context(), u.ID, visibility, hash); err != nil {
 		jsonError(w, http.StatusInternalServerError, "db failed")
 		return
 	}
-	action := "cleared"
-	if hash != "" {
-		action = "set"
-	}
-	s.auditRequest(r, owner.Name, "upload.password."+action, "slug="+slug)
-	jsonOK(w, map[string]any{"protected": hash != ""})
+	s.auditRequest(r, owner.Name, "upload.visibility.set", "slug="+slug+" visibility="+visibility)
+	jsonOK(w, map[string]any{"visibility": visibility})
 }
 
 func (s *Server) handleDeleteAllByOwner(w http.ResponseWriter, r *http.Request) {

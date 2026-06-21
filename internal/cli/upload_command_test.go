@@ -13,8 +13,8 @@ import (
 	"testing"
 )
 
-func TestStreamMultipartUploadEncodesFileAndPassword(t *testing.T) {
-	body, contentType := streamMultipartUpload(strings.NewReader("<html></html>"), "page.html", "secret")
+func TestStreamMultipartUploadEncodesFileVisibilityAndPassword(t *testing.T) {
+	body, contentType := streamMultipartUpload(strings.NewReader("<html></html>"), "page.html", "password", "secret")
 	defer body.Close()
 
 	mediaType, params, err := mime.ParseMediaType(contentType)
@@ -31,6 +31,9 @@ func TestStreamMultipartUploadEncodesFileAndPassword(t *testing.T) {
 	defer form.RemoveAll()
 	if got := form.Value["password"]; len(got) != 1 || got[0] != "secret" {
 		t.Fatalf("password field = %+v", got)
+	}
+	if got := form.Value["visibility"]; len(got) != 1 || got[0] != "password" {
+		t.Fatalf("visibility field = %+v", got)
 	}
 	files := form.File["file"]
 	if len(files) != 1 {
@@ -58,6 +61,7 @@ func TestCmdUploadStreamsPasswordMultipart(t *testing.T) {
 		Auth          string
 		ContentLength int64
 		Filename      string
+		Visibility    string
 		Password      string
 		Body          string
 	}
@@ -72,6 +76,7 @@ func TestCmdUploadStreamsPasswordMultipart(t *testing.T) {
 			observed <- got
 			return
 		}
+		got.Visibility = r.FormValue("visibility")
 		got.Password = r.FormValue("password")
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -91,8 +96,9 @@ func TestCmdUploadStreamsPasswordMultipart(t *testing.T) {
 		observed <- got
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"slug": "page",
-			"url":  "http://example.test/p/page",
+			"slug":       "page",
+			"url":        "http://example.test/p/page",
+			"visibility": "password",
 		})
 	}))
 	defer ts.Close()
@@ -120,6 +126,9 @@ func TestCmdUploadStreamsPasswordMultipart(t *testing.T) {
 	}
 	if got.Password != "secret" {
 		t.Fatalf("password = %q", got.Password)
+	}
+	if got.Visibility != "password" {
+		t.Fatalf("visibility = %q", got.Visibility)
 	}
 	if got.Body != "<!doctype html><html></html>" {
 		t.Fatalf("body = %q", got.Body)

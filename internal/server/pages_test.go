@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -73,7 +74,7 @@ func TestPagePasswordCookieAuthorizesProtectedCommentAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.store.CreateUploadChecked(context.Background(), "protected", account.ID, 0, "protected.html", 42, string(hash), uploadquota.Limits{}); err != nil {
+	if err := s.store.CreateUploadChecked(context.Background(), "protected", account.ID, 0, "protected.html", 42, "password", string(hash), uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -120,6 +121,44 @@ func TestPagePasswordCookieAuthorizesProtectedCommentAPI(t *testing.T) {
 	}
 }
 
+func TestPrivatePageRequiresActiveWebSession(t *testing.T) {
+	s := newTestServer(t)
+	owner, err := s.store.CreateAccount(context.Background(), "owner@example.test", "Owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := s.store.CreateAccount(context.Background(), "viewer@example.test", "Viewer", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.CreateUploadChecked(context.Background(), "private", owner.ID, 0, "private.html", 42, "private", "", uploadquota.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/p/private", nil)
+	req.SetPathValue("slug", "private")
+	rec := httptest.NewRecorder()
+	s.handlePage(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("anonymous status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "/login" {
+		t.Fatalf("redirect = %q", got)
+	}
+	if c := pageTestCookie(rec.Result().Cookies(), nextCookie); c == nil || c.Value != "/p/private" {
+		t.Fatalf("next cookie not set for private page: %+v", rec.Result().Cookies())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/p/private", nil)
+	req.SetPathValue("slug", "private")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(viewer.ID, 10), sessionTTL)})
+	rec = httptest.NewRecorder()
+	s.handlePage(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("active viewer status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandleRawStreamsHTMLWithBridgeInjection(t *testing.T) {
 	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
 	if err != nil {
@@ -130,7 +169,7 @@ func TestHandleRawStreamsHTMLWithBridgeInjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	secret := strings.Repeat("0", 64)
@@ -248,4 +287,13 @@ func assertBridgeBefore(t *testing.T, html, marker string) {
 	if bridge > closeTag {
 		t.Fatalf("bridge script appears after %s: %s", marker, html)
 	}
+}
+
+func pageTestCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, c := range cookies {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
 }

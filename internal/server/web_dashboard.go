@@ -38,7 +38,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, u := range list {
 		uploads = append(uploads, dashUpload{
 			Slug: u.Slug, Name: u.Name,
-			SizeHuman: humanSize(u.Size), Protected: u.PasswordHash != "",
+			SizeHuman: humanSize(u.Size), Visibility: u.Visibility,
 			CreatedHuman: u.CreatedAt.Format("2006-01-02 15:04"),
 		})
 	}
@@ -103,6 +103,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mode := r.FormValue("mode")
+	visibility := strings.TrimSpace(r.FormValue("visibility"))
 	password := strings.TrimSpace(r.FormValue("password"))
 	name := strings.TrimSpace(r.FormValue("name"))
 
@@ -137,6 +138,7 @@ func (s *Server) handleDashboardUpload(w http.ResponseWriter, r *http.Request) {
 	up, err := s.uploadService().Create(r.Context(), uploads.CreateInput{
 		OwnerAccountID: owner.ID,
 		Name:           name,
+		Visibility:     visibility,
 		Password:       password,
 		Data:           data,
 		Limits:         s.uploadLimits(r.Context()),

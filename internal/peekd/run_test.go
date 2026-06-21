@@ -112,7 +112,7 @@ func TestBackupDatabaseCreatesRestorableSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get source token: %v", err)
 	}
-	if err := source.CreateUploadChecked(context.Background(), "snapshot-page", token.AccountID, token.ID, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := source.CreateUploadChecked(context.Background(), "snapshot-page", token.AccountID, token.ID, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatalf("seed source upload: %v", err)
 	}
 

@@ -2,6 +2,12 @@ package models
 
 import "time"
 
+const (
+	UploadVisibilityPublic   = "public"
+	UploadVisibilityPassword = "password"
+	UploadVisibilityPrivate  = "private"
+)
+
 type Token struct {
 	ID        int64
 	AccountID int64
@@ -65,6 +71,7 @@ type Upload struct {
 	OwnerName      string
 	Name           string
 	Size           int64
+	Visibility     string
 	PasswordHash   string // "" => no password
 	CreatedAt      time.Time
 }

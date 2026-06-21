@@ -52,15 +52,15 @@ func TestTokenValidationRunsBeforeConfigLoad(t *testing.T) {
 	}
 }
 
-func TestPasswordRejectsUnexpectedPositionalArg(t *testing.T) {
-	err := cmdPassword([]string{"page", "extra", "--clear"})
+func TestVisibilityRejectsUnexpectedPositionalArg(t *testing.T) {
+	err := cmdVisibility([]string{"page", "public", "extra"})
 	if err == nil || !strings.Contains(err.Error(), "unexpected argument: extra") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-func TestPasswordRejectsUnknownFlagBeforeSlug(t *testing.T) {
-	err := cmdPassword([]string{"--bad"})
+func TestVisibilityRejectsUnknownFlagBeforeSlug(t *testing.T) {
+	err := cmdVisibility([]string{"--bad"})
 	if err == nil || err.Error() != "unknown flag: --bad" {
 		t.Fatalf("error = %v", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -114,7 +115,7 @@ func TestDashboardStatsReportsVisitQueryFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", account.ID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Exec(`DROP TABLE visits`); err != nil {
@@ -172,6 +173,54 @@ func TestDashboardStatsMissingUploadRendersWebError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Stats not found") {
 		t.Fatalf("stats page did not render web error: %s", rec.Body.String())
+	}
+}
+
+func TestDashboardUploadPassesVisibility(t *testing.T) {
+	store, err := db.Open(filepath.Join(t.TempDir(), "peek.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	account, err := store.CreateAccount(context.Background(), "user@example.test", "User", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store, storage: &dashboardDeleteStorage{}, secret: strings.Repeat("0", 64), baseURL: "http://localhost:7700"}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	for k, v := range map[string]string{
+		"csrf":       "csrf-token",
+		"mode":       "paste",
+		"name":       "private-page",
+		"visibility": "private",
+		"html":       "<!doctype html><html></html>",
+	} {
+		if err := mw.WriteField(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/dashboard/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: makeWebSession(s.secret, strconv.FormatInt(account.ID, 10), sessionTTL)})
+	req.AddCookie(&http.Cookie{Name: csrfCookie, Value: "csrf-token"})
+	rec := httptest.NewRecorder()
+
+	s.handleDashboardUpload(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	list, err := store.ListUploadsByOwner(context.Background(), account.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Visibility != "private" {
+		t.Fatalf("uploads = %+v", list)
 	}
 }
 
@@ -269,7 +318,7 @@ func newDashboardDeleteTestServer(t *testing.T) (*Server, *db.Store, *dashboardD
 
 func seedDashboardDeleteUpload(t *testing.T, store *db.Store, ownerID int64) {
 	t.Helper()
-	if err := store.CreateUploadChecked(context.Background(), "page", ownerID, 0, "page.html", 42, "", uploadquota.Limits{}); err != nil {
+	if err := store.CreateUploadChecked(context.Background(), "page", ownerID, 0, "page.html", 42, "public", "", uploadquota.Limits{}); err != nil {
 		t.Fatal(err)
 	}
 }

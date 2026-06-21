@@ -23,13 +23,13 @@ func cmdList(args []string) error {
 		return err
 	}
 	var items []struct {
-		Slug      string `json:"slug"`
-		Name      string `json:"name"`
-		Owner     string `json:"owner"`
-		Size      int64  `json:"size"`
-		Protected bool   `json:"protected"`
-		URL       string `json:"url"`
-		CreatedAt int64  `json:"created_at"`
+		Slug       string `json:"slug"`
+		Name       string `json:"name"`
+		Owner      string `json:"owner"`
+		Size       int64  `json:"size"`
+		Visibility string `json:"visibility"`
+		URL        string `json:"url"`
+		CreatedAt  int64  `json:"created_at"`
 	}
 	if err := c.getJSON("/api/uploads", &items); err != nil {
 		return err
@@ -38,13 +38,9 @@ func cmdList(args []string) error {
 		fmt.Println("no uploads yet.")
 		return nil
 	}
-	fmt.Printf("%-12s  %-6s  %-8s  %-20s  %s\n", "SLUG", "SIZE", "PROTECT", "NAME", "URL")
+	fmt.Printf("%-12s  %-6s  %-10s  %-20s  %s\n", "SLUG", "SIZE", "VISIBILITY", "NAME", "URL")
 	for _, it := range items {
-		prot := "no"
-		if it.Protected {
-			prot = "yes"
-		}
-		fmt.Printf("%-12s  %-6s  %-8s  %-20s  %s\n", it.Slug, humanSize(it.Size), prot, truncate(it.Name, 20), it.URL)
+		fmt.Printf("%-12s  %-6s  %-10s  %-20s  %s\n", it.Slug, humanSize(it.Size), it.Visibility, truncate(it.Name, 20), it.URL)
 	}
 	return nil
 }
@@ -70,46 +66,46 @@ func cmdDelete(args []string) error {
 	return nil
 }
 
-// --- password ---
+// --- visibility ---
 
-func cmdPassword(args []string) error {
+func cmdVisibility(args []string) error {
 	var (
 		slug          string
+		visibility    string
 		password      string
 		passwordStdin bool
-		clear         bool
 	)
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--set":
+		case "--password":
 			if i+1 >= len(args) {
-				return fmt.Errorf("--set requires a value")
+				return fmt.Errorf("--password requires a value")
 			}
 			password = args[i+1]
 			i++
-		case "--set-stdin":
+		case "--password-stdin":
 			passwordStdin = true
-		case "--clear":
-			clear = true
 		default:
 			switch {
 			case strings.HasPrefix(args[i], "-"):
 				return fmt.Errorf("unknown flag: %s", args[i])
 			case slug == "":
 				slug = args[i]
+			case visibility == "":
+				visibility = args[i]
 			default:
 				return fmt.Errorf("unexpected argument: %s", args[i])
 			}
 		}
 	}
-	if slug == "" {
-		return fmt.Errorf("usage: peek password <slug> --set <pw>|--set-stdin|--clear")
+	if slug == "" || visibility == "" {
+		return fmt.Errorf("usage: peek visibility <slug> public|private|password [--password <pw>|--password-stdin]")
+	}
+	if !validVisibility(visibility) {
+		return fmt.Errorf("visibility must be public, password, or private")
 	}
 	if password != "" && passwordStdin {
-		return fmt.Errorf("use only one of --set or --set-stdin")
-	}
-	if clear && (password != "" || passwordStdin) {
-		return fmt.Errorf("use either --clear or a password setter")
+		return fmt.Errorf("use only one of --password or --password-stdin")
 	}
 	if passwordStdin {
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -121,8 +117,11 @@ func cmdPassword(args []string) error {
 			return fmt.Errorf("no password provided on stdin")
 		}
 	}
-	if !clear && password == "" {
-		return fmt.Errorf("use --set <pw>, --set-stdin, or --clear")
+	if visibility == "password" && password == "" {
+		return fmt.Errorf("password visibility requires --password or --password-stdin")
+	}
+	if visibility != "password" && password != "" {
+		return fmt.Errorf("--password is only valid with password visibility")
 	}
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -132,17 +131,13 @@ func cmdPassword(args []string) error {
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"password": password, "clear": clear}
+	body := map[string]any{"visibility": visibility, "password": password}
 	var out struct {
-		Protected bool `json:"protected"`
+		Visibility string `json:"visibility"`
 	}
-	if err := c.postJSON("/api/uploads/"+slug+"/password", body, &out); err != nil {
+	if err := c.postJSON("/api/uploads/"+slug+"/visibility", body, &out); err != nil {
 		return err
 	}
-	if out.Protected {
-		fmt.Printf("protected: yes\n")
-	} else {
-		fmt.Printf("protected: no (cleared)\n")
-	}
+	fmt.Printf("visibility: %s\n", out.Visibility)
 	return nil
 }

@@ -52,8 +52,19 @@
       </div>
       <div class="flex gap-3">
         <input type="text" name="name" placeholder="name (optional)" class="flex-1 h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
-        <input type="password" name="password" placeholder="password (optional)" class="flex-1 h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
       </div>
+      <div class="inline-flex gap-0.5 self-start rounded-lg bg-muted p-0.5">
+        <label class="cursor-pointer rounded-md px-3 py-1.5 text-sm transition" :class="visibility === 'private' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'">
+          <input type="radio" name="visibility" value="private" x-model="visibility" class="sr-only"> Private
+        </label>
+        <label class="cursor-pointer rounded-md px-3 py-1.5 text-sm transition" :class="visibility === 'password' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'">
+          <input type="radio" name="visibility" value="password" x-model="visibility" class="sr-only"> Password
+        </label>
+        <label class="cursor-pointer rounded-md px-3 py-1.5 text-sm transition" :class="visibility === 'public' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'">
+          <input type="radio" name="visibility" value="public" x-model="visibility" class="sr-only"> Public
+        </label>
+      </div>
+      <input x-show="visibility === 'password'" :disabled="visibility !== 'password'" x-model="password" type="password" name="password" placeholder="password" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
       <button type="submit" :disabled="!canUpload()" class="self-start h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary">Upload &amp; get link</button>
     </form>
   </div>
@@ -63,13 +74,13 @@
     {{if .Uploads}}
     <div class="overflow-x-auto">
     <table class="w-full border-collapse text-sm">
-      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Name</th><th class="px-3 py-2">Size</th><th class="px-3 py-2">Protected</th><th class="px-3 py-2">Created</th><th class="px-3 py-2">Link</th><th class="px-3 py-2"></th></tr></thead>
+      <thead><tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-wider text-muted-foreground"><th class="px-3 py-2">Name</th><th class="px-3 py-2">Size</th><th class="px-3 py-2">Visibility</th><th class="px-3 py-2">Created</th><th class="px-3 py-2">Link</th><th class="px-3 py-2"></th></tr></thead>
       <tbody>
       {{range .Uploads}}
         <tr class="border-b border-border/50 last:border-0 hover:bg-foreground/[0.025]">
           <td class="h-10 px-3 font-medium">{{.Name}}</td>
           <td class="px-3 text-muted-foreground">{{.SizeHuman}}</td>
-          <td class="px-3">{{if .Protected}}<span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">protected</span>{{else}}<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">public</span>{{end}}</td>
+          <td class="px-3"><span class="rounded-md bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">{{.Visibility}}</span></td>
           <td class="px-3 text-muted-foreground">{{.CreatedHuman}}</td>
           <td class="px-3">
             <div class="flex items-center gap-2 whitespace-nowrap">

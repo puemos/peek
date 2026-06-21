@@ -10,7 +10,10 @@ import (
 	"github.com/puemos/peek/internal/uploadquota"
 )
 
-func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, name string, size int64, passwordHash string, limits uploadquota.Limits) error {
+func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccountID, ownerTokenID int64, name string, size int64, visibility, passwordHash string, limits uploadquota.Limits) error {
+	if visibility == "" {
+		visibility = models.UploadVisibilityPassword
+	}
 	tx, err := s.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -49,8 +52,8 @@ func (s *Store) CreateUploadChecked(ctx context.Context, slug string, ownerAccou
 	if ownerTokenID > 0 {
 		tokenArg = ownerTokenID
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
-		slug, ownerAccountID, tokenArg, name, size, passwordHash, time.Now().Unix()); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO uploads(slug,owner_account_id,owner_token_id,filename,size,visibility,password_hash,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		slug, ownerAccountID, tokenArg, name, size, visibility, passwordHash, time.Now().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -60,9 +63,9 @@ func (s *Store) GetUpload(ctx context.Context, slug string) (*models.Upload, err
 	u := &models.Upload{}
 	var ts int64
 	var tokenID sql.NullInt64
-	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.slug=?`, slug).
-		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.PasswordHash, &ts)
+		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.Visibility, &u.PasswordHash, &ts)
 	if err != nil {
 		return nil, err
 	}
@@ -87,9 +90,9 @@ func (s *Store) GetUploadByID(ctx context.Context, id int64) (*models.Upload, er
 	u := &models.Upload{}
 	var ts int64
 	var tokenID sql.NullInt64
-	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	err := s.QueryRowContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.id=?`, id).
-		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.PasswordHash, &ts)
+		Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.Visibility, &u.PasswordHash, &ts)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +102,7 @@ func (s *Store) GetUploadByID(ctx context.Context, id int64) (*models.Upload, er
 }
 
 func (s *Store) ListUploadsByOwner(ctx context.Context, ownerID int64) ([]models.Upload, error) {
-	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.owner_account_id=? ORDER BY u.created_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
@@ -108,7 +111,7 @@ func (s *Store) ListUploadsByOwner(ctx context.Context, ownerID int64) ([]models
 }
 
 func (s *Store) ListAllUploads(ctx context.Context) ([]models.Upload, error) {
-	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id ORDER BY u.created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -116,8 +119,8 @@ func (s *Store) ListAllUploads(ctx context.Context) ([]models.Upload, error) {
 	return scanUploads(rows)
 }
 
-func (s *Store) SetUploadPassword(ctx context.Context, id int64, hash string) error {
-	res, err := s.ExecContext(ctx, `UPDATE uploads SET password_hash=? WHERE id=?`, hash, id)
+func (s *Store) SetUploadVisibility(ctx context.Context, id int64, visibility, hash string) error {
+	res, err := s.ExecContext(ctx, `UPDATE uploads SET visibility=?, password_hash=? WHERE id=?`, visibility, hash, id)
 	if err != nil {
 		return err
 	}
@@ -139,7 +142,7 @@ func scanUploads(rows *sql.Rows) ([]models.Upload, error) {
 		var u models.Upload
 		var ts int64
 		var tokenID sql.NullInt64
-		if err := rows.Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.PasswordHash, &ts); err != nil {
+		if err := rows.Scan(&u.ID, &u.Slug, &u.OwnerAccountID, &tokenID, &u.OwnerName, &u.Name, &u.Size, &u.Visibility, &u.PasswordHash, &ts); err != nil {
 			return nil, err
 		}
 		u.OwnerTokenID = tokenID.Int64
@@ -174,7 +177,7 @@ func (s *Store) SumUploadSizesByOwner(ctx context.Context, ownerID int64) (int64
 }
 
 func (s *Store) ListUploadsOlderThan(ctx context.Context, cutoff time.Time) ([]models.Upload, error) {
-	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.password_hash,u.created_at
+	rows, err := s.QueryContext(ctx, `SELECT u.id,u.slug,u.owner_account_id,u.owner_token_id,a.name,u.filename,u.size,u.visibility,u.password_hash,u.created_at
 		FROM uploads u JOIN accounts a ON a.id=u.owner_account_id WHERE u.created_at < ? ORDER BY u.created_at ASC`,
 		cutoff.Unix())
 	if err != nil {

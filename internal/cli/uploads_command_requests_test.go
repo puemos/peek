@@ -33,14 +33,14 @@ func TestCmdDeleteSendsAuthenticatedDelete(t *testing.T) {
 	}
 }
 
-func TestCmdPasswordSendsSetPasswordRequest(t *testing.T) {
+func TestCmdVisibilitySendsSetVisibilityRequest(t *testing.T) {
 	type requestBody struct {
-		Password string `json:"password"`
-		Clear    bool   `json:"clear"`
+		Visibility string `json:"visibility"`
+		Password   string `json:"password"`
 	}
 	seen := make(chan requestBody, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/uploads/page/password" {
+		if r.URL.Path != "/api/uploads/page/visibility" {
 			http.NotFound(w, r)
 			return
 		}
@@ -59,23 +59,23 @@ func TestCmdPasswordSendsSetPasswordRequest(t *testing.T) {
 		}
 		seen <- body
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]bool{"protected": true})
+		_ = json.NewEncoder(w).Encode(map[string]string{"visibility": "password"})
 	}))
 	defer ts.Close()
 	configureTestClient(t, ts.URL)
 
 	if _, err := captureStdout(t, func() error {
-		return cmdPassword([]string{"page", "--set", "secret"})
+		return cmdVisibility([]string{"page", "password", "--password", "secret"})
 	}); err != nil {
-		t.Fatalf("cmdPassword: %v", err)
+		t.Fatalf("cmdVisibility: %v", err)
 	}
-	if got := <-seen; got.Password != "secret" || got.Clear {
+	if got := <-seen; got.Visibility != "password" || got.Password != "secret" {
 		t.Fatalf("request body = %+v", got)
 	}
 }
 
-func TestCmdPasswordRejectsConflictingOptions(t *testing.T) {
-	err := cmdPassword([]string{"page", "--set", "secret", "--clear"})
+func TestCmdVisibilityRejectsConflictingOptions(t *testing.T) {
+	err := cmdVisibility([]string{"page", "password", "--password", "secret", "--password-stdin"})
 	if err == nil {
 		t.Fatal("expected conflict error")
 	}
