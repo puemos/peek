@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 )
 
 type retentionCleanupStorage struct {
+	mu      sync.Mutex
 	deleted []string
 	err     error
 }
@@ -31,8 +33,16 @@ func (s *retentionCleanupStorage) Open(_ context.Context, _ string) (io.ReadClos
 }
 
 func (s *retentionCleanupStorage) Delete(_ context.Context, slug string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.deleted = append(s.deleted, slug)
 	return s.err
+}
+
+func (s *retentionCleanupStorage) deletedSlugs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.deleted...)
 }
 
 func TestRetentionCleanupKeepsUploadWhenStorageDeleteFails(t *testing.T) {
@@ -42,8 +52,9 @@ func TestRetentionCleanupKeepsUploadWhenStorageDeleteFails(t *testing.T) {
 
 	s.cleanupExpired(context.Background())
 
-	if len(storage.deleted) != 1 || storage.deleted[0] != "expired-page" {
-		t.Fatalf("storage deletes = %+v", storage.deleted)
+	deleted := storage.deletedSlugs()
+	if len(deleted) != 1 || deleted[0] != "expired-page" {
+		t.Fatalf("storage deletes = %+v", deleted)
 	}
 	if _, err := store.GetUpload("expired-page"); err != nil {
 		t.Fatalf("upload should remain after storage failure: %v", err)
@@ -56,11 +67,58 @@ func TestRetentionCleanupRemovesUploadAfterStorageDelete(t *testing.T) {
 
 	s.cleanupExpired(context.Background())
 
-	if len(storage.deleted) != 1 || storage.deleted[0] != "expired-page" {
-		t.Fatalf("storage deletes = %+v", storage.deleted)
+	deleted := storage.deletedSlugs()
+	if len(deleted) != 1 || deleted[0] != "expired-page" {
+		t.Fatalf("storage deletes = %+v", deleted)
 	}
 	if _, err := store.GetUpload("expired-page"); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expected upload to be deleted, err=%v", err)
+	}
+}
+
+func TestRetentionCleanupWorkerHonorsRuntimeSettingChanges(t *testing.T) {
+	s, store, storage, accountID := newRetentionCleanupTestServer(t)
+	if err := store.SetSetting("retention_days", "0"); err != nil {
+		t.Fatal(err)
+	}
+	seedExpiredRetentionUpload(t, store, accountID, "runtime-page")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.runRetentionCleanup(ctx, 5*time.Millisecond)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+	if deleted := storage.deletedSlugs(); len(deleted) != 0 {
+		t.Fatalf("storage deletes while retention disabled = %+v", deleted)
+	}
+	if _, err := store.GetUpload("runtime-page"); err != nil {
+		t.Fatalf("upload should remain while retention disabled: %v", err)
+	}
+
+	if err := store.SetSetting("retention_days", "1"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		if _, err := store.GetUpload("runtime-page"); errors.Is(err, sql.ErrNoRows) {
+			break
+		} else if err != nil {
+			t.Fatalf("get upload: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("upload was not removed after retention was enabled; deletes=%+v", storage.deletedSlugs())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("retention cleanup worker did not stop")
 	}
 }
 

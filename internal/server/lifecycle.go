@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const retentionCleanupInterval = 1 * time.Hour
+
 // Close releases server resources (database connections, etc.).
 func (s *Server) Close() error {
 	if s.cancel != nil {
@@ -40,11 +42,14 @@ func (s *Server) persistAuditLog(actor, action, detail, ip string) {
 }
 
 func (s *Server) startRetentionCleanup(ctx context.Context) {
-	retentionDays := s.settingInt("retention_days", 0)
-	if retentionDays <= 0 {
-		return
+	s.runRetentionCleanup(ctx, retentionCleanupInterval)
+}
+
+func (s *Server) runRetentionCleanup(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = retentionCleanupInterval
 	}
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
