@@ -120,7 +120,7 @@ func TestCmdCommentsPrintsContextualComments(t *testing.T) {
 }
 
 func TestCmdConfigShowPrintsSavedConfig(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PEEK_HOST", "")
 	t.Setenv("PEEK_TOKEN", "")
 	if err := SaveConfig(&Config{Host: "https://peek.example.test", Token: "1234567890abcdef"}); err != nil {

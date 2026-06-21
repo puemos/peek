@@ -10,7 +10,7 @@ import (
 )
 
 func TestCmdLoginTokenFileSavesConfig(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	tokenFile := filepath.Join(t.TempDir(), "token.txt")
 	if err := os.WriteFile(tokenFile, []byte("tok-file\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestCmdLoginTokenFileSavesConfig(t *testing.T) {
 }
 
 func TestCmdLoginRejectsTokenWhenOAuthRequired(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	tokenFile := filepath.Join(t.TempDir(), "token.txt")
 	if err := os.WriteFile(tokenFile, []byte("tok-file\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestCmdLoginRejectsTokenWhenOAuthRequired(t *testing.T) {
 }
 
 func TestCmdLoginRejectsConflictingTokenInputs(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	tokenFile := filepath.Join(t.TempDir(), "token.txt")
 	if err := os.WriteFile(tokenFile, []byte("tok-file\n"), 0o600); err != nil {
 		t.Fatal(err)

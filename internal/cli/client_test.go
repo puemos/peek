@@ -54,7 +54,7 @@ func TestDecodeRespReportsErrorBodyReadFailure(t *testing.T) {
 }
 
 func TestLoadConfigReturnsEmptyWhenConfigIsMissing(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -66,7 +66,7 @@ func TestLoadConfigReturnsEmptyWhenConfigIsMissing(t *testing.T) {
 }
 
 func TestLoadConfigReportsConfigReadFailure(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	path, err := configPath()
 	if err != nil {
 		t.Fatal(err)

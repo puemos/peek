@@ -3,12 +3,21 @@ package cli
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
+func setTestConfigHome(t *testing.T) {
+	t.Helper()
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+}
+
 func configureTestClient(t *testing.T, host string) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PEEK_HOST", host)
 	t.Setenv("PEEK_TOKEN", "test-token")
 }

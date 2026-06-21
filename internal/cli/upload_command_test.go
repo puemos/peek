@@ -97,7 +97,7 @@ func TestCmdUploadStreamsPasswordMultipart(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	t.Setenv("PEEK_HOST", ts.URL)
 	t.Setenv("PEEK_TOKEN", "token")
 	file := filepath.Join(t.TempDir(), "page.html")

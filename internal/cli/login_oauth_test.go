@@ -10,7 +10,7 @@ import (
 )
 
 func TestLoginOAuthPollsUntilApproved(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	now := time.Unix(100, 0)
 	var sleeps []time.Duration
 	var openedURL string
@@ -96,7 +96,7 @@ func TestLoginOAuthPollsUntilApproved(t *testing.T) {
 }
 
 func TestLoginOAuthRejectsApprovedResponseWithoutToken(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	now := time.Unix(100, 0)
 	restoreOAuthTestHooks(t, func() time.Time {
 		return now
@@ -148,7 +148,7 @@ func restoreOAuthTestHooks(t *testing.T, now func() time.Time, sleep func(time.D
 }
 
 func TestLoginOAuthContinuesWhenBrowserOpenFails(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestConfigHome(t)
 	now := time.Unix(100, 0)
 	restoreOAuthTestHooks(t, func() time.Time {
 		return now
