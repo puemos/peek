@@ -268,8 +268,9 @@ cmd/peekd/          server entrypoint
 cmd/peek/           CLI entrypoint
 internal/db/        SQLite store + schema
 internal/models/    data types
-internal/server/    HTTP server, handlers, security, embedded assets
+internal/server/    HTTP server, handlers, auth, security
 internal/cli/       CLI client + commands
+internal/web/       Templates and embedded CSS/JS assets
 skills/peek/        consumer agent skill (upload + read comments)
 skills/peek-server/ server/admin agent skill
 assets/             README / launch media
