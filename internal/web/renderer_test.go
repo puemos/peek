@@ -278,6 +278,47 @@ func TestLoginRendersTabsWithMultipleMethods(t *testing.T) {
 	}
 }
 
+func TestLoginRendersBrandedOAuthButtons(t *testing.T) {
+	renderer, err := newRenderer(func(name string) string {
+		return "/" + name + "?v=test"
+	})
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+
+	body, err := renderer.Execute(TemplateLogin, LoginData{
+		CSRF: "csrf",
+		Providers: []AuthProvider{
+			{Key: "google", Name: "Google"},
+			{Key: "github", Name: "GitHub"},
+		},
+		PasswordLogin: true,
+		OAuthEnabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("execute login: %v", err)
+	}
+
+	html := string(body)
+	for _, want := range []string{
+		`href="/oauth/google/start"`,
+		`class="peek-oauth-button peek-oauth-button-google"`,
+		`Continue with Google`,
+		`href="/oauth/github/start"`,
+		`class="peek-oauth-button peek-oauth-button-github"`,
+		`Continue with GitHub`,
+		`class="peek-oauth-logo" viewBox="0 0 18 18" aria-hidden="true"`,
+		`class="peek-oauth-logo" viewBox="0 0 98 96" aria-hidden="true"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("login oauth button missing %q: %s", want, html)
+		}
+	}
+	if got := strings.Count(html, `alt="Peek"`); got != 1 {
+		t.Fatalf("login rendered %d Peek logos, want 1: %s", got, html)
+	}
+}
+
 func TestLoginInviteCopyIsClear(t *testing.T) {
 	renderer, err := NewRenderer()
 	if err != nil {
