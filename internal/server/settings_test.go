@@ -141,6 +141,7 @@ func TestNormalizeSettingsValues(t *testing.T) {
 	}{
 		{key: "auth_token_login_enabled", value: "yes", want: "true"},
 		{key: "oauth_google_enabled", value: "off", want: ""},
+		{key: "oauth_oidc_issuer_url", value: "https://8.8.8.8/issuer/", want: "https://8.8.8.8/issuer"},
 		{key: "max_upload", value: "2048", want: "2048"},
 		{key: "max_total_size", value: "0", want: "0"},
 		{key: "max_uploads_per_token", value: "12", want: "12"},
@@ -155,6 +156,41 @@ func TestNormalizeSettingsValues(t *testing.T) {
 		if got != tt.want {
 			t.Fatalf("normalizeSettingValue(%q, %q) = %q, want %q", tt.key, tt.value, got, tt.want)
 		}
+	}
+}
+
+func TestNormalizeOIDCIssuerRejectsUnsafeURLs(t *testing.T) {
+	s := &Server{}
+	for _, value := range []string{
+		"http://sso.example.test",
+		"https://127.0.0.1/issuer",
+		"https://169.254.169.254/issuer",
+		"https://sso.example.test/issuer?tenant=one",
+		"https://user@sso.example.test/issuer",
+	} {
+		t.Run(value, func(t *testing.T) {
+			if got, err := s.normalizeSettingValue("oauth_oidc_issuer_url", value); err == nil {
+				t.Fatalf("normalizeSettingValue accepted %q as %q", value, got)
+			}
+		})
+	}
+}
+
+func TestNormalizeOIDCIssuerAllowsPrivateWithExplicitOptIn(t *testing.T) {
+	s := &Server{oidcAllowPrivateIssuer: true}
+	for _, value := range []string{
+		"http://127.0.0.1:8080/realms/peek/",
+		"http://localhost:8080/realms/peek",
+	} {
+		t.Run(value, func(t *testing.T) {
+			got, err := s.normalizeSettingValue("oauth_oidc_issuer_url", value)
+			if err != nil {
+				t.Fatalf("normalizeSettingValue(%q): %v", value, err)
+			}
+			if strings.HasSuffix(got, "/") {
+				t.Fatalf("issuer was not normalized: %q", got)
+			}
+		})
 	}
 }
 

@@ -56,7 +56,7 @@ Use `peek export <slug>` when you need to hand the review record to an issue, an
 
 Admins manage users, invites, OAuth, token login, limits, retention, and storage from the dashboard.
 
-For company sign-in, enable Google or GitHub OAuth, configure the provider credentials, and invite users by email. OAuth signup is invite-only unless the verified email already belongs to an existing account.
+For company sign-in, enable Google, GitHub, or generic OpenID Connect OAuth, configure the provider credentials, and invite users by email. OAuth signup is invite-only unless the verified email already belongs to an existing account.
 
 Create automation tokens only for jobs that need API access:
 

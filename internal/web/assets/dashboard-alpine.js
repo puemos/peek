@@ -9,6 +9,7 @@
       oauth: {
         google: Boolean(initial.googleOAuth),
         github: Boolean(initial.githubOAuth),
+        oidc: Boolean(initial.oidcOAuth),
       },
       storageBackend: initial.storageBackend || "file",
       copied: "",

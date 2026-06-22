@@ -23,10 +23,10 @@ First-run setup creates the initial admin. Admins can invite users, disable user
 
 ## OAuth Providers
 
-Peek supports Google and GitHub OAuth. A provider is active only when it is enabled and both its client ID and client secret are configured.
+Peek supports Google, GitHub, and one generic OpenID Connect provider for SSO systems such as Okta, Entra ID, Auth0, or Keycloak. A provider is active only when it is enabled and its required credentials are configured.
 
 <figure>
-  <img src="/peek/assets/screenshots/08-admin-auth.png" alt="Peek Settings Auth tab showing access-token login, allowed email domain, Google OAuth, and GitHub OAuth configuration">
+  <img src="/peek/assets/screenshots/08-admin-auth.png" alt="Peek Settings Auth tab showing access-token login, allowed email domain, and OAuth provider configuration">
   <figcaption>The Auth tab controls token login, allowed email domain, and provider credentials.</figcaption>
 </figure>
 
@@ -35,6 +35,7 @@ Use these callback URLs in the provider console:
 ```text
 https://peek.example.com/oauth/google/callback
 https://peek.example.com/oauth/github/callback
+https://peek.example.com/oauth/oidc/callback
 ```
 
 Provider scopes are intentionally small:
@@ -43,11 +44,14 @@ Provider scopes are intentionally small:
 | --- | --- |
 | Google | OpenID, email, profile |
 | GitHub | `read:user`, `user:email` |
+| OpenID Connect | `openid`, `email`, `profile` |
 
 Provider tokens are used for profile lookup and are not stored. Peek stores the provider identity, verified email, and display name needed to link future logins.
 
+For Okta, use the issuer URL for the authorization server, for example `https://dev-123456.okta.com/oauth2/default`, and register the OIDC callback URL above. The issuer URL must be HTTPS and cannot point at private, link-local, loopback, or metadata endpoints unless the server is started with `PEEK_OIDC_ALLOW_PRIVATE_ISSUER=true` for explicit local SSO testing.
+
 <figure>
-  <img src="/peek/assets/screenshots/07-login-oauth.png" alt="Peek sign-in page with Google and GitHub OAuth buttons">
+  <img src="/peek/assets/screenshots/07-login-oauth.png" alt="Peek sign-in page with Google, GitHub, and SSO OAuth buttons">
   <figcaption>When OAuth is configured, users see provider buttons on the sign-in page.</figcaption>
 </figure>
 
@@ -118,3 +122,7 @@ Uploaded HTML itself remains sandboxed in all modes.
 | `oauth_github_enabled` | Runtime setting | Enables GitHub login when credentials are present. |
 | `oauth_github_client_id` | Runtime setting | GitHub OAuth app client ID. |
 | `oauth_github_client_secret` | Runtime setting | GitHub OAuth app client secret; leave blank in the dashboard to keep the current secret. |
+| `oauth_oidc_enabled` | Runtime setting | Enables generic OpenID Connect SSO when issuer and credentials are present. |
+| `oauth_oidc_issuer_url` | Runtime setting | OpenID Connect issuer URL. |
+| `oauth_oidc_client_id` | Runtime setting | OpenID Connect client ID. |
+| `oauth_oidc_client_secret` | Runtime setting | OpenID Connect client secret; leave blank in the dashboard to keep the current secret. |

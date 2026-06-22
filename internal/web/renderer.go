@@ -143,10 +143,12 @@ type DashboardSettings struct {
 }
 
 type AuthSettings struct {
-	Token  SettingRow
-	Domain SettingRow
-	Google OAuthProviderSettings
-	GitHub OAuthProviderSettings
+	Token     SettingRow
+	Domain    SettingRow
+	Google    OAuthProviderSettings
+	GitHub    OAuthProviderSettings
+	OIDC      OAuthProviderSettings
+	Providers []OAuthProviderSettings
 }
 
 type OAuthProviderSettings struct {
@@ -155,6 +157,7 @@ type OAuthProviderSettings struct {
 	Enabled      SettingRow
 	ClientID     SettingRow
 	ClientSecret SettingRow
+	Fields       []SettingRow
 	EnabledValue bool
 }
 

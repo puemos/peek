@@ -31,6 +31,7 @@ type serveConfig struct {
 	S3AccessKey            string
 	S3SecretKey            string
 	S3AllowPrivateEndpoint bool
+	OIDCAllowPrivateIssuer bool
 
 	MaxTotalSize  int64
 	RetentionDays int
@@ -71,6 +72,10 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 	if err != nil {
 		return serveConfig{}, false, err
 	}
+	oidcAllowPrivateIssuerDefault, err := getenvBool("PEEK_OIDC_ALLOW_PRIVATE_ISSUER")
+	if err != nil {
+		return serveConfig{}, false, err
+	}
 	maxTotalSizeDefault, err := getenvInt64("PEEK_MAX_TOTAL_SIZE", 0)
 	if err != nil {
 		return serveConfig{}, false, err
@@ -97,6 +102,7 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 	s3AccessKey := fs.String("s3-access-key", getenv("PEEK_S3_ACCESS_KEY", ""), "S3 access key")
 	s3SecretKey := fs.String("s3-secret-key", getenv("PEEK_S3_SECRET_KEY", ""), "S3 secret key")
 	s3AllowPrivateEndpoint := fs.Bool("s3-allow-private-endpoint", s3AllowPrivateEndpointDefault, "allow private/link-local S3 endpoint addresses for explicit dev deployments")
+	oidcAllowPrivateIssuer := fs.Bool("oidc-allow-private-issuer", oidcAllowPrivateIssuerDefault, "allow http/private/link-local OIDC issuer URLs for explicit dev deployments")
 
 	maxTotalSize := fs.Int64("max-total-size", maxTotalSizeDefault, "max total storage bytes across all uploads (0 = unlimited)")
 	retentionDays := fs.Int("retention-days", retentionDaysDefault, "auto-delete uploads older than N days (0 = off)")
@@ -130,6 +136,7 @@ func parseServeConfig(args []string) (serveConfig, bool, error) {
 		S3AccessKey:            *s3AccessKey,
 		S3SecretKey:            *s3SecretKey,
 		S3AllowPrivateEndpoint: *s3AllowPrivateEndpoint,
+		OIDCAllowPrivateIssuer: *oidcAllowPrivateIssuer,
 
 		MaxTotalSize:  *maxTotalSize,
 		RetentionDays: *retentionDays,
@@ -177,6 +184,7 @@ func runServe(cfg serveConfig) int {
 		S3AccessKey:            cfg.S3AccessKey,
 		S3SecretKey:            cfg.S3SecretKey,
 		S3AllowPrivateEndpoint: cfg.S3AllowPrivateEndpoint,
+		OIDCAllowPrivateIssuer: cfg.OIDCAllowPrivateIssuer,
 
 		MaxTotalSize:  cfg.MaxTotalSize,
 		RetentionDays: cfg.RetentionDays,

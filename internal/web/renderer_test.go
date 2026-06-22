@@ -291,6 +291,7 @@ func TestLoginRendersBrandedOAuthButtons(t *testing.T) {
 		Providers: []AuthProvider{
 			{Key: "google", Name: "Google"},
 			{Key: "github", Name: "GitHub"},
+			{Key: "oidc", Name: "SSO"},
 		},
 		PasswordLogin: true,
 		OAuthEnabled:  true,
@@ -307,6 +308,9 @@ func TestLoginRendersBrandedOAuthButtons(t *testing.T) {
 		`href="/oauth/github/start"`,
 		`class="peek-oauth-button peek-oauth-button-github"`,
 		`Continue with GitHub`,
+		`href="/oauth/oidc/start"`,
+		`class="peek-oauth-button peek-oauth-button-oidc"`,
+		`Continue with SSO`,
 		`class="peek-oauth-logo" viewBox="0 0 18 18" aria-hidden="true"`,
 		`class="peek-oauth-logo" viewBox="0 0 98 96" aria-hidden="true"`,
 	} {
@@ -316,6 +320,18 @@ func TestLoginRendersBrandedOAuthButtons(t *testing.T) {
 	}
 	if got := strings.Count(html, `alt="Peek"`); got != 1 {
 		t.Fatalf("login rendered %d Peek logos, want 1: %s", got, html)
+	}
+	oidcStart := strings.Index(html, `href="/oauth/oidc/start"`)
+	if oidcStart < 0 {
+		t.Fatalf("OIDC button missing: %s", html)
+	}
+	oidcEnd := strings.Index(html[oidcStart:], `</a>`)
+	if oidcEnd < 0 {
+		t.Fatalf("OIDC button not closed: %s", html[oidcStart:])
+	}
+	oidcButton := html[oidcStart : oidcStart+oidcEnd]
+	if strings.Contains(oidcButton, `peek-oauth-logo`) {
+		t.Fatalf("OIDC button should not render a provider logo: %s", oidcButton)
 	}
 }
 
@@ -346,29 +362,47 @@ func TestDashboardRendersSettingsTabsAndControls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new renderer: %v", err)
 	}
+	google := OAuthProviderSettings{
+		Key:          "google",
+		Name:         "Google",
+		Enabled:      SettingRow{Key: "oauth_google_enabled", Value: "true", Label: "Google login", Description: "Enable Google OAuth login"},
+		ClientID:     SettingRow{Key: "oauth_google_client_id", Label: "Google client ID", Description: "OAuth web client ID"},
+		ClientSecret: SettingRow{Key: "oauth_google_client_secret", Label: "Google client secret", Description: "OAuth web client secret", IsSecret: true},
+		EnabledValue: true,
+	}
+	google.Fields = []SettingRow{google.ClientID, google.ClientSecret}
+	github := OAuthProviderSettings{
+		Key:          "github",
+		Name:         "GitHub",
+		Enabled:      SettingRow{Key: "oauth_github_enabled", Label: "GitHub login", Description: "Enable GitHub OAuth login"},
+		ClientID:     SettingRow{Key: "oauth_github_client_id", Label: "GitHub client ID", Description: "OAuth app client ID"},
+		ClientSecret: SettingRow{Key: "oauth_github_client_secret", Label: "GitHub client secret", Description: "OAuth app client secret", IsSecret: true},
+	}
+	github.Fields = []SettingRow{github.ClientID, github.ClientSecret}
+	oidc := OAuthProviderSettings{
+		Key:          "oidc",
+		Name:         "SSO",
+		Enabled:      SettingRow{Key: "oauth_oidc_enabled", Label: "SSO login", Description: "Enable generic OpenID Connect login"},
+		ClientID:     SettingRow{Key: "oauth_oidc_client_id", Label: "SSO client ID", Description: "OpenID Connect client ID"},
+		ClientSecret: SettingRow{Key: "oauth_oidc_client_secret", Label: "SSO client secret", Description: "OpenID Connect client secret", IsSecret: true},
+	}
+	oidc.Fields = []SettingRow{
+		{Key: "oauth_oidc_issuer_url", Label: "SSO issuer URL", Description: "OpenID Connect issuer URL"},
+		oidc.ClientID,
+		oidc.ClientSecret,
+	}
 	body, err := renderer.Execute(TemplateDashboard, DashboardData{
 		CSRF:    "csrf",
 		User:    "Admin",
 		IsAdmin: true,
 		SettingsPanel: DashboardSettings{
 			Auth: AuthSettings{
-				Token:  SettingRow{Key: "auth_token_login_enabled", Value: "true", Label: "Access token login", Description: "Allow token login"},
-				Domain: SettingRow{Key: "auth_allowed_email_domain", Value: "example.com", Label: "Allowed email domain", Description: "Restrict login by domain"},
-				Google: OAuthProviderSettings{
-					Key:          "google",
-					Name:         "Google",
-					Enabled:      SettingRow{Key: "oauth_google_enabled", Value: "true", Label: "Google login", Description: "Enable Google OAuth login"},
-					ClientID:     SettingRow{Key: "oauth_google_client_id", Label: "Google client ID", Description: "OAuth web client ID"},
-					ClientSecret: SettingRow{Key: "oauth_google_client_secret", Label: "Google client secret", Description: "OAuth web client secret"},
-					EnabledValue: true,
-				},
-				GitHub: OAuthProviderSettings{
-					Key:          "github",
-					Name:         "GitHub",
-					Enabled:      SettingRow{Key: "oauth_github_enabled", Label: "GitHub login", Description: "Enable GitHub OAuth login"},
-					ClientID:     SettingRow{Key: "oauth_github_client_id", Label: "GitHub client ID", Description: "OAuth app client ID"},
-					ClientSecret: SettingRow{Key: "oauth_github_client_secret", Label: "GitHub client secret", Description: "OAuth app client secret"},
-				},
+				Token:     SettingRow{Key: "auth_token_login_enabled", Value: "true", Label: "Access token login", Description: "Allow token login"},
+				Domain:    SettingRow{Key: "auth_allowed_email_domain", Value: "example.com", Label: "Allowed email domain", Description: "Restrict login by domain"},
+				Google:    google,
+				GitHub:    github,
+				OIDC:      oidc,
+				Providers: []OAuthProviderSettings{google, github, oidc},
 			},
 			Storage: StorageSettings{
 				Backend:    SettingRow{Key: "storage", Value: "s3", Label: "Storage backend", Description: "file or s3", IsStartup: true},
@@ -395,8 +429,11 @@ func TestDashboardRendersSettingsTabsAndControls(t *testing.T) {
 		`value="example.com"`,
 		`name="oauth_google_enabled"`,
 		`name="oauth_github_enabled"`,
+		`name="oauth_oidc_enabled"`,
+		`name="oauth_oidc_issuer_url"`,
 		`x-show="oauth.google"`,
 		`:disabled="!oauth.github"`,
+		`:disabled="!oauth.oidc"`,
 		`name="storage" value="file"`,
 		`name="storage" value="s3"`,
 		`type="number" name="max_upload_mb"`,

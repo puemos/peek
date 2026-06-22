@@ -2,16 +2,23 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/coreos/go-oidc/v3/oidc/oidctest"
+	jose "github.com/go-jose/go-jose/v4"
 	"github.com/puemos/peek/internal/db"
 	webui "github.com/puemos/peek/internal/web"
 	"golang.org/x/oauth2"
@@ -144,6 +151,27 @@ func TestOAuthStartErrorRendersLoginPage(t *testing.T) {
 	}
 }
 
+func TestEnabledOAuthProvidersIncludesConfiguredOIDCWithoutDiscovery(t *testing.T) {
+	s := newTestServer(t)
+	if err := s.store.SetSetting(context.Background(), "oauth_oidc_enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.SetSetting(context.Background(), "oauth_oidc_issuer_url", "https://8.8.8.8/issuer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.SetSetting(context.Background(), "oauth_oidc_client_id", "client-id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.encryptedSetSetting(context.Background(), "oauth_oidc_client_secret", "client-secret"); err != nil {
+		t.Fatal(err)
+	}
+
+	providers := s.enabledOAuthProviders(context.Background())
+	if len(providers) != 1 || providers[0].Key != "oidc" || providers[0].Name != "SSO" {
+		t.Fatalf("providers = %+v", providers)
+	}
+}
+
 func TestOAuthAccountErrorMessageHidesInternalFailures(t *testing.T) {
 	cases := []struct {
 		err  error
@@ -222,6 +250,258 @@ func TestFetchGitHubProfileRejectsOversizedProviderJSON(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "response too large") {
 		t.Fatalf("error = %v, want oversized response error", err)
 	}
+}
+
+func TestFetchOIDCProfileUsesVerifiedIDTokenClaims(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuer := &oidctest.Server{
+		PublicKeys: []oidctest.PublicKey{{
+			PublicKey: priv.Public(),
+			KeyID:     "test-key",
+			Algorithm: oidc.RS256,
+		}},
+	}
+	ts := httptest.NewServer(issuer)
+	defer ts.Close()
+	issuer.SetIssuer(ts.URL)
+
+	provider, err := oidc.NewProvider(context.Background(), ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	rawClaims := `{
+		"iss": "` + ts.URL + `",
+		"aud": "client-id",
+		"sub": "user-123",
+		"exp": ` + strconv.FormatInt(now.Add(time.Hour).Unix(), 10) + `,
+		"email": "USER@Example.COM",
+		"email_verified": true,
+		"name": "OIDC User",
+		"preferred_username": "oidc-user"
+	}`
+	rawIDToken := oidctest.SignIDToken(priv, "test-key", oidc.RS256, rawClaims)
+	tok := (&oauth2.Token{AccessToken: "access-token", TokenType: "Bearer"}).WithExtra(map[string]any{"id_token": rawIDToken})
+
+	s := newTestServer(t)
+	profile, err := s.fetchOIDCProfile(context.Background(), &oauthProviderConfig{
+		authProvider: authProvider{Key: "oidc", Name: "SSO"},
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		IssuerURL:    ts.URL,
+		OIDCProvider: provider,
+	}, tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Provider != "oidc" || profile.ProviderUserID != ts.URL+"#user-123" || profile.Email != "user@example.com" || !profile.EmailVerified || profile.Name != "OIDC User" {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
+func TestOIDCCallbackWithFakeSSOServerCreatesSessionAndConsumesInvite(t *testing.T) {
+	s := newTestServer(t)
+	admin, err := s.store.CreateAccount(context.Background(), "admin@example.com", "Admin", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawInvite := "invite-token"
+	ciphertext, err := encryptSecret(s.secret, rawInvite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := s.store.CreateInvite(context.Background(), rawInvite, ciphertext, "User@Example.COM", admin.ID, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	issuerURL := "https://8.8.8.8/oidc"
+	clientID := "peek-client"
+	clientSecret := "peek-secret"
+	fake := newFakeOIDCServer(t, issuerURL, clientID, "user-123", "USER@Example.COM")
+	defer fake.close()
+
+	if err := s.store.SetSetting(context.Background(), "oauth_oidc_enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.SetSetting(context.Background(), "oauth_oidc_issuer_url", issuerURL); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.SetSetting(context.Background(), "oauth_oidc_client_id", clientID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.encryptedSetSetting(context.Background(), "oauth_oidc_client_secret", clientSecret); err != nil {
+		t.Fatal(err)
+	}
+
+	state := "state-123"
+	verifier := oauth2.GenerateVerifier()
+	req := httptest.NewRequest(http.MethodGet, "/oauth/oidc/callback?state="+state+"&code=auth-code", nil)
+	req = req.WithContext(oidc.ClientContext(req.Context(), fake.client()))
+	req.SetPathValue("provider", "oidc")
+	req.AddCookie(&http.Cookie{Name: oauthCookieName("oidc"), Value: s.makeOAuthFlowCookie("oidc", state, verifier)})
+	req.AddCookie(&http.Cookie{Name: inviteCookie, Value: rawInvite})
+	rec := httptest.NewRecorder()
+
+	s.handleOAuthCallback(rec, req)
+
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/dashboard" {
+		t.Fatalf("callback status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	if !fake.sawToken.Load() {
+		t.Fatal("fake SSO token endpoint was not called")
+	}
+	if c := findOAuthTestCookie(rec.Result().Cookies(), sessionCookie); c == nil || c.Value == "" {
+		t.Fatalf("callback did not create session cookie: %+v", rec.Result().Cookies())
+	}
+	account, err := s.store.GetAccountByEmail(context.Background(), "user@example.com")
+	if err != nil {
+		t.Fatalf("expected OIDC callback to create invited account: %v", err)
+	}
+	if account.IsAdmin {
+		t.Fatalf("invited OIDC account should not be admin: %+v", account)
+	}
+	identity, err := s.store.GetOAuthIdentity(context.Background(), "oidc", issuerURL+"#user-123")
+	if err != nil {
+		t.Fatalf("expected linked OIDC identity: %v", err)
+	}
+	if identity.AccountID != account.ID {
+		t.Fatalf("identity account_id=%d, want %d", identity.AccountID, account.ID)
+	}
+	used, err := s.store.GetInviteByID(context.Background(), inv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if used.UsedAt.IsZero() {
+		t.Fatal("OIDC callback did not consume invite")
+	}
+}
+
+func TestResolveOAuthAccountRejectsUnverifiedOIDCEmail(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	_, err := s.resolveOAuthAccount(req, &oauthProfile{
+		Provider:       "oidc",
+		ProviderUserID: "https://issuer.example.test#user-123",
+		Email:          "user@example.com",
+		EmailVerified:  false,
+		Name:           "User",
+	})
+	if err == nil || !strings.Contains(err.Error(), "verified") {
+		t.Fatalf("expected verified email error, got %v", err)
+	}
+}
+
+type fakeOIDCServer struct {
+	server   *httptest.Server
+	issuer   string
+	token    string
+	sawToken atomic.Bool
+}
+
+func newFakeOIDCServer(t *testing.T, issuer, clientID, sub, email string) *fakeOIDCServer {
+	t.Helper()
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	rawClaims := `{
+		"iss": "` + issuer + `",
+		"aud": "` + clientID + `",
+		"sub": "` + sub + `",
+		"exp": ` + strconv.FormatInt(now.Add(time.Hour).Unix(), 10) + `,
+		"email": "` + email + `",
+		"email_verified": true,
+		"name": "OIDC User"
+	}`
+	fake := &fakeOIDCServer{
+		issuer: issuer,
+		token:  oidctest.SignIDToken(priv, "fake-key", oidc.RS256, rawClaims),
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oidc/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		jsonOK(w, map[string]any{
+			"issuer":                                issuer,
+			"authorization_endpoint":                issuer + "/auth",
+			"token_endpoint":                        issuer + "/token",
+			"jwks_uri":                              issuer + "/keys",
+			"userinfo_endpoint":                     issuer + "/userinfo",
+			"response_types_supported":              []string{"code"},
+			"subject_types_supported":               []string{"public"},
+			"id_token_signing_alg_values_supported": []string{oidc.RS256},
+		})
+	})
+	mux.HandleFunc("/oidc/keys", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
+			Key:       priv.Public(),
+			KeyID:     "fake-key",
+			Algorithm: oidc.RS256,
+			Use:       "sig",
+		}}})
+	})
+	mux.HandleFunc("/oidc/token", func(w http.ResponseWriter, r *http.Request) {
+		fake.sawToken.Store(true)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+		if r.FormValue("grant_type") != "authorization_code" || r.FormValue("code") != "auth-code" || r.FormValue("client_id") != clientID {
+			http.Error(w, "bad token request", http.StatusBadRequest)
+			return
+		}
+		jsonOK(w, map[string]any{
+			"access_token": "access-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+			"id_token":     fake.token,
+		})
+	})
+	fake.server = httptest.NewServer(mux)
+	return fake
+}
+
+func (f *fakeOIDCServer) close() {
+	f.server.Close()
+}
+
+func (f *fakeOIDCServer) client() *http.Client {
+	target, _ := url.Parse(f.server.URL)
+	return &http.Client{Transport: rewriteHostTransport{
+		targetScheme: target.Scheme,
+		targetHost:   target.Host,
+		base:         http.DefaultTransport,
+	}}
+}
+
+type rewriteHostTransport struct {
+	targetScheme string
+	targetHost   string
+	base         http.RoundTripper
+}
+
+func (t rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.URL.Scheme = t.targetScheme
+	clone.URL.Host = t.targetHost
+	clone.Host = req.URL.Host
+	if t.base == nil {
+		t.base = http.DefaultTransport
+	}
+	return t.base.RoundTrip(clone)
+}
+
+func findOAuthTestCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, c := range cookies {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
 }
 
 func restoreGitHubURLs(t *testing.T, base string) {

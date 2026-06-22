@@ -44,7 +44,7 @@ Set `--trusted-proxy` only when the reverse proxy is trusted and overwrites or c
 
 On first run, Peek creates a one-time setup URL in the logs and stores the setup code in the data directory. Use it to create the first admin. After an account exists, the setup file is removed and the setup route is closed.
 
-For company usage, prefer OAuth with invite-only signup. Admins can configure Google or GitHub OAuth in Settings, create invite links, and promote or disable users later. Direct bearer tokens remain appropriate for internal automation, CI jobs, and agents.
+For company usage, prefer OAuth/SSO with invite-only signup. Admins can configure Google, GitHub, or generic OpenID Connect in Settings, create invite links, and promote or disable users later. Direct bearer tokens remain appropriate for internal automation, CI jobs, and agents.
 
 ## Quotas, Retention, And Storage
 

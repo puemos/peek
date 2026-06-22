@@ -275,6 +275,7 @@ async function showLoginOAuth(page) {
   await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
   await page.locator("a", { hasText: "Continue with Google" }).waitFor({ state: "visible" });
   await page.locator("a", { hasText: "Continue with GitHub" }).waitFor({ state: "visible" });
+  await page.locator("a", { hasText: "Continue with SSO" }).waitFor({ state: "visible" });
 }
 
 async function showAdminAuth(page) {
@@ -282,6 +283,8 @@ async function showAdminAuth(page) {
   await page.locator("button[role='tab']", { hasText: "Auth" }).click();
   await page.locator("input[name='auth_allowed_email_domain']").waitFor({ state: "visible" });
   await page.locator("input[name='oauth_google_client_id']").waitFor({ state: "visible" });
+  await page.locator("input[name='oauth_oidc_issuer_url']").waitFor({ state: "visible" });
+  await page.locator("input[name='oauth_oidc_issuer_url']").scrollIntoViewIfNeeded();
   await page.waitForTimeout(250);
 }
 

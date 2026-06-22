@@ -157,6 +157,7 @@ func TestParseServeConfigMapsFlagsAndEnv(t *testing.T) {
 		"--s3-access-key", "access",
 		"--s3-secret-key", "secret",
 		"--s3-allow-private-endpoint",
+		"--oidc-allow-private-issuer",
 		"--max-total-size", "999",
 		"--retention-days", "7",
 	})
@@ -177,6 +178,9 @@ func TestParseServeConfigMapsFlagsAndEnv(t *testing.T) {
 	}
 	if cfg.S3Region != "auto" || cfg.S3AccessKey != "access" || cfg.S3SecretKey != "secret" || !cfg.S3AllowPrivateEndpoint {
 		t.Fatalf("s3 credentials/config = %+v", cfg)
+	}
+	if !cfg.OIDCAllowPrivateIssuer {
+		t.Fatal("OIDCAllowPrivateIssuer = false")
 	}
 	if !cfg.TrustedProxy {
 		t.Fatal("TrustedProxy = false")
@@ -204,6 +208,7 @@ func TestParseServeConfigRejectsInvalidBoolEnv(t *testing.T) {
 func TestParseServeConfigAcceptsCaseInsensitiveBoolEnv(t *testing.T) {
 	t.Setenv("PEEK_TRUSTED_PROXY", "ON")
 	t.Setenv("PEEK_S3_ALLOW_PRIVATE_ENDPOINT", "Yes")
+	t.Setenv("PEEK_OIDC_ALLOW_PRIVATE_ISSUER", "true")
 
 	cfg, showVersion, err := parseServeConfig([]string{"--data", t.TempDir()})
 	if err != nil {
@@ -212,7 +217,7 @@ func TestParseServeConfigAcceptsCaseInsensitiveBoolEnv(t *testing.T) {
 	if showVersion {
 		t.Fatal("showVersion = true")
 	}
-	if !cfg.TrustedProxy || !cfg.S3AllowPrivateEndpoint {
+	if !cfg.TrustedProxy || !cfg.S3AllowPrivateEndpoint || !cfg.OIDCAllowPrivateIssuer {
 		t.Fatalf("bool config = %+v", cfg)
 	}
 }

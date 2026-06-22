@@ -37,6 +37,10 @@ var settingsMeta = map[string]settingsRow{
 	"oauth_github_enabled":        {Label: "GitHub login", Description: "Enable GitHub OAuth login", IsBool: true},
 	"oauth_github_client_id":      {Label: "GitHub client ID", Description: "OAuth app client ID"},
 	"oauth_github_client_secret":  {Label: "GitHub client secret", Description: "OAuth app client secret", IsSecret: true},
+	"oauth_oidc_enabled":          {Label: "SSO login", Description: "Enable generic OpenID Connect login", IsBool: true},
+	"oauth_oidc_issuer_url":       {Label: "SSO issuer URL", Description: "OpenID Connect issuer URL, such as https://dev-123456.okta.com/oauth2/default"},
+	"oauth_oidc_client_id":        {Label: "SSO client ID", Description: "OpenID Connect client ID"},
+	"oauth_oidc_client_secret":    {Label: "SSO client secret", Description: "OpenID Connect client secret", IsSecret: true},
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +121,11 @@ func (s *Server) normalizeSettingValue(key, value string) (string, error) {
 		return normalizeNonNegativeIntSetting(key, value)
 	case authAllowedEmailDomainSetting:
 		return normalizeAllowedEmailDomain(value)
+	case "oauth_oidc_issuer_url":
+		if value == "" {
+			return "", nil
+		}
+		return s.normalizeOIDCIssuerURL(value)
 	case "storage":
 		switch strings.ToLower(value) {
 		case "file", "s3":
@@ -308,12 +317,17 @@ func (s *Server) dashboardSettingsMap(ctx context.Context) map[string]string {
 }
 
 func dashboardSettingsPanel(raw map[string]string) webui.DashboardSettings {
+	google := dashboardOAuthProviderSettings(raw, "google", "Google")
+	github := dashboardOAuthProviderSettings(raw, "github", "GitHub")
+	oidc := dashboardOAuthProviderSettings(raw, "oidc", "SSO")
 	return webui.DashboardSettings{
 		Auth: webui.AuthSettings{
-			Token:  dashboardSettingRow(raw, "auth_token_login_enabled"),
-			Domain: dashboardSettingRow(raw, authAllowedEmailDomainSetting),
-			Google: dashboardOAuthProviderSettings(raw, "google", "Google"),
-			GitHub: dashboardOAuthProviderSettings(raw, "github", "GitHub"),
+			Token:     dashboardSettingRow(raw, "auth_token_login_enabled"),
+			Domain:    dashboardSettingRow(raw, authAllowedEmailDomainSetting),
+			Google:    google,
+			GitHub:    github,
+			OIDC:      oidc,
+			Providers: []webui.OAuthProviderSettings{google, github, oidc},
 		},
 		Storage: dashboardStorageSettings(raw),
 		Limits: []webui.LimitSetting{
@@ -328,12 +342,23 @@ func dashboardSettingsPanel(raw map[string]string) webui.DashboardSettings {
 
 func dashboardOAuthProviderSettings(raw map[string]string, key, name string) webui.OAuthProviderSettings {
 	enabled := dashboardSettingRow(raw, "oauth_"+key+"_enabled")
+	clientID := dashboardSettingRow(raw, "oauth_"+key+"_client_id")
+	clientSecret := dashboardSettingRow(raw, "oauth_"+key+"_client_secret")
+	fields := []webui.SettingRow{clientID, clientSecret}
+	if key == "oidc" {
+		fields = []webui.SettingRow{
+			dashboardSettingRow(raw, "oauth_oidc_issuer_url"),
+			clientID,
+			clientSecret,
+		}
+	}
 	return webui.OAuthProviderSettings{
 		Key:          key,
 		Name:         name,
 		Enabled:      enabled,
-		ClientID:     dashboardSettingRow(raw, "oauth_"+key+"_client_id"),
-		ClientSecret: dashboardSettingRow(raw, "oauth_"+key+"_client_secret"),
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Fields:       fields,
 		EnabledValue: settingValueBool(enabled.Value),
 	}
 }
@@ -443,6 +468,7 @@ func dashboardSettingsRows(raw map[string]string) []settingsRow {
 		"auth_token_login_enabled", authAllowedEmailDomainSetting,
 		"oauth_google_enabled", "oauth_google_client_id", "oauth_google_client_secret",
 		"oauth_github_enabled", "oauth_github_client_id", "oauth_github_client_secret",
+		"oauth_oidc_enabled", "oauth_oidc_issuer_url", "oauth_oidc_client_id", "oauth_oidc_client_secret",
 		"storage", "s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
 		"max_upload", "max_total_size", "max_uploads_per_token", "max_storage_per_token", "retention_days",
 	}
