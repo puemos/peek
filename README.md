@@ -78,7 +78,7 @@ docker compose --profile s3 up -d # with MinIO storage
 - **In-context review**: pinned, text-anchored, and page-level comments with numbered on-page markers. Click a comment to jump back to its anchor.
 - **Safe HTML previews**: uploaded pages render in a sandboxed iframe (`sandbox="allow-scripts"`, no `allow-same-origin`) so they cannot read Peek cookies, call the server as the user, or touch the parent page.
 - **Terminal and browser workflows**: upload, list, delete, change visibility, inspect comments, and view stats from the CLI or web dashboard.
-- **Access controls for internal teams**: public links, password-gated pages, private account-only pages, first-run admin setup, local login, invite-only Google/GitHub OAuth, token expiry, and admin-managed users.
+- **Access controls for internal teams**: public links, password-gated pages, private account-only pages, first-run admin setup, local login, invite-only Google/GitHub OAuth, allowed login email domain, token expiry, and admin-managed users.
 - **Operational basics included**: health/readiness checks, structured JSON logging, Prometheus metrics, audit log, quota and retention controls, consistent SQLite backup, file or S3-compatible storage, and S3 endpoint SSRF protection.
 - **Small deployment footprint**: one static Go binary, pure-Go SQLite, no runtime dependencies.
 
@@ -202,7 +202,7 @@ Protect `/metrics` at your proxy. Full deployment checklist: [docs/operations.md
 
 ## Web dashboard
 
-A browser dashboard at `/login` lets users upload, list, delete, password-protect, and view stats. First run starts at a one-time `/setup` URL that creates the initial admin. Admins can enable Google/GitHub OAuth from Settings. OAuth signups are invite-only: admins create invite links, users accept with an enabled OAuth provider. The same verified email maps to the same account across providers. Admins can disable users, promote/demote admins, and edit runtime limits, retention, auth, and S3 settings.
+A browser dashboard at `/login` lets users upload, list, delete, password-protect, and view stats. First run starts at a one-time `/setup` URL that creates the initial admin. Admins can enable Google/GitHub OAuth from Settings and optionally restrict human login to one exact email domain. OAuth signups are invite-only: admins create invite links, users accept with an enabled OAuth provider. The same verified email maps to the same account across providers. Admins can disable users, promote/demote admins, and edit runtime limits, retention, auth, and S3 settings.
 
 OAuth callback URLs:
 ```

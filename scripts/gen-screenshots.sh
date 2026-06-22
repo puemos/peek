@@ -137,6 +137,7 @@ VALUES
 
 INSERT INTO settings(key,value,updated_at) VALUES
   ('auth_token_login_enabled','true',$NOW),
+  ('auth_allowed_email_domain','example.com',$NOW),
   ('oauth_google_enabled','true',$NOW),
   ('oauth_google_client_id','peek-internal-google-client',$NOW),
   ('oauth_google_client_secret','configured',$NOW),

@@ -123,12 +123,14 @@ local base URL and `Authorization callback URL` set to
 `http://127.0.0.1:<port>/oauth/github/callback`.
 
 OAuth signups are invite-only. Create manual invite links in the dashboard and
-send them to users. When OAuth is enabled, non-admin dashboard and CLI login
-must use OAuth; the local password form remains available to admins. When OAuth
-is not enabled, token login remains available and can be disabled from Settings.
-Direct bearer tokens still work for API/automation. The same verified email maps
-to the same Peek account across Google and GitHub. Admins can disable users or
-promote/demote admins in the dashboard later.
+send them to users. Admins can also set an allowed email domain in Settings to
+restrict human login, CLI browser approval, and invites to one exact domain.
+When OAuth is enabled, non-admin dashboard and CLI login must use OAuth; the
+local password form remains available to admins if the admin email matches the
+allowed domain. When OAuth is not enabled, token login remains available and can
+be disabled from Settings. Direct bearer tokens still work for API/automation.
+The same verified email maps to the same Peek account across Google and GitHub.
+Admins can disable users or promote/demote admins in the dashboard later.
 
 ### Manage page passwords
 
