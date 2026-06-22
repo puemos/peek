@@ -39,7 +39,7 @@ peek upload report.html --visibility public
 | Sharing a page for review | [Using Peek](/peek/docs/using-peek/) |
 | Installing Peek on a server | [Server setup](/peek/docs/server-setup/) |
 | Deploying on Render, Fly.io, Railway, Kubernetes, or another cloud platform | [Deployment platforms](/peek/docs/deployment-platforms/) |
-| Configuring Google or GitHub sign-in | [Auth and access](/peek/docs/auth-access/) |
+| Configuring OAuth or SSO sign-in | [Auth and access](/peek/docs/auth-access/) |
 | Choosing file storage or S3-compatible storage | [Storage, limits, and retention](/peek/docs/storage-retention/) |
 | Looking up every flag, env var, endpoint, or smoke check | [Reference](/peek/docs/reference/) |
 

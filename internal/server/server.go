@@ -36,6 +36,7 @@ type Config struct {
 	S3AccessKey            string
 	S3SecretKey            string
 	S3AllowPrivateEndpoint bool
+	OIDCAllowPrivateIssuer bool
 
 	MaxTotalSize  int64
 	RetentionDays int
@@ -65,6 +66,7 @@ type Server struct {
 
 	trustedProxy           bool
 	s3AllowPrivateEndpoint bool
+	oidcAllowPrivateIssuer bool
 	visitQueue             chan visitEvent
 }
 
@@ -171,6 +173,7 @@ func New(cfg Config) (*Server, error) {
 		cliLoginLimiter:        newLimiter(120, time.Minute),
 		trustedProxy:           cfg.TrustedProxy,
 		s3AllowPrivateEndpoint: cfg.S3AllowPrivateEndpoint,
+		oidcAllowPrivateIssuer: cfg.OIDCAllowPrivateIssuer,
 		visitQueue:             make(chan visitEvent, 256),
 	}
 

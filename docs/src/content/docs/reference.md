@@ -23,6 +23,7 @@ kicker: peekd reference
 | `--s3-access-key` | `PEEK_S3_ACCESS_KEY` | empty | S3 access key ID. |
 | `--s3-secret-key` | `PEEK_S3_SECRET_KEY` | empty | S3 secret access key. |
 | `--s3-allow-private-endpoint` | `PEEK_S3_ALLOW_PRIVATE_ENDPOINT` | `false` | Allows HTTP/private/link-local endpoints for controlled private deployments. |
+| `--oidc-allow-private-issuer` | `PEEK_OIDC_ALLOW_PRIVATE_ISSUER` | `false` | Allows HTTP/private OIDC issuers for local SSO testing. |
 
 `PEEK_LOG_LEVEL` accepts `debug`, `info`, or `warn`. Any other value falls back to info.
 
@@ -40,6 +41,10 @@ Admins can change these from the dashboard or the settings API:
 | `oauth_github_enabled` | boolean | Enables GitHub login if credentials are configured. |
 | `oauth_github_client_id` | string | GitHub OAuth app client ID. |
 | `oauth_github_client_secret` | secret string | GitHub OAuth app client secret. |
+| `oauth_oidc_enabled` | boolean | Enables generic OpenID Connect SSO if issuer and credentials are configured. |
+| `oauth_oidc_issuer_url` | URL | OpenID Connect issuer URL. Must be HTTPS and publicly routable unless `PEEK_OIDC_ALLOW_PRIVATE_ISSUER=true`. |
+| `oauth_oidc_client_id` | string | OpenID Connect client ID. |
+| `oauth_oidc_client_secret` | secret string | OpenID Connect client secret. |
 | `storage` | `file` or `s3` | Startup setting; restart to apply backend changes. |
 | `s3_endpoint` | URL | Validated to block unsafe endpoints unless private endpoints are explicitly allowed. |
 | `s3_bucket` | string | Bucket name for uploaded HTML bytes. |
@@ -80,6 +85,7 @@ peek login --token <value>
 | `/setup` | First-run setup only. Closes after the first account exists. |
 | `/oauth/google/callback` | Google OAuth callback. |
 | `/oauth/github/callback` | GitHub OAuth callback. |
+| `/oauth/oidc/callback` | Generic OpenID Connect callback. |
 
 ## Operator Checks
 

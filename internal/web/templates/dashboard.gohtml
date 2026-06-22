@@ -9,7 +9,7 @@
 <script src="{{asset "dashboard-alpine.js"}}" defer></script>
 {{template "toast-head" .}}
 </head>
-<body x-data="dashboard({ googleOAuth: {{.SettingsPanel.Auth.Google.EnabledValue}}, githubOAuth: {{.SettingsPanel.Auth.GitHub.EnabledValue}}, storageBackend: '{{.SettingsPanel.Storage.Value}}' })" class="min-h-screen">
+<body x-data="dashboard({ googleOAuth: {{.SettingsPanel.Auth.Google.EnabledValue}}, githubOAuth: {{.SettingsPanel.Auth.GitHub.EnabledValue}}, oidcOAuth: {{.SettingsPanel.Auth.OIDC.EnabledValue}}, storageBackend: '{{.SettingsPanel.Storage.Value}}' })" class="min-h-screen">
 {{if .UploadSuccessURL}}<div hidden data-peek-toast data-toast-type="success" data-toast-message="Uploaded! Share link:" data-toast-description="{{.UploadSuccessURL}}" data-toast-duration="8000"></div>{{end}}
 {{if .FlashSuccess}}<div hidden data-peek-toast data-toast-type="success" data-toast-message="{{.FlashSuccess}}"></div>{{end}}
 {{if .UploadError}}<div hidden data-peek-toast data-toast-type="danger" data-toast-message="{{.UploadError}}" data-toast-duration="6500"></div>{{end}}
@@ -217,7 +217,8 @@
           <span class="text-xs text-muted-foreground">{{.SettingsPanel.Auth.Domain.Description}}</span>
         </label>
 
-        {{with .SettingsPanel.Auth.Google}}
+        {{range .SettingsPanel.Auth.Providers}}
+        {{$providerKey := .Key}}
         <div class="peek-provider-settings">
           <label class="peek-setting-switch">
             <span class="peek-switch-control">
@@ -230,43 +231,13 @@
             </span>
           </label>
           <div x-show="oauth.{{.Key}}" x-cloak class="grid gap-3 md:grid-cols-2">
+            {{range .Fields}}
             <label class="flex flex-col gap-1">
-              <span class="text-sm text-secondary-foreground">{{.ClientID.Label}}</span>
-              <input type="text" name="{{.ClientID.Key}}" value="{{.ClientID.Value}}" placeholder="{{.ClientID.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
-              <span class="text-xs text-muted-foreground">{{.ClientID.Description}}</span>
+              <span class="text-sm text-secondary-foreground">{{.Label}}</span>
+              <input type="{{if .IsSecret}}password{{else}}text{{end}}" name="{{.Key}}" value="{{.Value}}" placeholder="{{.Description}}" autocomplete="off" :disabled="!oauth.{{$providerKey}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
+              <span class="text-xs text-muted-foreground">{{.Description}}</span>
             </label>
-            <label class="flex flex-col gap-1">
-              <span class="text-sm text-secondary-foreground">{{.ClientSecret.Label}}</span>
-              <input type="password" name="{{.ClientSecret.Key}}" value="{{.ClientSecret.Value}}" placeholder="{{.ClientSecret.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
-              <span class="text-xs text-muted-foreground">{{.ClientSecret.Description}}</span>
-            </label>
-          </div>
-        </div>
-        {{end}}
-
-        {{with .SettingsPanel.Auth.GitHub}}
-        <div class="peek-provider-settings">
-          <label class="peek-setting-switch">
-            <span class="peek-switch-control">
-              <input type="checkbox" role="switch" name="{{.Enabled.Key}}" value="true" x-model="oauth.{{.Key}}" {{if .EnabledValue}}checked{{end}} class="peek-switch-input">
-              <span class="peek-switch-track" aria-hidden="true"><span class="peek-switch-thumb"></span></span>
-            </span>
-            <span class="flex min-w-0 flex-col gap-1">
-              <span class="text-sm text-secondary-foreground">{{.Enabled.Label}}</span>
-              <span class="text-xs text-muted-foreground">{{.Enabled.Description}}</span>
-            </span>
-          </label>
-          <div x-show="oauth.{{.Key}}" x-cloak class="grid gap-3 md:grid-cols-2">
-            <label class="flex flex-col gap-1">
-              <span class="text-sm text-secondary-foreground">{{.ClientID.Label}}</span>
-              <input type="text" name="{{.ClientID.Key}}" value="{{.ClientID.Value}}" placeholder="{{.ClientID.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
-              <span class="text-xs text-muted-foreground">{{.ClientID.Description}}</span>
-            </label>
-            <label class="flex flex-col gap-1">
-              <span class="text-sm text-secondary-foreground">{{.ClientSecret.Label}}</span>
-              <input type="password" name="{{.ClientSecret.Key}}" value="{{.ClientSecret.Value}}" placeholder="{{.ClientSecret.Description}}" autocomplete="off" :disabled="!oauth.{{.Key}}" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60">
-              <span class="text-xs text-muted-foreground">{{.ClientSecret.Description}}</span>
-            </label>
+            {{end}}
           </div>
         </div>
         {{end}}
