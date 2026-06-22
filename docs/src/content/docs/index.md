@@ -38,12 +38,13 @@ peek upload report.html --visibility public
 | --- | --- |
 | Sharing a page for review | [Using Peek](/peek/docs/using-peek/) |
 | Installing Peek on a server | [Server setup](/peek/docs/server-setup/) |
+| Deploying on Render, Fly.io, Railway, Kubernetes, or another cloud platform | [Deployment platforms](/peek/docs/deployment-platforms/) |
 | Configuring Google or GitHub sign-in | [Auth and access](/peek/docs/auth-access/) |
 | Choosing file storage or S3-compatible storage | [Storage, limits, and retention](/peek/docs/storage-retention/) |
 | Looking up every flag, env var, endpoint, or smoke check | [Reference](/peek/docs/reference/) |
 
 ## What To Read Next
 
-Start with [Using Peek](/peek/docs/using-peek/) if you are evaluating the workflow. Start with [Server setup](/peek/docs/server-setup/) if you already know where the service will run.
+Start with [Using Peek](/peek/docs/using-peek/) if you are evaluating the workflow. Start with [Server setup](/peek/docs/server-setup/) if you already know where the service will run, then check [Deployment platforms](/peek/docs/deployment-platforms/) before choosing a managed cloud host.
 
 For a company deployment, read [Auth and access](/peek/docs/auth-access/) before inviting users. OAuth changes the login surface deliberately: non-admin users sign in through enabled providers, while admins keep a password fallback for recovery.

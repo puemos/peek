@@ -190,6 +190,8 @@ peek.example.com {
 
 Set `--trusted-proxy` if your proxy forwards `X-Forwarded-For`. Back up the `data/` directory.
 
+For Render, Fly.io, Railway, Kubernetes, and stateless app platforms, read the [cloud deployment notes](docs/src/content/docs/deployment-platforms.md) before deploying. Peek needs durable storage mounted at `/data`; a managed container filesystem is not enough to preserve SQLite data, uploaded files, or the generated signing key.
+
 Operational endpoints:
 
 | Endpoint | Purpose |
