@@ -162,10 +162,10 @@
           localStorage.setItem("hn_name_asked", "1");
         }
 
-        this.loadComments();
-        this.loadViews();
         this.bindBridge();
         this.bindKeyboard();
+        this.loadComments();
+        this.loadViews();
       },
 
       loadComments() {
@@ -248,11 +248,22 @@
       },
 
       bindBridge() {
+        const f = document.getElementById("hn-frame");
+        if (f) {
+          f.addEventListener("load", () => {
+            this.syncFrame();
+          });
+        }
+
         window.addEventListener("message", (e) => {
           if (e.source !== frame()) return;
           const data = e.data;
           if (!data) return;
 
+          if (data.hn === "ready") {
+            this.syncFrame();
+            return;
+          }
           if (data.hn === "pick") {
             this.openComposer(data);
             return;
@@ -311,6 +322,11 @@
           postToFrame({ hn: "mode", on: false });
           if (this.composerOpen) this.closeComposer();
         }
+      },
+
+      syncFrame() {
+        postToFrame({ hn: "mode", on: this.commentMode });
+        this.sendPins();
       },
 
       startGeneralComment(event) {

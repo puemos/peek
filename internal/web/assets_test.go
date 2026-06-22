@@ -148,6 +148,45 @@ func TestBridgeMessageHandlerChecksParentSource(t *testing.T) {
 	}
 }
 
+func TestBridgeAnnouncesReadyForParentSync(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/bridge.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		"function notifyReady()",
+		`parent.postMessage({ hn: "ready" }, "*");`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("bridge ready handshake missing %q", want)
+		}
+	}
+	if got := strings.Count(src, "notifyReady();"); got < 2 {
+		t.Fatalf("bridge should announce readiness after setup and load, got %d calls", got)
+	}
+}
+
+func TestParentAppResyncsFrameWhenBridgeIsReady(t *testing.T) {
+	b, err := assetsFS.ReadFile("assets/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{
+		`if (data.hn === "ready")`,
+		"this.syncFrame();",
+		`f.addEventListener("load"`,
+		"syncFrame() {",
+		`postToFrame({ hn: "mode", on: this.commentMode });`,
+		"this.sendPins();",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("parent app frame sync missing %q", want)
+		}
+	}
+}
+
 func TestParentAppStoresReviewerNameLocally(t *testing.T) {
 	b, err := assetsFS.ReadFile("assets/app.js")
 	if err != nil {

@@ -348,6 +348,10 @@
     }
   }
 
+  function notifyReady() {
+    parent.postMessage({ hn: "ready" }, "*");
+  }
+
   // --- wiring ---
   window.addEventListener("mousemove", onMouseMove, true);
   window.addEventListener("click", onClick, true);
@@ -355,6 +359,7 @@
   window.addEventListener("resize", scheduleReposition);
   document.addEventListener("selectionchange", onSelectionChange);
   window.addEventListener("load", function () {
+    notifyReady();
     positionPins();
     setTimeout(positionPins, 300);
     setTimeout(positionPins, 1000);
@@ -370,4 +375,5 @@
   });
 
   injectStyles();
+  notifyReady();
 })();
