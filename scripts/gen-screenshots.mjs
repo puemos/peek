@@ -89,6 +89,14 @@ async function newContext(browser) {
   return context;
 }
 
+async function newPlainContext(browser) {
+  return browser.newContext({
+    viewport: { width: WIDTH, height: HEIGHT },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+  });
+}
+
 async function waitForFonts(page) {
   await page.evaluate(() => (document.fonts ? document.fonts.ready : Promise.resolve())).catch(() => {});
 }
@@ -196,7 +204,7 @@ async function openSharedPage(page) {
     const el = document.getElementById("hn-count");
     return el && Number(el.textContent || "0") === expected;
   }, SEEDED_COMMENT_COUNT);
-  await report.locator(".hn-pin").nth(SEEDED_COMMENT_COUNT - 1).waitFor({ state: "visible" });
+  await report.locator(".hn-pin").nth(SEEDED_COMMENT_COUNT - 1).waitFor({ state: "attached" });
   await report.locator("#summary").evaluate((el) => {
     el.scrollIntoView({ block: "center", inline: "nearest" });
   });
@@ -253,11 +261,53 @@ async function showStats(page) {
   await page.locator("h3", { hasText: "Recent visits" }).waitFor({ state: "visible" });
 }
 
-async function showAdminSettings(page) {
+async function scrollToSettings(page) {
   await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
   await page.locator("h2", { hasText: "Settings" }).waitFor({ state: "attached" });
-  await page.locator("h2", { hasText: "Settings" }).scrollIntoViewIfNeeded();
+  await page.locator("h2", { hasText: "Settings" }).evaluate((el) => {
+    const top = el.getBoundingClientRect().top + window.scrollY - 78;
+    window.scrollTo({ top, left: 0, behavior: "instant" });
+  });
+  await page.waitForTimeout(150);
+}
+
+async function showLoginOAuth(page) {
+  await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
+  await page.locator("a", { hasText: "Continue with Google" }).waitFor({ state: "visible" });
+  await page.locator("a", { hasText: "Continue with GitHub" }).waitFor({ state: "visible" });
+}
+
+async function showAdminAuth(page) {
+  await scrollToSettings(page);
+  await page.locator("button[role='tab']", { hasText: "Auth" }).click();
+  await page.locator("input[name='oauth_google_client_id']").waitFor({ state: "visible" });
+  await page.waitForTimeout(250);
+}
+
+async function showAdminStorageS3(page) {
+  await scrollToSettings(page);
+  await page.locator("button[role='tab']", { hasText: "Storage" }).click();
+  await page.locator(".peek-segmented-option", { hasText: "S3" }).click();
+  await page.locator("input[name='s3_endpoint']").waitFor({ state: "visible" });
+  await page.locator("h2", { hasText: "Settings" }).evaluate((el) => {
+    const top = el.getBoundingClientRect().top + window.scrollY - 78;
+    window.scrollTo({ top, left: 0, behavior: "instant" });
+  });
+  await page.waitForTimeout(250);
+}
+
+async function showAdminLimits(page) {
+  await scrollToSettings(page);
   await page.locator("button[role='tab']", { hasText: "Limits" }).click();
+  await page.locator("input[name='max_upload_mb']").waitFor({ state: "visible" });
+  await page.waitForTimeout(250);
+}
+
+async function showAdminUsersInvites(page) {
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
+  await page.locator("h2", { hasText: "Invitations" }).waitFor({ state: "visible" });
+  await page.locator("h2", { hasText: "Users" }).waitFor({ state: "visible" });
+  await page.locator("h2", { hasText: "Invitations" }).scrollIntoViewIfNeeded();
   await page.waitForTimeout(250);
 }
 
@@ -295,7 +345,7 @@ try {
 
   await openSharedPage(page);
   await showCommentsPanel(page);
-  await capture(page, "02-preview-comments.png");
+  await capture(page, "02-viewer-comments.png");
 
   await showTextSelection(page);
   await capture(page, "03-text-anchor.png");
@@ -304,13 +354,28 @@ try {
   await capture(page, "04-element-pin.png");
 
   await showDashboard(page);
-  await capture(page, "05-dashboard.png");
+  await capture(page, "05-dashboard-uploads.png");
 
   await showStats(page);
-  await capture(page, "06-stats.png");
+  await capture(page, "06-upload-stats.png");
 
-  await showAdminSettings(page);
-  await capture(page, "07-admin-settings.png");
+  const plainContext = await newPlainContext(browser);
+  const plainPage = await plainContext.newPage();
+  await showLoginOAuth(plainPage);
+  await capture(plainPage, "07-login-oauth.png");
+  await plainContext.close();
+
+  await showAdminAuth(page);
+  await capture(page, "08-admin-auth.png");
+
+  await showAdminStorageS3(page);
+  await capture(page, "09-admin-storage-s3.png");
+
+  await showAdminLimits(page);
+  await capture(page, "10-admin-limits-retention.png");
+
+  await showAdminUsersInvites(page);
+  await capture(page, "11-admin-users-invites.png");
 
   await context.close();
   await validateOutputs();

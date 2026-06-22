@@ -14,6 +14,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 OUT="$ROOT/assets/screenshots"
+DOCS_OUT="$ROOT/docs/public/assets/screenshots"
 PORT="${PEEK_SCREENSHOT_PORT:-7798}"
 BASE="http://localhost:$PORT"
 DATA="$(mktemp -d)"
@@ -147,7 +148,12 @@ INSERT INTO settings(key,value,updated_at) VALUES
   ('max_uploads_per_token','250',$NOW),
   ('max_storage_per_token','268435456',$NOW),
   ('retention_days','30',$NOW),
-  ('storage','file',$NOW)
+  ('storage','file',$NOW),
+  ('s3_endpoint','https://peek-storage.example.com',$NOW),
+  ('s3_bucket','peek-html-reviews',$NOW),
+  ('s3_region','auto',$NOW),
+  ('s3_access_key','peek-docs-access',$NOW),
+  ('s3_secret_key','configured',$NOW)
 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;
 SQL
 
@@ -177,5 +183,12 @@ curl -fsS -b "$COOKIE" -c "$COOKIE" \
 echo "-> capturing screenshots"
 BASE="$BASE" SLUG="$SLUG" OUT="$OUT" COOKIE_FILE="$COOKIE" CHROME="$CHROME" \
   node scripts/gen-screenshots.mjs
+
+if [ -d "$ROOT/docs/public/assets" ]; then
+  mkdir -p "$DOCS_OUT"
+  rm -f "$DOCS_OUT"/*.png
+  cp "$OUT"/*.png "$DOCS_OUT"/
+  echo "mirrored screenshots to docs/public/assets/screenshots/"
+fi
 
 echo "wrote screenshots to assets/screenshots/"
