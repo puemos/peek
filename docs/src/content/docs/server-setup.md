@@ -68,6 +68,8 @@ docker run -d --name peek --restart unless-stopped \
 
 The image is scratch-based, runs as uid `65532`, exposes port `7700`, and stores server state under `/data`.
 
+On managed cloud platforms, the `/data` path must be backed by that platform's persistent disk or volume feature. If the service uses only the container filesystem, restarts and redeploys can remove `peek.db`, `secret.key`, and uploaded files. See [Deployment platforms](/peek/docs/deployment-platforms/) before deploying to Render, Fly.io, Railway, Kubernetes, or a stateless app platform.
+
 ## Proxy And Base URL
 
 Caddy example:
@@ -79,6 +81,8 @@ peek.example.com {
 ```
 
 Set `--trusted-proxy` only when the proxy is controlled by you and overwrites or controls `X-Forwarded-For`. When it is not set, Peek ignores forwarded IP headers for analytics and audit fields.
+
+Set `--base-url` / `PEEK_BASE_URL` before users create durable links. If you do not have a custom domain yet, use the stable default hostname your platform assigns from the service name, then update it before configuring OAuth or inviting users if the platform assigns a different URL.
 
 Keep `/metrics` protected at the proxy or network layer.
 
