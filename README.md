@@ -1,8 +1,10 @@
-# Peek
+<h1>
+  <img src="assets/logo.png" alt="Peek" width="180">
+</h1>
 
 [![CI](https://github.com/puemos/peek/actions/workflows/ci.yml/badge.svg)](https://github.com/puemos/peek/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/puemos/peek?sort=semver)](https://github.com/puemos/peek/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
 
-<img src="assets/logo.png" alt="Peek" width="180">
+
 
 Share an HTML page inside your company, get a link, and collect feedback directly on the page.
 
