@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pe">
+  <title>Pe</title>
+  <rect x="8" y="8" width="112" height="112" rx="30" fill="#1677e8"/>
+  <path d="M18 96c19 11 72 12 92-8" fill="none" stroke="#ffffff" stroke-opacity="0.17" stroke-width="12" stroke-linecap="round"/>
+  <text x="64" y="84" text-anchor="middle" font-family="'Bradley Hand','Marker Felt','Comic Sans MS',cursive" font-size="92" font-weight="700" letter-spacing="-10" fill="#ffffff" stroke="#ffffff" stroke-width="0.45" paint-order="stroke fill" transform="rotate(-2 64 64)">Pe</text>
+</svg>

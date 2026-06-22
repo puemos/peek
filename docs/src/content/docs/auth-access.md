@@ -1,0 +1,111 @@
+---
+title: Auth And Access
+description: Configure local login, OAuth, invites, CLI login, tokens, and upload visibility.
+kicker: Settings / Auth
+---
+
+## Auth Model
+
+Peek has account authentication for the dashboard and API, plus upload-level visibility for each shared page. Keep those separate:
+
+| Layer | Controls |
+| --- | --- |
+| Account auth | Who can sign in to the dashboard or approve CLI login. |
+| API tokens | Which authenticated actor can upload, list, export, delete, or manage tokens. |
+| Upload visibility | Who can open a particular `/p/<slug>` page. |
+
+First-run setup creates the initial admin. Admins can invite users, disable users, promote or remove admin rights, enable OAuth providers, and control token-login behavior.
+
+<figure>
+  <img src="/peek/assets/screenshots/11-admin-users-invites.png" alt="Peek dashboard showing invitations and users tables">
+  <figcaption>Admins manage invitations and account status from the dashboard.</figcaption>
+</figure>
+
+## OAuth Providers
+
+Peek supports Google and GitHub OAuth. A provider is active only when it is enabled and both its client ID and client secret are configured.
+
+<figure>
+  <img src="/peek/assets/screenshots/08-admin-auth.png" alt="Peek Settings Auth tab showing access-token login, Google OAuth, and GitHub OAuth configuration">
+  <figcaption>The Auth tab controls token login and provider credentials.</figcaption>
+</figure>
+
+Use these callback URLs in the provider console:
+
+```text
+https://peek.example.com/oauth/google/callback
+https://peek.example.com/oauth/github/callback
+```
+
+Provider scopes are intentionally small:
+
+| Provider | Scopes |
+| --- | --- |
+| Google | OpenID, email, profile |
+| GitHub | `read:user`, `user:email` |
+
+Provider tokens are used for profile lookup and are not stored. Peek stores the provider identity, verified email, and display name needed to link future logins.
+
+<figure>
+  <img src="/peek/assets/screenshots/07-login-oauth.png" alt="Peek sign-in page with Google and GitHub OAuth buttons">
+  <figcaption>When OAuth is configured, users see provider buttons on the sign-in page.</figcaption>
+</figure>
+
+## Invites And Users
+
+OAuth signup is invite-only. A new OAuth user can create an account only when:
+
+1. The provider returns a verified email.
+2. The browser has a pending Peek invite cookie.
+3. The invite email matches the provider email.
+
+If an account already exists with the verified email, Peek links the OAuth identity to that account without requiring another invite. Disabled accounts cannot sign in.
+
+When OAuth is enabled, non-admin password and token web login are disabled. Admins keep password login as a recovery path.
+
+## CLI Login
+
+`peek login` starts a browser approval flow when the server supports it. The CLI opens a verification URL, the user approves in the dashboard, and Peek issues a normal API token to the CLI.
+
+If browser login is unavailable or inappropriate for automation, use one of the safer token input paths:
+
+```sh
+peek login --token-stdin
+peek login --token-file /path/to/token
+```
+
+Avoid `peek login --token <value>` unless you deliberately accept command history and process-list exposure.
+
+Admins can create and revoke automation tokens:
+
+```text
+peek token create --name ci-reports
+peek token list
+peek token revoke <id>
+```
+
+Tokens are stored hashed and the plaintext token is shown only at creation time.
+
+## Upload Visibility
+
+Each upload chooses one of three access modes:
+
+| Mode | Access |
+| --- | --- |
+| `public` | Anyone with the link can open and comment. |
+| `password` | Visitors must pass the upload password gate before opening and commenting. |
+| `private` | Visitors must have an active Peek account session. |
+
+Uploaded HTML itself remains sandboxed in all modes.
+
+## Parameters
+
+| Setting | Where | Meaning |
+| --- | --- | --- |
+| `auth_token_login_enabled` | Runtime setting | Allows dashboard login with access tokens when OAuth is not required. |
+| `oauth_google_enabled` | Runtime setting | Enables Google login when credentials are present. |
+| `oauth_google_client_id` | Runtime setting | Google OAuth web client ID. |
+| `oauth_google_client_secret` | Runtime setting | Google OAuth web client secret; leave blank in the dashboard to keep the current secret. |
+| `oauth_github_enabled` | Runtime setting | Enables GitHub login when credentials are present. |
+| `oauth_github_client_id` | Runtime setting | GitHub OAuth app client ID. |
+| `oauth_github_client_secret` | Runtime setting | GitHub OAuth app client secret; leave blank in the dashboard to keep the current secret. |

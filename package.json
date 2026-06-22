@@ -3,7 +3,10 @@
   "packageManager": "pnpm@10.24.0",
   "scripts": {
     "gen-assets": "scripts/gen-assets.sh",
-    "gen-screenshots": "scripts/gen-screenshots.sh"
+    "gen-screenshots": "scripts/gen-screenshots.sh",
+    "docs:dev": "pnpm --dir docs dev",
+    "docs:build": "pnpm --dir docs build",
+    "docs:preview": "pnpm --dir docs preview"
   },
   "devDependencies": {
     "playwright-core": "1.60.0"

@@ -8,6 +8,9 @@ dist/
 
 # Node tooling for asset generation
 /node_modules/
+/docs/node_modules/
+/docs/.astro/
+/docs/dist/
 
 # Runtime data (uploads + sqlite db) — never commit
 /data/

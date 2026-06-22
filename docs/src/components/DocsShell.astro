@@ -1,0 +1,169 @@
+---
+import SiteChrome from './SiteChrome.astro';
+
+type Entry = {
+  id?: string;
+  data: {
+    title: string;
+    description?: string;
+    kicker?: string;
+  };
+};
+
+type NavGroup = {
+  title: string;
+  links: Array<{
+    label: string;
+    href: string;
+  }>;
+};
+
+const { entry, slug = 'index' } = Astro.props as { entry: Entry; slug?: string };
+const base = import.meta.env.BASE_URL;
+const href = (path: string) => `${base}${path}`;
+
+const pageNav: NavGroup[] = [
+  {
+    title: 'Docs',
+    links: [
+      { label: 'Overview', href: href('docs/') },
+      { label: 'Using Peek', href: href('docs/using-peek/') },
+      { label: 'Server setup', href: href('docs/server-setup/') },
+      { label: 'Auth and access', href: href('docs/auth-access/') },
+      { label: 'Storage', href: href('docs/storage-retention/') },
+      { label: 'Reference', href: href('docs/reference/') },
+      { label: 'Manual', href: href('manual/') },
+    ],
+  },
+];
+
+const anchorsBySlug: Record<string, NavGroup[]> = {
+  index: [
+    {
+      title: 'Start',
+      links: [
+        { label: 'What Peek is for', href: '#what-peek-is-for' },
+        { label: 'First useful setup', href: '#first-useful-setup' },
+        { label: 'Choose a setup path', href: '#choose-a-setup-path' },
+        { label: 'What to read next', href: '#what-to-read-next' },
+      ],
+    },
+  ],
+  'using-peek': [
+    {
+      title: 'Use',
+      links: [
+        { label: 'Upload a page', href: '#upload-a-page' },
+        { label: 'Pick visibility', href: '#pick-visibility' },
+        { label: 'Review in context', href: '#review-in-context' },
+        { label: 'Read feedback', href: '#read-feedback' },
+        { label: 'Stats', href: '#stats' },
+        { label: 'CLI workflow', href: '#cli-workflow' },
+      ],
+    },
+  ],
+  'server-setup': [
+    {
+      title: 'Run',
+      links: [
+        { label: 'Install', href: '#install' },
+        { label: 'First run', href: '#first-run' },
+        { label: 'Production shape', href: '#production-shape' },
+        { label: 'Docker', href: '#docker' },
+        { label: 'Proxy and base URL', href: '#proxy-and-base-url' },
+        { label: 'Smoke test', href: '#smoke-test' },
+      ],
+    },
+  ],
+  'auth-access': [
+    {
+      title: 'Auth',
+      links: [
+        { label: 'Model', href: '#auth-model' },
+        { label: 'OAuth providers', href: '#oauth-providers' },
+        { label: 'Invites', href: '#invites-and-users' },
+        { label: 'CLI login', href: '#cli-login' },
+        { label: 'Upload visibility', href: '#upload-visibility' },
+        { label: 'Parameters', href: '#parameters' },
+      ],
+    },
+  ],
+  'storage-retention': [
+    {
+      title: 'Store',
+      links: [
+        { label: 'Storage model', href: '#storage-model' },
+        { label: 'File storage', href: '#file-storage' },
+        { label: 'S3 storage', href: '#s3-compatible-storage' },
+        { label: 'Limits', href: '#limits-and-quotas' },
+        { label: 'Retention', href: '#retention' },
+        { label: 'Backups', href: '#backups' },
+      ],
+    },
+  ],
+  reference: [
+    {
+      title: 'Reference',
+      links: [
+        { label: 'Server parameters', href: '#server-parameters' },
+        { label: 'Runtime settings', href: '#runtime-settings' },
+        { label: 'CLI configuration', href: '#cli-configuration' },
+        { label: 'Endpoints', href: '#operational-endpoints' },
+        { label: 'Checks', href: '#operator-checks' },
+      ],
+    },
+  ],
+};
+
+const sectionNav = anchorsBySlug[slug] ?? [];
+
+function currentFor(linkHref: string) {
+  const current = slug === 'index' ? href('docs/') : href(`docs/${slug}/`);
+  return linkHref === current ? 'page' : undefined;
+}
+---
+
+<SiteChrome
+  title={`${entry.data.title} | Peek`}
+  description={entry.data.description ?? 'Peek documentation'}
+  current="docs"
+>
+  <div class="docs-layout">
+    <aside class="sidebar" aria-label="Documentation navigation">
+      <a class="sidebar-title" href={href('docs/')}>
+        <span>Peek docs</span>
+      </a>
+      {
+        pageNav.map((group) => (
+          <section class="nav-section">
+            <h2>{group.title}</h2>
+            {group.links.map((link) => (
+              <a href={link.href} aria-current={currentFor(link.href)}>
+                {link.label}
+              </a>
+            ))}
+          </section>
+        ))
+      }
+      {
+        sectionNav.map((group) => (
+          <section class="nav-section">
+            <h2>{group.title}</h2>
+            {group.links.map((link) => (
+              <a href={link.href}>{link.label}</a>
+            ))}
+          </section>
+        ))
+      }
+    </aside>
+
+    <main class="doc-main">
+      <p class="doc-kicker"><span class="prompt">$</span> {entry.data.kicker ?? 'peek docs'}</p>
+      <h1>{entry.data.title}</h1>
+      {entry.data.description && <p class="doc-description">{entry.data.description}</p>}
+      <article class="doc-article">
+        <slot />
+      </article>
+    </main>
+  </div>
+</SiteChrome>
