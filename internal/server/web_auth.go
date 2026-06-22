@@ -30,6 +30,9 @@ func (s *Server) webAuth(r *http.Request) (*models.Account, bool) {
 	if a.Disabled {
 		return nil, false
 	}
+	if !s.accountAllowedByEmailDomain(r.Context(), a.Email) {
+		return nil, false
+	}
 	if s.oauthLoginRequired(r.Context()) && !a.IsAdmin {
 		hasOAuth, err := s.store.AccountHasOAuthIdentity(r.Context(), a.ID)
 		if err != nil || !hasOAuth {

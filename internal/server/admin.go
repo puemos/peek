@@ -47,6 +47,10 @@ func (s *Server) handleDashboardCreateInvite(w http.ResponseWriter, r *http.Requ
 		dashboardError(w, r, "email required")
 		return
 	}
+	if !s.accountAllowedByEmailDomain(r.Context(), email) {
+		dashboardError(w, r, "email must match allowed domain")
+		return
+	}
 	raw, err := randID(24)
 	if err != nil {
 		dashboardError(w, r, "invite failed")

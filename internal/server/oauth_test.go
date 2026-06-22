@@ -153,6 +153,7 @@ func TestOAuthAccountErrorMessageHidesInternalFailures(t *testing.T) {
 		{err: errors.New("account disabled"), want: "This account is disabled."},
 		{err: errors.New("invite required"), want: "An invite is required for this account."},
 		{err: errors.New("invite not found"), want: "This invite is invalid or expired."},
+		{err: errAccountNotEligible, want: "OAuth account could not be linked."},
 		{err: errors.New("account lookup failed: driver timeout"), want: "OAuth account could not be linked."},
 	}
 	for _, tc := range cases {

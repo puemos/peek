@@ -18,24 +18,25 @@ const dashboardMegabyte int64 = 1024 * 1024
 const maxDashboardMegabytes = int64(1<<63-1) / dashboardMegabyte
 
 var settingsMeta = map[string]settingsRow{
-	"auth_token_login_enabled":   {Label: "Access token login", Description: "Allow signing in to the web dashboard with an access token", IsBool: true},
-	"max_upload":                 {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
-	"max_total_size":             {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
-	"retention_days":             {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
-	"max_uploads_per_token":      {Label: "Max uploads per owner", Description: "Maximum number of uploads per account/token owner (0 = unlimited)"},
-	"max_storage_per_token":      {Label: "Max storage per owner (bytes)", Description: "Maximum total storage per account/token owner (0 = unlimited)"},
-	"storage":                    {Label: "Storage backend", Description: "file or s3 (requires restart to take effect)", IsStartup: true},
-	"s3_endpoint":                {Label: "S3 endpoint URL", Description: "S3-compatible endpoint (e.g. https://<id>.r2.cloudflarestorage.com)"},
-	"s3_bucket":                  {Label: "S3 bucket", Description: "Bucket name for HTML file storage"},
-	"s3_region":                  {Label: "S3 region", Description: "AWS region (e.g. us-east-1, auto)"},
-	"s3_access_key":              {Label: "S3 access key", Description: "Access key ID for S3-compatible storage"},
-	"s3_secret_key":              {Label: "S3 secret key", Description: "Secret access key for S3-compatible storage", IsSecret: true},
-	"oauth_google_enabled":       {Label: "Google login", Description: "Enable Google OAuth login", IsBool: true},
-	"oauth_google_client_id":     {Label: "Google client ID", Description: "OAuth web client ID"},
-	"oauth_google_client_secret": {Label: "Google client secret", Description: "OAuth web client secret", IsSecret: true},
-	"oauth_github_enabled":       {Label: "GitHub login", Description: "Enable GitHub OAuth login", IsBool: true},
-	"oauth_github_client_id":     {Label: "GitHub client ID", Description: "OAuth app client ID"},
-	"oauth_github_client_secret": {Label: "GitHub client secret", Description: "OAuth app client secret", IsSecret: true},
+	"auth_token_login_enabled":    {Label: "Access token login", Description: "Allow signing in to the web dashboard with an access token", IsBool: true},
+	authAllowedEmailDomainSetting: {Label: "Allowed email domain", Description: "Restrict human sign-in, CLI approval, and invites to this email domain (blank = any domain)"},
+	"max_upload":                  {Label: "Max upload size (bytes)", Description: "Maximum size per individual HTML file upload"},
+	"max_total_size":              {Label: "Max total storage (bytes)", Description: "Cumulative size limit across all uploads (0 = unlimited)"},
+	"retention_days":              {Label: "Retention (days)", Description: "Auto-delete uploads older than this many days (0 = off)"},
+	"max_uploads_per_token":       {Label: "Max uploads per owner", Description: "Maximum number of uploads per account/token owner (0 = unlimited)"},
+	"max_storage_per_token":       {Label: "Max storage per owner (bytes)", Description: "Maximum total storage per account/token owner (0 = unlimited)"},
+	"storage":                     {Label: "Storage backend", Description: "file or s3 (requires restart to take effect)", IsStartup: true},
+	"s3_endpoint":                 {Label: "S3 endpoint URL", Description: "S3-compatible endpoint (e.g. https://<id>.r2.cloudflarestorage.com)"},
+	"s3_bucket":                   {Label: "S3 bucket", Description: "Bucket name for HTML file storage"},
+	"s3_region":                   {Label: "S3 region", Description: "AWS region (e.g. us-east-1, auto)"},
+	"s3_access_key":               {Label: "S3 access key", Description: "Access key ID for S3-compatible storage"},
+	"s3_secret_key":               {Label: "S3 secret key", Description: "Secret access key for S3-compatible storage", IsSecret: true},
+	"oauth_google_enabled":        {Label: "Google login", Description: "Enable Google OAuth login", IsBool: true},
+	"oauth_google_client_id":      {Label: "Google client ID", Description: "OAuth web client ID"},
+	"oauth_google_client_secret":  {Label: "Google client secret", Description: "OAuth web client secret", IsSecret: true},
+	"oauth_github_enabled":        {Label: "GitHub login", Description: "Enable GitHub OAuth login", IsBool: true},
+	"oauth_github_client_id":      {Label: "GitHub client ID", Description: "OAuth app client ID"},
+	"oauth_github_client_secret":  {Label: "GitHub client secret", Description: "OAuth app client secret", IsSecret: true},
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +84,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		updates[k] = normalized
 	}
+	if err := s.validateAllowedEmailDomainUpdate(r.Context(), updates); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	for _, k := range s.settingKeys(updates) {
 		v := updates[k]
 		if err := s.encryptedSetSetting(r.Context(), k, v); err != nil {
@@ -110,6 +115,8 @@ func (s *Server) normalizeSettingValue(key, value string) (string, error) {
 		return normalizeNonNegativeInt64Setting(key, value)
 	case "max_uploads_per_token", "retention_days":
 		return normalizeNonNegativeIntSetting(key, value)
+	case authAllowedEmailDomainSetting:
+		return normalizeAllowedEmailDomain(value)
 	case "storage":
 		switch strings.ToLower(value) {
 		case "file", "s3":
@@ -227,6 +234,10 @@ func (s *Server) handleDashboardSettings(w http.ResponseWriter, r *http.Request)
 		}
 		updates[k] = normalized
 	}
+	if err := s.validateAllowedEmailDomainUpdate(r.Context(), updates); err != nil {
+		dashboardError(w, r, err.Error())
+		return
+	}
 	for _, k := range s.settingKeys(updates) {
 		if err := s.encryptedSetSetting(r.Context(), k, updates[k]); err != nil {
 			dashboardError(w, r, "settings update failed")
@@ -300,6 +311,7 @@ func dashboardSettingsPanel(raw map[string]string) webui.DashboardSettings {
 	return webui.DashboardSettings{
 		Auth: webui.AuthSettings{
 			Token:  dashboardSettingRow(raw, "auth_token_login_enabled"),
+			Domain: dashboardSettingRow(raw, authAllowedEmailDomainSetting),
 			Google: dashboardOAuthProviderSettings(raw, "google", "Google"),
 			GitHub: dashboardOAuthProviderSettings(raw, "github", "GitHub"),
 		},
@@ -428,7 +440,7 @@ func maxInt64(a, b int64) int64 {
 
 func dashboardSettingsRows(raw map[string]string) []settingsRow {
 	order := []string{
-		"auth_token_login_enabled",
+		"auth_token_login_enabled", authAllowedEmailDomainSetting,
 		"oauth_google_enabled", "oauth_google_client_id", "oauth_google_client_secret",
 		"oauth_github_enabled", "oauth_github_client_id", "oauth_github_client_secret",
 		"storage", "s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",

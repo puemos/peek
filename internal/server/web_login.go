@@ -72,6 +72,9 @@ func (s *Server) loginWithPassword(r *http.Request) (int64, string, error) {
 	if owner.Disabled {
 		return 0, "", fmt.Errorf("account disabled")
 	}
+	if !s.accountAllowedByEmailDomain(r.Context(), owner.Email) {
+		return 0, "", errAccountNotEligible
+	}
 	if s.oauthLoginRequired(r.Context()) && !owner.IsAdmin {
 		return 0, "", fmt.Errorf("oauth required")
 	}
@@ -92,6 +95,9 @@ func (s *Server) loginWithToken(r *http.Request) (int64, string, error) {
 	}
 	if owner.Disabled {
 		return 0, "", fmt.Errorf("account disabled")
+	}
+	if !s.accountAllowedByEmailDomain(r.Context(), owner.Email) {
+		return 0, "", errAccountNotEligible
 	}
 	if (!s.tokenLoginEnabled(r.Context()) || s.oauthLoginRequired(r.Context())) && !owner.IsAdmin {
 		return 0, "", fmt.Errorf("token login disabled")

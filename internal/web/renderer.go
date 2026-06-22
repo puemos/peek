@@ -144,6 +144,7 @@ type DashboardSettings struct {
 
 type AuthSettings struct {
 	Token  SettingRow
+	Domain SettingRow
 	Google OAuthProviderSettings
 	GitHub OAuthProviderSettings
 }

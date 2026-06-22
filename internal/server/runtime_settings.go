@@ -23,10 +23,11 @@ func initDefaultSettings(ctx context.Context, store *db.Store, secret string, ma
 		return store.SetSetting(ctx, key, val)
 	}
 	defaults := map[string]string{
-		"auth_token_login_enabled": "true",
-		"max_upload":               strconv.FormatInt(maxUpload, 10),
-		"max_total_size":           strconv.FormatInt(maxTotalSize, 10),
-		"retention_days":           strconv.Itoa(retentionDays),
+		"auth_token_login_enabled":    "true",
+		authAllowedEmailDomainSetting: "",
+		"max_upload":                  strconv.FormatInt(maxUpload, 10),
+		"max_total_size":              strconv.FormatInt(maxTotalSize, 10),
+		"retention_days":              strconv.Itoa(retentionDays),
 	}
 	for k, v := range defaults {
 		if err := upsert(k, v); err != nil {

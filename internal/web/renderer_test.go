@@ -311,7 +311,8 @@ func TestDashboardRendersSettingsTabsAndControls(t *testing.T) {
 		IsAdmin: true,
 		SettingsPanel: DashboardSettings{
 			Auth: AuthSettings{
-				Token: SettingRow{Key: "auth_token_login_enabled", Value: "true", Label: "Access token login", Description: "Allow token login"},
+				Token:  SettingRow{Key: "auth_token_login_enabled", Value: "true", Label: "Access token login", Description: "Allow token login"},
+				Domain: SettingRow{Key: "auth_allowed_email_domain", Value: "example.com", Label: "Allowed email domain", Description: "Restrict login by domain"},
 				Google: OAuthProviderSettings{
 					Key:          "google",
 					Name:         "Google",
@@ -349,6 +350,8 @@ func TestDashboardRendersSettingsTabsAndControls(t *testing.T) {
 		`settingsTab === 'auth'`,
 		`settingsTab === 'storage'`,
 		`settingsTab === 'limits'`,
+		`name="auth_allowed_email_domain"`,
+		`value="example.com"`,
 		`name="oauth_google_enabled"`,
 		`name="oauth_github_enabled"`,
 		`x-show="oauth.google"`,

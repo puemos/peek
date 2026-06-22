@@ -14,6 +14,9 @@ func (s *Server) resolveOAuthAccount(r *http.Request, profile *oauthProfile) (*m
 	if profile.ProviderUserID == "" || profile.Email == "" || !profile.EmailVerified {
 		return nil, errors.New("OAuth account must have a verified email")
 	}
+	if !s.accountAllowedByEmailDomain(r.Context(), profile.Email) {
+		return nil, errAccountNotEligible
+	}
 	if oi, err := s.store.GetOAuthIdentity(r.Context(), profile.Provider, profile.ProviderUserID); err == nil {
 		account, err := s.store.GetAccountByID(r.Context(), oi.AccountID)
 		if err != nil {
@@ -21,6 +24,9 @@ func (s *Server) resolveOAuthAccount(r *http.Request, profile *oauthProfile) (*m
 		}
 		if account.Disabled {
 			return nil, errors.New("account disabled")
+		}
+		if !s.accountAllowedByEmailDomain(r.Context(), account.Email) {
+			return nil, errAccountNotEligible
 		}
 		return account, nil
 	} else if err != sql.ErrNoRows {
@@ -30,6 +36,9 @@ func (s *Server) resolveOAuthAccount(r *http.Request, profile *oauthProfile) (*m
 	if account, err := s.store.GetAccountByEmail(r.Context(), profile.Email); err == nil {
 		if account.Disabled {
 			return nil, errors.New("account disabled")
+		}
+		if !s.accountAllowedByEmailDomain(r.Context(), account.Email) {
+			return nil, errAccountNotEligible
 		}
 		return account, nil
 	} else if err != sql.ErrNoRows {
