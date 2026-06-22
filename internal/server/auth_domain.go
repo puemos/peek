@@ -16,9 +16,7 @@ func normalizeAllowedEmailDomain(value string) (string, error) {
 	if value == "" {
 		return "", nil
 	}
-	if strings.HasPrefix(value, "@") {
-		value = strings.TrimPrefix(value, "@")
-	}
+	value = strings.TrimPrefix(value, "@")
 	if value == "" || strings.Contains(value, "@") {
 		return "", fmt.Errorf("%s must be a single email domain", authAllowedEmailDomainSetting)
 	}
