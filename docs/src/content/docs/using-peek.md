@@ -9,7 +9,7 @@ kicker: peek upload
 Use the CLI when a report or generated page already exists on disk:
 
 ```sh
-peek upload codebase-health-report.html --visibility public
+peek upload demo.html --visibility public
 ```
 
 The response includes a URL and a slug. Share the URL with reviewers; keep the slug for CLI commands such as `stats`, `comments`, `visibility`, and `export`.

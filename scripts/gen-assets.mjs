@@ -12,7 +12,7 @@ import { chromium } from "playwright-core";
 const { BASE, SLUG, VIDEO_RAW, CHROME } = process.env;
 const VIDEO_W = 1920;
 const VIDEO_H = 1080;
-const REPORT_ZOOM = "1.18";
+const REPORT_ZOOM = "1.08";
 const DEMO_HOST = "https://peek.acme.com";
 const SEEDED_COMMENT_COUNT = 2;
 
@@ -53,51 +53,49 @@ async function showTerminalIntro(page) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Peek demo</title>
 <style>
-  :root { color-scheme: light; --line: #d8dce5; }
+  :root { color-scheme: light; --paper: #fbfbf7; --ink: #111; --muted: #666; }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     min-height: 100vh;
     display: grid;
     place-items: center;
-    background: #f7f8fb;
-    font: 18px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font: 18px/1.5 Arial, Helvetica, sans-serif;
   }
   .terminal {
     width: min(1180px, calc(100vw - 96px));
     overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: #101217;
-    box-shadow: 0 24px 70px rgba(17, 20, 26, .18);
+    border: 2px solid var(--ink);
+    background: #fff;
   }
   .chrome {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
     height: 46px;
     padding: 0 18px;
-    border-bottom: 1px solid rgba(255,255,255,.08);
+    border-bottom: 1px solid var(--ink);
+    color: var(--muted);
+    font-size: 13px;
   }
-  .dot { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
-  .dot:nth-child(2) { background: #ffbd2e; }
-  .dot:nth-child(3) { background: #28c840; }
   .body {
     min-height: 300px;
     padding: 38px 42px 42px;
     font: 28px/1.7 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
-  .prompt { color: #8b93a7; }
-  .cmd { color: #f7f8fb; }
-  .loader { color: #aab2c5; min-height: 48px; }
-  .output { color: #9be7c4; min-height: 48px; }
+  .prompt { color: var(--muted); }
+  .cmd { color: var(--ink); }
+  .loader { color: var(--muted); min-height: 48px; }
+  .output { color: var(--ink); min-height: 48px; }
   .cursor {
     display: inline-block;
     width: 12px;
     height: 34px;
     margin-left: 3px;
     vertical-align: -7px;
-    background: #f7f8fb;
+    background: var(--ink);
     animation: blink .8s steps(1) infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
@@ -105,7 +103,7 @@ async function showTerminalIntro(page) {
 </head>
 <body>
   <section class="terminal" aria-label="terminal">
-    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="chrome"><span>terminal</span><span>peek upload</span></div>
     <div class="body">
       <div><span class="prompt">$ </span><span id="cmd" class="cmd"></span><span class="cursor"></span></div>
       <div id="loader" class="loader"></div>
@@ -116,14 +114,14 @@ async function showTerminalIntro(page) {
 </html>`);
 
   await hold(350);
-  await typeIntoElement(page, "#cmd", "peek upload codebase-health-report.html");
+  await typeIntoElement(page, "#cmd", "peek upload demo.html --visibility public");
   await hold(220);
 
   const frames = ["|", "/", "-", "\\"];
   for (let i = 0; i < 4; i++) {
     await page.locator("#loader").evaluate((el, value) => {
       el.textContent = value;
-    }, `${frames[i % frames.length]} uploading codebase-health-report.html`);
+    }, `${frames[i % frames.length]} uploading demo.html`);
     await hold(140);
   }
 
@@ -156,12 +154,12 @@ async function openSharedPage(page) {
   await page.frameLocator("#hn-frame").locator("html").evaluate((html, zoom) => {
     html.style.zoom = zoom;
   }, REPORT_ZOOM);
+  await page.frameLocator("#hn-frame").locator("#demo-standfirst").waitFor({ state: "visible" });
   await page.locator("#hn-count").waitFor({ state: "visible" });
   await page.waitForFunction((expected) => {
     const el = document.getElementById("hn-count");
     return el && Number(el.textContent || "0") === expected;
   }, SEEDED_COMMENT_COUNT);
-  await page.frameLocator("#hn-frame").locator(".hn-pin").nth(SEEDED_COMMENT_COUNT - 1).waitFor({ state: "visible" });
 }
 
 async function selectTextTarget(page, selector) {
@@ -198,7 +196,6 @@ async function submitComment(page, report, expectedCount) {
     const el = document.getElementById("hn-count");
     return el && Number(el.textContent || "0") === count;
   }, expectedCount);
-  await report.locator(".hn-pin").nth(expectedCount - 1).waitFor({ state: "visible" });
   await hold(760);
 }
 
@@ -262,18 +259,18 @@ async function recordDemo(browser) {
     await openSharedPage(page);
     await hold(900);
 
-    await addSelectedTextComment(page, "#latency-claim", [
-      ["Can we attach the benchmark run ", 240],
-      ["that shows this 38% jump?", 640],
+    await addSelectedTextComment(page, "#demo-headline", [
+      ["This headline tells the workflow clearly. ", 240],
+      ["Can we reuse it in the launch note?", 640],
     ], SEEDED_COMMENT_COUNT + 1);
 
-    await addSelectedTextComment(page, "#f2", [
-      ["Please link this to the incident review ", 240],
-      ["before sharing broadly.", 640],
+    await addSelectedTextComment(page, "#demo-workflow-copy", [
+      ["This is the core motion. ", 240],
+      ["Maybe mention dashboard uploads here too.", 640],
     ], SEEDED_COMMENT_COUNT + 2);
 
-    await addElementComment(page, "#issues", [
-      ["Can we add owner and due date here?", 720],
+    await addElementComment(page, "#demo-stats", [
+      ["Can we keep the operational promises this concrete?", 720],
     ], SEEDED_COMMENT_COUNT + 3);
 
     await hold(900);
