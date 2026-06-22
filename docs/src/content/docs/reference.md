@@ -33,6 +33,7 @@ Admins can change these from the dashboard or the settings API:
 | Key | Type | Notes |
 | --- | --- | --- |
 | `auth_token_login_enabled` | boolean | Allows web login with an access token when OAuth is not required. |
+| `auth_allowed_email_domain` | email domain | Optional exact email domain for human sign-in, invites, and CLI browser approval. Empty allows any domain. |
 | `oauth_google_enabled` | boolean | Enables Google login if credentials are configured. |
 | `oauth_google_client_id` | string | Google OAuth web client ID. |
 | `oauth_google_client_secret` | secret string | Google OAuth web client secret. |

@@ -280,6 +280,7 @@ async function showLoginOAuth(page) {
 async function showAdminAuth(page) {
   await scrollToSettings(page);
   await page.locator("button[role='tab']", { hasText: "Auth" }).click();
+  await page.locator("input[name='auth_allowed_email_domain']").waitFor({ state: "visible" });
   await page.locator("input[name='oauth_google_client_id']").waitFor({ state: "visible" });
   await page.waitForTimeout(250);
 }

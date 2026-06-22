@@ -211,6 +211,12 @@
           </span>
         </label>
 
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-secondary-foreground">{{.SettingsPanel.Auth.Domain.Label}}</span>
+          <input type="text" name="{{.SettingsPanel.Auth.Domain.Key}}" value="{{.SettingsPanel.Auth.Domain.Value}}" placeholder="example.com" autocomplete="off" class="h-10 rounded-lg border border-input bg-secondary px-4 text-sm text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20">
+          <span class="text-xs text-muted-foreground">{{.SettingsPanel.Auth.Domain.Description}}</span>
+        </label>
+
         {{with .SettingsPanel.Auth.Google}}
         <div class="peek-provider-settings">
           <label class="peek-setting-switch">

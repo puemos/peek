@@ -91,7 +91,7 @@ func (s *Server) handleCLILoginPoll(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		account, err := s.store.GetAccountByID(r.Context(), d.AccountID)
-		if err != nil || account.Disabled {
+		if err != nil || account.Disabled || !s.accountAllowedByEmailDomain(r.Context(), account.Email) {
 			jsonOK(w, map[string]any{"status": "denied"})
 			return
 		}

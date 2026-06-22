@@ -14,7 +14,7 @@ Peek has account authentication for the dashboard and API, plus upload-level vis
 | API tokens | Which authenticated actor can upload, list, export, delete, or manage tokens. |
 | Upload visibility | Who can open a particular `/p/<slug>` page. |
 
-First-run setup creates the initial admin. Admins can invite users, disable users, promote or remove admin rights, enable OAuth providers, and control token-login behavior.
+First-run setup creates the initial admin. Admins can invite users, disable users, promote or remove admin rights, enable OAuth providers, restrict human sign-in to an email domain, and control token-login behavior.
 
 <figure>
   <img src="/peek/assets/screenshots/11-admin-users-invites.png" alt="Peek dashboard showing invitations and users tables">
@@ -26,8 +26,8 @@ First-run setup creates the initial admin. Admins can invite users, disable user
 Peek supports Google and GitHub OAuth. A provider is active only when it is enabled and both its client ID and client secret are configured.
 
 <figure>
-  <img src="/peek/assets/screenshots/08-admin-auth.png" alt="Peek Settings Auth tab showing access-token login, Google OAuth, and GitHub OAuth configuration">
-  <figcaption>The Auth tab controls token login and provider credentials.</figcaption>
+  <img src="/peek/assets/screenshots/08-admin-auth.png" alt="Peek Settings Auth tab showing access-token login, allowed email domain, Google OAuth, and GitHub OAuth configuration">
+  <figcaption>The Auth tab controls token login, allowed email domain, and provider credentials.</figcaption>
 </figure>
 
 Use these callback URLs in the provider console:
@@ -51,6 +51,14 @@ Provider tokens are used for profile lookup and are not stored. Peek stores the 
   <figcaption>When OAuth is configured, users see provider buttons on the sign-in page.</figcaption>
 </figure>
 
+## Allowed Email Domain
+
+Admins can set one allowed email domain in Settings. When configured, human sign-in must use an account email from that exact domain. The rule applies to OAuth login and signup, local password login, web token login, CLI browser approval, private-page sessions, and new invites. It does not block direct API bearer tokens, so existing automation tokens keep working.
+
+Use the bare domain, such as `example.com`. A leading `@` is accepted and normalized away. Subdomains are not implicit matches, so `person@team.example.com` does not match `example.com`.
+
+Peek refuses to save a non-empty allowed domain unless at least one active admin account already has a matching email address. That keeps the setting from locking out all administrators.
+
 ## Invites And Users
 
 OAuth signup is invite-only. A new OAuth user can create an account only when:
@@ -61,7 +69,7 @@ OAuth signup is invite-only. A new OAuth user can create an account only when:
 
 If an account already exists with the verified email, Peek links the OAuth identity to that account without requiring another invite. Disabled accounts cannot sign in.
 
-When OAuth is enabled, non-admin password and token web login are disabled. Admins keep password login as a recovery path.
+When OAuth is enabled, non-admin password and token web login are disabled. Admins keep password login as a recovery path, as long as the admin email also matches the allowed domain when one is configured.
 
 ## CLI Login
 
@@ -103,6 +111,7 @@ Uploaded HTML itself remains sandboxed in all modes.
 | Setting | Where | Meaning |
 | --- | --- | --- |
 | `auth_token_login_enabled` | Runtime setting | Allows dashboard login with access tokens when OAuth is not required. |
+| `auth_allowed_email_domain` | Runtime setting | Optional exact email domain for human sign-in, invites, and CLI browser approval. |
 | `oauth_google_enabled` | Runtime setting | Enables Google login when credentials are present. |
 | `oauth_google_client_id` | Runtime setting | Google OAuth web client ID. |
 | `oauth_google_client_secret` | Runtime setting | Google OAuth web client secret; leave blank in the dashboard to keep the current secret. |
