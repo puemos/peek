@@ -14,7 +14,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 OUT="$ROOT/assets/screenshots"
+ASSET_OUT="$ROOT/assets"
 DOCS_OUT="$ROOT/docs/public/assets/screenshots"
+DOCS_ASSET_OUT="$ROOT/docs/public/assets"
 PORT="${PEEK_SCREENSHOT_PORT:-7798}"
 BASE="http://localhost:$PORT"
 DATA="$(mktemp -d)"
@@ -103,7 +105,7 @@ api() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 echo "-> seeding uploads"
 UP="$(api --data-binary @scripts/demo-report.html \
   -H "Content-Type: text/html" \
-  "$BASE/api/upload?filename=codebase-health-report.html&visibility=public")"
+  "$BASE/api/upload?filename=demo.html&visibility=public")"
 SLUG="$(printf '%s' "$UP" | json_value slug)"
 [ -n "$SLUG" ] || { echo "error: upload failed: $UP"; exit 1; }
 
@@ -126,9 +128,9 @@ echo "-> seeding comments, visits, accounts, and settings"
 sqlite3 "$DATA/peek.db" <<SQL
 INSERT INTO comments(upload_id,element_selector,element_text,anchor_kind,author_name,author_cookie,body,created_at)
 VALUES
-  ($UPLOAD_ID,'#summary','two regressions need attention before the next release','text','Maya','seed-maya','This is the right headline. Can we make the release blocker explicit for the infra team?',$((NOW - 5400))),
-  ($UPLOAD_ID,'#callout','Agent note: the latency regression is fully reproducible. A targeted fix to the cache key derivation restores p95 to ~226ms in local benchmarks.','element','Jordan','seed-jordan','Good evidence. Please keep this note attached when the report is exported.',$((NOW - 3600))),
-  ($UPLOAD_ID,'#issues','1 high severity','element','Sam','seed-sam','Can we add owner and due date here?',$((NOW - 1800)));
+  ($UPLOAD_ID,'#demo-standfirst','generated reports, prototypes, build artifacts, and one-off HTML pages','text','Maya','seed-maya','This names the exact artifacts we review every week.',$((NOW - 5400))),
+  ($UPLOAD_ID,'#demo-diagram','Stores the artifact Wraps it in a safe viewer Adds review tools Leaves an audit trail','element','Jordan','seed-jordan','The review-layer framing is useful. Keep this section near the top.',$((NOW - 3600))),
+  ($UPLOAD_ID,'#demo-review-surface','/p/example-review Comment 1 This section needs a clearer conclusion before we share it.','element','Sam','seed-sam','This miniature viewer makes the commenting model obvious.',$((NOW - 1800)));
 
 INSERT INTO accounts(email,name,password_hash,is_admin,disabled,created_at,updated_at)
 VALUES
@@ -186,7 +188,7 @@ curl -fsS -b "$COOKIE" -c "$COOKIE" \
   "$BASE/dashboard/invites" >/dev/null
 
 echo "-> capturing screenshots"
-BASE="$BASE" SLUG="$SLUG" OUT="$OUT" COOKIE_FILE="$COOKIE" CHROME="$CHROME" \
+BASE="$BASE" SLUG="$SLUG" OUT="$OUT" ASSET_OUT="$ASSET_OUT" COOKIE_FILE="$COOKIE" CHROME="$CHROME" \
   node scripts/gen-screenshots.mjs
 
 if [ -d "$ROOT/docs/public/assets" ]; then
@@ -194,6 +196,10 @@ if [ -d "$ROOT/docs/public/assets" ]; then
   rm -f "$DOCS_OUT"/*.png
   cp "$OUT"/*.png "$DOCS_OUT"/
   echo "mirrored screenshots to docs/public/assets/screenshots/"
+fi
+if [ -d "$DOCS_ASSET_OUT" ]; then
+  cp "$ASSET_OUT/hero.png" "$DOCS_ASSET_OUT/hero.png"
+  echo "mirrored hero to docs/public/assets/hero.png"
 fi
 
 echo "wrote screenshots to assets/screenshots/"

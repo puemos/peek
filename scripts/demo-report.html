@@ -1,91 +1,641 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Codebase Health Report — Orbit API</title>
-<style>
-  :root{
-    --ink:#11141a; --muted:#5b626f; --line:#e8ebf0; --bg:#fff;
-    --accent:#5e6ad2; --green:#0e9f6e; --amber:#b45309; --red:#dc2626;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .wrap{max-width:740px;margin:0 auto;padding:56px 32px 120px}
-  .doc-head{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);margin-bottom:22px}
-  .doc-head .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
-  .gen{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;
-    color:var(--accent);background:rgba(94,106,210,.1);padding:4px 10px;border-radius:999px}
-  h1{font-size:38px;line-height:1.15;letter-spacing:-.022em;margin:6px 0 10px}
-  .sub{font-size:18px;color:var(--muted);margin:0 0 32px}
-  h2{font-size:21px;letter-spacing:-.01em;margin:42px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-  p{margin:0 0 16px}
-  ul{padding-left:22px;margin:0 0 16px} li{margin:7px 0}
-  code{font:13.5px/1.4 ui-monospace,"SF Mono",Menlo,monospace;background:#f4f5f8;
-    padding:1px 6px;border-radius:5px}
-  .scorecard{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:8px 0 8px}
-  .metric{border:1px solid var(--line);border-radius:14px;padding:18px 20px}
-  .metric .label{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .metric .value{font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:6px}
-  .metric .delta{font-size:13px;font-weight:600;margin-top:4px}
-  .delta.up{color:var(--red)} .delta.down{color:var(--green)}
-  table{width:100%;border-collapse:collapse;font-size:14.5px;margin:6px 0 8px}
-  th{text-align:left;color:var(--muted);font-weight:600;font-size:12.5px;text-transform:uppercase;
-    letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line)}
-  td{padding:11px 10px;border-bottom:1px solid var(--line)}
-  .sev{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px}
-  .sev.high{background:rgba(220,38,38,.12);color:var(--red)}
-  .sev.med{background:rgba(180,83,9,.12);color:var(--amber)}
-  .sev.low{background:rgba(14,159,110,.12);color:var(--green)}
-  .callout{border:1px solid var(--line);border-left:3px solid var(--accent);
-    background:#fafbfd;border-radius:10px;padding:16px 18px;margin:22px 0}
-  ol{padding-left:22px;margin:0 0 16px} ol li{margin:10px 0}
-  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);
-    color:var(--muted);font-size:13.5px}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peek</title>
+  <meta name="description" content="Peek is a self-hosted server for sharing HTML and collecting feedback in context.">
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+  <style>
+    :root {
+      --paper: #fbfbf7;
+      --ink: #111;
+      --muted: #666;
+      --hairline: #111;
+      --soft: #e8e8e1;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .page {
+      width: min(760px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 72px;
+    }
+
+    header {
+      border-bottom: 2px solid var(--hairline);
+      padding-bottom: 18px;
+      margin-bottom: 46px;
+    }
+
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--hairline);
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .brand {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(72px, 17vw, 142px);
+      line-height: .82;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .deck {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      max-width: 640px;
+    }
+
+    .kicker {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .headline {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(34px, 7vw, 66px);
+      line-height: .98;
+      font-weight: 400;
+      margin: 0;
+    }
+
+    .standfirst {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 21px;
+      line-height: 1.42;
+      margin: 0;
+      color: #222;
+    }
+
+    section {
+      border-top: 1px solid var(--hairline);
+      padding: 34px 0;
+    }
+
+    h2 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 34px;
+      line-height: 1.05;
+      font-weight: 400;
+      margin: 0 0 16px;
+    }
+
+    p {
+      font-size: 16px;
+      line-height: 1.72;
+      margin: 0 0 16px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .rule {
+      height: 1px;
+      background: var(--hairline);
+      width: 0;
+      margin: 18px 0;
+    }
+
+    .terminal {
+      border: 1px solid var(--hairline);
+      background: #fff;
+      margin-top: 22px;
+    }
+
+    .terminal-top {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--hairline);
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      white-space: pre-wrap;
+      font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .cursor::after {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 1em;
+      margin-left: 2px;
+      background: var(--ink);
+      vertical-align: -2px;
+      animation: blink 1s steps(1) infinite;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    .diagram {
+      border: 1px solid var(--hairline);
+      background: #fff;
+      margin-top: 22px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 14px;
+      padding: 16px;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .row:last-child {
+      border-bottom: 0;
+    }
+
+    .num {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .row strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+
+    .row span {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .quote {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 28px;
+      line-height: 1.22;
+      border-left: 2px solid var(--hairline);
+      padding-left: 18px;
+      margin: 24px 0 0;
+    }
+
+    .viewer {
+      border: 1px solid var(--hairline);
+      margin-top: 22px;
+      background: #fff;
+    }
+
+    .viewer-bar {
+      border-bottom: 1px solid var(--hairline);
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .viewer-body {
+      padding: 18px;
+      position: relative;
+      min-height: 210px;
+    }
+
+    .article-lines {
+      display: grid;
+      gap: 11px;
+      width: 72%;
+    }
+
+    .line {
+      height: 10px;
+      background: var(--ink);
+      transform-origin: left;
+    }
+
+    .line:nth-child(2) {
+      width: 86%;
+      opacity: .55;
+    }
+
+    .line:nth-child(3) {
+      width: 94%;
+      opacity: .35;
+    }
+
+    .line:nth-child(4) {
+      width: 68%;
+      opacity: .25;
+    }
+
+    .pin {
+      position: absolute;
+      border: 1px solid var(--hairline);
+      background: var(--paper);
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .pin.one {
+      top: 44px;
+      right: 88px;
+    }
+
+    .pin.two {
+      bottom: 44px;
+      right: 154px;
+    }
+
+    .comment {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      width: 220px;
+      border: 1px solid var(--hairline);
+      background: var(--paper);
+      padding: 10px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .comment strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 1px solid var(--hairline);
+      margin-top: 22px;
+      background: #fff;
+    }
+
+    .stat {
+      padding: 18px 14px;
+      border-right: 1px solid var(--hairline);
+    }
+
+    .stat:last-child {
+      border-right: 0;
+    }
+
+    .stat b {
+      display: block;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 42px;
+      line-height: 1;
+      font-weight: 400;
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .small-print {
+      font-size: 13px;
+      color: var(--muted);
+      border-top: 1px solid var(--hairline);
+      padding-top: 16px;
+      margin-top: 38px;
+    }
+
+    footer {
+      border-top: 2px solid var(--hairline);
+      padding-top: 24px;
+      margin-top: 30px;
+    }
+
+    .final {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(32px, 7vw, 62px);
+      line-height: 1;
+      margin: 0 0 18px;
+    }
+
+    @media (max-width: 620px) {
+      .masthead {
+        display: block;
+      }
+
+      .masthead span {
+        display: block;
+        margin-top: 4px;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .stat {
+        border-right: 0;
+        border-bottom: 1px solid var(--hairline);
+      }
+
+      .stat:last-child {
+        border-bottom: 0;
+      }
+
+      .article-lines {
+        width: 100%;
+      }
+
+      .comment {
+        position: relative;
+        right: auto;
+        bottom: auto;
+        width: auto;
+        margin-top: 18px;
+      }
+
+      .pin.one {
+        right: 26px;
+      }
+
+      .pin.two {
+        right: 82px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+    }
+  </style>
 </head>
+
 <body>
-<div class="wrap">
-  <div class="doc-head"><span class="dot"></span> Orbit API · main@<code>a3f9c1e</code> · Mar 2026</div>
-  <span class="gen">✦ Generated by an AI coding agent</span>
-  <h1 id="title">Codebase Health Report</h1>
-  <p class="sub" id="subtitle">An automated review of the Orbit API service: performance, reliability, and code quality, with prioritized recommendations.</p>
+  <main class="page">
+    <header>
+      <div class="masthead">
+        <span>Internal HTML Review</span>
+        <span>Self-hosted / SQLite / CLI / Comments</span>
+      </div>
 
-  <h2 id="summary-h">Summary</h2>
-  <p id="summary">Overall health is <strong>good</strong>, but two regressions need attention before the next release. The agent analyzed 412 files across 38 packages and ran the full benchmark suite against <code>main</code>. The most significant issue is that <span id="latency-claim">p95 request latency regressed by 38% after the caching layer refactor</span>, traced to a cache key collision in the session store.</p>
+      <h1 class="brand">Peek</h1>
 
-  <div class="scorecard">
-    <div class="metric"><div class="label">p95 latency</div><div class="value">312ms</div><div class="delta up" id="lat-delta">▲ 38% vs last release</div></div>
-    <div class="metric"><div class="label">Test coverage</div><div class="value">81%</div><div class="delta down">▼ healthy</div></div>
-    <div class="metric"><div class="label">Open issues</div><div class="value">3</div><div class="delta up" id="issues">1 high severity</div></div>
-  </div>
+      <div class="deck">
+        <p class="kicker">A small server for pages that need review</p>
+        <h2 id="demo-headline" class="headline">Upload an HTML file. Share a link. Collect feedback directly on the page.</h2>
+        <p id="demo-standfirst" class="standfirst">Peek is a self-hosted tool for reviewing generated reports, prototypes, build artifacts, and one-off HTML pages inside a company.</p>
+      </div>
+    </header>
 
-  <h2 id="findings-h">Key findings</h2>
-  <table>
-    <thead><tr><th>Area</th><th>Finding</th><th>Severity</th></tr></thead>
-    <tbody>
-      <tr><td>Performance</td><td id="f1">Cache key collision in <code>session.Store</code> doubles DB reads</td><td><span class="sev high">High</span></td></tr>
-      <tr><td>Reliability</td><td id="f2">Retry logic lacks a backoff ceiling, risking thundering herds</td><td><span class="sev med">Medium</span></td></tr>
-      <tr><td>Code quality</td><td id="f3">12 exported functions are missing doc comments</td><td><span class="sev low">Low</span></td></tr>
-    </tbody>
-  </table>
+    <section id="demo-basic-motion">
+      <p class="kicker">The basic motion</p>
+      <h2>One command turns a local file into a review link.</h2>
+      <p id="demo-workflow-copy">Peek keeps the workflow deliberately plain: upload from the CLI or dashboard, choose the visibility, send the URL, and let reviewers comment in context.</p>
 
-  <div class="callout" id="callout">
-    <strong>Agent note:</strong> the latency regression is fully reproducible. A targeted fix to the cache key derivation restores p95 to ~226ms in local benchmarks.
-  </div>
+      <div class="terminal" aria-label="Peek CLI demo">
+        <div class="terminal-top">
+          <span>terminal</span>
+          <span>peek upload</span>
+        </div>
+        <pre id="terminalText" class="cursor"></pre>
+      </div>
 
-  <h2 id="recs-h">Recommended actions</h2>
-  <ol>
-    <li id="r1">Fix the cache key derivation in <code>session.Store.Get</code> and add a regression benchmark.</li>
-    <li id="r2">Cap exponential backoff at 30s and add jitter to the retry helper.</li>
-    <li id="r3">Backfill doc comments on exported APIs before the v2 freeze.</li>
-  </ol>
+      <div class="rule"></div>
+    </section>
 
-  <p id="closing">Have feedback on this report? Select any line or click an element to leave a comment — the author will see it pinned in context.</p>
+    <section id="demo-server-layer">
+      <p class="kicker">What the server does</p>
+      <h2>Peek is not a static host. It is a review layer.</h2>
 
-  <footer>Orbit API · automated review · 412 files analyzed · shared with Peek</footer>
-</div>
+      <div id="demo-diagram" class="diagram">
+        <div class="row">
+          <div class="num">1</div>
+          <div>
+            <strong>Stores the artifact</strong>
+            <span>Uploaded HTML bytes live in file storage or an S3-compatible bucket. Metadata lives in SQLite.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="num">2</div>
+          <div>
+            <strong>Wraps it in a safe viewer</strong>
+            <span>The uploaded page runs in a sandboxed iframe, separate from Peek’s own sessions and review UI.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="num">3</div>
+          <div>
+            <strong>Adds review tools</strong>
+            <span>Reviewers can leave page comments, text-anchored comments, or element-pinned comments.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="num">4</div>
+          <div>
+            <strong>Leaves an audit trail</strong>
+            <span>Owners can inspect visits, read comments, export upload data, and manage visibility later.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo-review-surface-section">
+      <p class="kicker">The review surface</p>
+      <h2>Feedback stays attached to the thing being discussed.</h2>
+      <p id="demo-review-copy">Instead of losing comments in chat threads, Peek lets reviewers point at the rendered page itself.</p>
+
+      <div id="demo-review-surface" class="viewer" aria-label="Minimal Peek review viewer illustration">
+        <div class="viewer-bar">/p/example-review</div>
+        <div class="viewer-body">
+          <div class="article-lines">
+            <div class="line"></div>
+            <div class="line"></div>
+            <div class="line"></div>
+            <div class="line"></div>
+          </div>
+          <div class="pin one">1</div>
+          <div class="pin two">2</div>
+          <div class="comment">
+            <strong>Comment 1</strong>
+            This section needs a clearer conclusion before we share it.
+          </div>
+        </div>
+      </div>
+
+      <p id="demo-quote" class="quote">The page remains the center of the conversation.</p>
+    </section>
+
+    <section id="demo-operational-shape">
+      <p class="kicker">Operational shape</p>
+      <h2>Small enough to run. Serious enough to trust.</h2>
+      <p id="demo-operations-copy">Peek ships as a static Go server binary with pure-Go SQLite. It includes first-run admin setup, OAuth options, API tokens, password-protected uploads, private uploads, retention, quotas, health checks, metrics, and backups.</p>
+
+      <div id="demo-stats" class="stats">
+        <div class="stat">
+          <b data-count="1">0</b>
+          <span>server binary</span>
+        </div>
+        <div class="stat">
+          <b data-count="3">0</b>
+          <span>visibility modes</span>
+        </div>
+        <div class="stat">
+          <b data-count="0">0</b>
+          <span>CGO required</span>
+        </div>
+      </div>
+
+      <p class="small-print">Public link, password gate, or private account-only access. Google and GitHub OAuth can be enabled for company login. Uploaded HTML remains sandboxed in every mode.</p>
+    </section>
+
+    <footer>
+      <p class="kicker">The point</p>
+      <p class="final">HTML deserves a review workflow.</p>
+      <p>Peek gives generated pages a place to live, a link to share, and a way for people to respond without leaving the page.</p>
+
+      <div class="terminal">
+        <div class="terminal-top">
+          <span>quick start</span>
+          <span>localhost:7700</span>
+        </div>
+        <pre>peekd --addr :7700 --data ./data --base-url http://localhost:7700
+peek login --host http://localhost:7700
+peek upload demo.html --visibility public</pre>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    (function() {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const terminalLines = [
+        "$ peek upload demo.html --visibility public",
+        "uploaded demo.html",
+        "share https://peek.example.com/p/black-ink"
+      ];
+      const terminal = document.getElementById("terminalText");
+      let fullText = "";
+      let lineIndex = 0;
+      let charIndex = 0;
+
+      function typeNext() {
+        if (lineIndex >= terminalLines.length) {
+          terminal.classList.remove("cursor");
+          return;
+        }
+        const line = terminalLines[lineIndex];
+        if (charIndex < line.length) {
+          fullText += line.charAt(charIndex);
+          terminal.textContent = fullText;
+          charIndex += 1;
+          setTimeout(typeNext, reduce ? 0 : 22);
+          return;
+        }
+        fullText += "\n";
+        terminal.textContent = fullText;
+        lineIndex += 1;
+        charIndex = 0;
+        setTimeout(typeNext, reduce ? 0 : 260);
+      }
+      typeNext();
+
+      function countUp(el) {
+        const target = Number(el.dataset.count || 0);
+        if (target === 0) {
+          el.textContent = "0";
+          return;
+        }
+        let value = 0;
+        const step = () => {
+          value += 1;
+          el.textContent = String(value);
+          if (value < target) setTimeout(step, reduce ? 0 : 180);
+        };
+        step();
+      }
+      const counters = document.querySelectorAll("[data-count]");
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting || entry.target.dataset.done) return;
+          entry.target.dataset.done = "1";
+          countUp(entry.target);
+        });
+      }, {
+        threshold: .5
+      });
+      counters.forEach((counter) => observer.observe(counter));
+      if (reduce || !window.gsap) return;
+      gsap.from("header", {
+        opacity: 0,
+        y: 16,
+        duration: .8,
+        ease: "power2.out"
+      });
+      gsap.to(".rule", {
+        width: "100%",
+        duration: 1.1,
+        ease: "power2.out",
+        delay: .3
+      });
+      gsap.from(".row", {
+        opacity: 0,
+        y: 14,
+        duration: .55,
+        stagger: .08,
+        ease: "power2.out",
+        scrollTrigger: null
+      });
+      gsap.to(".pin", {
+        y: -4,
+        duration: 1.2,
+        repeat: -1,
+        yoyo: true,
+        stagger: .25,
+        ease: "sine.inOut"
+      });
+      gsap.from(".line", {
+        scaleX: 0,
+        duration: .8,
+        stagger: .12,
+        ease: "power2.out"
+      });
+    })();
+  </script>
 </body>
+
 </html>

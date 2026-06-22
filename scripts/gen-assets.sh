@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# gen-assets.sh — regenerate Peek's MP4 demo.
+# gen-assets.sh — regenerate Peek's demo video and GIF.
 #
-# Builds the binaries, boots a throwaway Peek server, seeds a demo "report"
+# Builds the binaries, boots a throwaway Peek server, seeds a demo page
 # (scripts/demo-report.html) plus review comments, drives headless Chrome to
 # record the CLI-to-browser commenting story, and uses ffmpeg to produce
-# assets/demo.mp4. Screenshots and GIFs are intentionally left untouched.
+# assets/demo.mp4 and assets/demo.gif.
 #
 # Requires: go, node (>=20), pnpm install, ffmpeg, and Google Chrome / Chromium.
 # Override Chrome with:  CHROME="/path/to/chrome" scripts/gen-assets.sh
@@ -14,6 +14,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 OUT="$ROOT/assets"
+DOCS_OUT="$ROOT/docs/public/assets"
 PORT="${PEEK_ASSET_PORT:-7799}"
 TOKEN=""
 DATA="$(mktemp -d)"
@@ -100,11 +101,11 @@ POLL="$(curl -fsS -H "Content-Type: application/json" \
 TOKEN="$(printf '%s' "$POLL" | json_value token)"
 [ -n "$TOKEN" ] || { echo "error: token setup failed: $POLL"; exit 1; }
 
-echo "› seeding demo report"
+echo "› seeding demo page"
 api() { curl -fsS -H "Authorization: Bearer $TOKEN" "$@"; }
 UP=$(api --data-binary @scripts/demo-report.html \
   -H "Content-Type: text/html" \
-  "http://localhost:$PORT/api/upload?filename=codebase-health-report&visibility=public")
+  "http://localhost:$PORT/api/upload?filename=demo.html&visibility=public")
 SLUG=$(printf '%s' "$UP" | sed -n 's/.*"slug":"\([^"]*\)".*/\1/p')
 [ -n "$SLUG" ] || { echo "error: upload failed: $UP"; exit 1; }
 # a second upload so the dashboard list looks real
@@ -119,8 +120,8 @@ echo "› seeding existing review comments"
 sqlite3 "$DATA/peek.db" <<SQL
 INSERT INTO comments(upload_id,element_selector,element_text,anchor_kind,author_name,author_cookie,body,created_at)
 VALUES
-  ($UPLOAD_ID,'#summary','two regressions need attention before the next release','text','Maya','seed-maya','This is the right headline. Can we make the release blocker explicit for the infra team?',$((NOW - 5400))),
-  ($UPLOAD_ID,'#callout','Agent note: the latency regression is fully reproducible. A targeted fix to the cache key derivation restores p95 to ~226ms in local benchmarks.','element','Jordan','seed-jordan','Good evidence. Please keep this note attached when the report is exported.',$((NOW - 3600)));
+  ($UPLOAD_ID,'#demo-standfirst','generated reports, prototypes, build artifacts, and one-off HTML pages','text','Maya','seed-maya','This names the exact artifacts we review every week.',$((NOW - 5400))),
+  ($UPLOAD_ID,'#demo-diagram','Stores the artifact Wraps it in a safe viewer Adds review tools Leaves an audit trail','element','Jordan','seed-jordan','The review-layer framing is useful. Keep this section near the top.',$((NOW - 3600)));
 SQL
 
 echo "› seeding fake page views for sparkline"
@@ -148,5 +149,21 @@ ffmpeg -y -i "$RAW_VIDEO" \
   -movflags +faststart \
   "$OUT/demo.mp4" >/dev/null 2>&1
 
+if [ -d "$DOCS_OUT" ]; then
+  mkdir -p "$DOCS_OUT"
+  cp "$OUT/demo.mp4" "$DOCS_OUT/demo.mp4"
+  echo "› mirrored video to docs/public/assets/demo.mp4"
+fi
+
+echo "› encoding README animation (gif)"
+PALETTE="$TMP_ASSETS/demo-palette.png"
+ffmpeg -y -i "$OUT/demo.mp4" \
+  -vf "fps=15,scale=1100:-1:flags=lanczos,palettegen=stats_mode=diff" \
+  "$PALETTE" >/dev/null 2>&1
+ffmpeg -y -i "$OUT/demo.mp4" -i "$PALETTE" \
+  -lavfi "fps=15,scale=1100:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  "$OUT/demo.gif" >/dev/null 2>&1
+
 DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$OUT/demo.mp4")"
 echo "✓ wrote assets/demo.mp4 (${DURATION}s)"
+echo "✓ wrote assets/demo.gif"
