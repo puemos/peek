@@ -10,8 +10,6 @@ Share an HTML page inside your company, get a link, and collect feedback directl
 
 Peek is a self-hosted internal review tool for HTML reports, prototypes, build artifacts, and agent-generated pages. Upload a file from the CLI or dashboard, share the preview URL, and let reviewers leave comments pinned to elements, anchored to selected text, or attached to the whole page. It ships as a single static Go binary with pure-Go SQLite and no CGO.
 
-![Peek viewer with pinned comments](assets/hero.png)
-
 ![Peek demo: upload from the CLI, comment in context, and view visits](assets/demo.gif)
 
 ## Quick start
