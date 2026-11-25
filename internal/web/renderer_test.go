@@ -154,6 +154,29 @@ func TestPageTemplateUsesDatasetForViewerConfig(t *testing.T) {
 	}
 }
 
+func TestPageTemplateRendersCommentExportOptions(t *testing.T) {
+	renderer, err := NewRenderer()
+	if err != nil {
+		t.Fatalf("new renderer: %v", err)
+	}
+	body, err := renderer.Execute(TemplatePage, PageData{Name: "page.html", Slug: "abc123", RawURL: "/raw/abc123"})
+	if err != nil {
+		t.Fatalf("execute page: %v", err)
+	}
+	html := string(body)
+	for _, want := range []string{
+		`exportComments('markdown');`,
+		`exportComments('json');`,
+		`exportComments('markdown', 'download');`,
+		`exportComments('json', 'download');`,
+		"Copy Markdown", "Copy JSON", "Download Markdown", "Download JSON",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("page template missing comment export option %q", want)
+		}
+	}
+}
+
 func TestPageTemplateNameModalCanBeShownByAlpine(t *testing.T) {
 	renderer, err := newRenderer(func(name string) string {
 		return "/" + name + "?v=test"
