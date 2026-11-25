@@ -472,9 +472,10 @@
         }, 3000);
       },
 
-      exportComments(format) {
+      exportComments(format, action = "copy") {
+        const json = format === "json";
         let text = "";
-        if (format === "json") {
+        if (json) {
           text = JSON.stringify(this.comments, null, 2);
         } else {
           for (const c of this.comments) {
@@ -483,7 +484,20 @@
             text += "\n" + c.body + "\n\n---\n\n";
           }
         }
-        window.peekCopyText(text, { success: format === "json" ? "Copied comments as JSON." : "Copied comments as Markdown." });
+        if (action === "copy") {
+          window.peekCopyText(text, { success: json ? "Copied comments as JSON." : "Copied comments as Markdown." });
+          return;
+        }
+
+        const blob = new Blob([text], { type: json ? "application/json" : "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = this.slug + "-comments." + (json ? "json" : "md");
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
       },
 
       showNameModal() {
